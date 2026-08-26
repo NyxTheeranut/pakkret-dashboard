@@ -3552,11 +3552,19 @@
           var abbr = parseSheetDate(m.sheetName);
           var moKey = abbr ? MONTH_LABEL[abbr.monthIndex].toLowerCase() : null;
 
-          // 1. which column this month's Target actually came from
+          // 1. which column this month's Target actually came from.
+          // Skipped entirely in cloud mode: the target columns were resolved on the
+          // publisher's machine, so an empty targetDiag here means "not applicable",
+          // NOT "no target column found" — reporting the latter would be a false alarm.
           var diag = (state.rtr.targetDiag || []).filter(function (d) {
             return d.month === moKey;
           });
-          if (!diag.length) {
+          if (state.rtr.fromCloud) {
+            items.push({
+              level: "ok",
+              text: "ข้อมูลมาจาก Google Sheets (ประมวลผลจากไฟล์ต้นทางโดยผู้ดูแลแล้ว)",
+            });
+          } else if (!diag.length) {
             items.push({
               level: "warn",
               text:
@@ -3679,6 +3687,25 @@
         }
 
         function renderRtrSheetNote() {
+          // Data pulled from Google Sheets was parsed by the PUBLISHER, not here — so the
+          // file-parsing statistics below (sheet counts, CM-mapping coverage, stray 7-11 rows)
+          // are all zero and would read as alarming nonsense. Describe the source instead.
+          if (state.rtr.fromCloud) {
+            $("rtrSheetNote").textContent =
+              "โหลดจาก Google Sheets · " +
+              state.rtr.months.length +
+              " เดือน: " +
+              state.rtr.months
+                .map(function (m) {
+                  return m.label || m.sheetName;
+                })
+                .join(", ") +
+              (state.cloudUpdatedAt
+                ? " · ข้อมูล ณ " +
+                  new Date(state.cloudUpdatedAt).toLocaleString("th-TH")
+                : "");
+            return;
+          }
           var names = state.rtr.months
             .map(function (m) {
               return m.sheetName;
@@ -7433,6 +7460,26 @@
         }
 
         function renderSevSheetNote() {
+          // See renderRtrSheetNote — in cloud mode the parse counters are all zero, which made
+          // this claim "หา CM ไม่เจอ 326 ร้าน" even though every store HAS a CM.
+          if (state.sev.fromCloud) {
+            $("sevSheetNote").textContent =
+              "โหลดจาก Google Sheets · " +
+              fmt(state.sev.stores.length) +
+              " ร้าน · " +
+              (state.sev.monthsAvailable || []).length +
+              " เดือน: " +
+              (state.sev.monthsAvailable || [])
+                .map(function (mk) {
+                  return sevMonthLabel(mk);
+                })
+                .join(", ") +
+              (state.cloudUpdatedAt
+                ? " · ข้อมูล ณ " +
+                  new Date(state.cloudUpdatedAt).toLocaleString("th-TH")
+                : "");
+            return;
+          }
           var note =
             (state.sev.fileNames || []).join(", ") +
             " — " +
@@ -10194,6 +10241,7 @@
             mapRowsInCluster: 0,
           };
           state.rtr.targetDiag = state.rtr.targetDiag || [];
+          state.rtr.fromCloud = true; // suppresses file-parsing notes/warnings
           $("tabBtnRtr").classList.add("ready");
         }
 
@@ -10287,6 +10335,7 @@
           state.sev.selectedDay = null;
           state.sev.visibleCount = 20;
           state.sev.rosterLoaded = true; // CM already resolved by the publisher
+          state.sev.fromCloud = true; // suppresses file-parsing notes/warnings
           $("tabBtnSev").classList.add("ready");
         }
 
@@ -10353,6 +10402,7 @@
                   } else {
                     cloudMsg("sev", "ยังไม่มีข้อมูล 7-11 ในไฟล์นี้");
                   }
+                  state.cloudUpdatedAt = meta.updated_at || null;
                   var when = meta.updated_at
                     ? new Date(meta.updated_at).toLocaleString("th-TH")
                     : "-";
