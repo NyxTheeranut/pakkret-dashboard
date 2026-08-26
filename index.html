@@ -9587,11 +9587,33 @@
           token: null,
         };
 
+        // Baked in so colleagues configure NOTHING — they open the link and sign in.
+        //
+        // These two are safe to publish. The Client ID is public by design (every Google web
+        // app ships it in its source) and the API key is restricted to the Picker API and to
+        // this site's origins. Neither grants access to any data: they only let the browser
+        // ASK Google. Google then checks whether the signed-in person is on the spreadsheet's
+        // sharing list, and answers 403 if not — that share list is the real access control.
+        //
+        // ⚠️ The OAuth CLIENT SECRET must never appear here. The browser sign-in flow does not
+        // use it, and publishing it would let someone impersonate this app.
+        var SYNC_DEFAULTS = {
+          clientId:
+            "901392336998-4hkkmokj5mtph2u4c2dtem7mplv3o7sv.apps.googleusercontent.com",
+          apiKey: "AIzaSyBZ5m4zq1PNBFqnVQhEVRaAZyKEBadsjbg",
+          projectNum: "901392336998", // required by the Picker for drive.file (setAppId)
+        };
+
         function syncCfg() {
+          // localStorage wins, so you can point a browser at a different project without
+          // editing the file; otherwise fall back to the published defaults.
           return {
-            clientId: localStorage.getItem("sync_clientId") || "",
-            apiKey: localStorage.getItem("sync_apiKey") || "",
-            projectNum: localStorage.getItem("sync_projectNum") || "",
+            clientId:
+              localStorage.getItem("sync_clientId") || SYNC_DEFAULTS.clientId,
+            apiKey: localStorage.getItem("sync_apiKey") || SYNC_DEFAULTS.apiKey,
+            projectNum:
+              localStorage.getItem("sync_projectNum") ||
+              SYNC_DEFAULTS.projectNum,
             sheetId: localStorage.getItem("sync_sheetId") || "",
           };
         }
