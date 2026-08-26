@@ -1461,7 +1461,15 @@
           max-height: 60vh;
         }
         .table-scroll-box table {
-          min-width: 700px;
+          min-width: 780px;
+        }
+        /* The first column holds a NAME (store / CM / AE). Splitting 700px across 11
+           columns left it ~63px, which is narrower than a single Thai word — so
+           "ชานนท์ สิงหเรศร์" wrapped one syllable per line. Give it a real floor and
+           let the table scroll a little further instead. */
+        .table-scroll-box th:first-child,
+        .table-scroll-box td:first-child {
+          min-width: 150px;
         }
         thead th {
           padding: 9px 10px;
