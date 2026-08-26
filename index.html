@@ -9878,6 +9878,51 @@
         }
 
         // --- the actual run ---------------------------------------------------
+        // =====================================================================
+        // INCREMENTAL SYNC — fingerprints
+        //
+        // Two problems solved here:
+        //  1. SPEED. Re-writing every month on every sync is ~40 API calls for 13 tabs, when
+        //     usually only the current month actually changed. A content hash lets unchanged
+        //     months be skipped entirely.
+        //  2. SAFETY. A blind overwrite can SHRINK a month — load an Excel containing only
+        //     5 days of August over a Sheet already holding 22 good days and the data is gone.
+        //     So each tab also records how many days and how much GA it held, and a sync that
+        //     would reduce either asks first.
+        // Fingerprints live in meta.fp = { "rtr-2026-08": {h, d, g}, ... }
+        // =====================================================================
+
+        // FNV-1a — not cryptographic, just needs to change when the content changes.
+        function syncHash(str) {
+          var h = 0x811c9dc5;
+          for (var i = 0; i < str.length; i++) {
+            h ^= str.charCodeAt(i);
+            h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+          }
+          return h.toString(16);
+        }
+
+        // Day count + GA total for a payload, whichever feed it came from.
+        function syncFingerprint(tab, payload) {
+          var days = 0,
+            ga = 0;
+          if (tab.indexOf("rtr-") === 0) {
+            days = Object.keys(payload.daily || {}).length;
+            ga = (payload.totals && payload.totals.ga) || 0;
+          } else {
+            var seen = {};
+            (payload.stores || []).forEach(function (s) {
+              Object.keys(s.daily || {}).forEach(function (d) {
+                seen[d] = 1;
+              });
+              var b = s.byMonth && s.byMonth[payload.monthKey];
+              if (b) ga += b.ga || 0;
+            });
+            days = Object.keys(seen).length;
+          }
+          return { h: syncHash(JSON.stringify(payload)), d: days, g: Math.round(ga) };
+        }
+
         function syncRun() {
           syncSaveCfgFromInputs();
           if (!syncCfgReady()) {
@@ -9912,29 +9957,98 @@
             })
             .then(function (id) {
               sheetId = id;
-              var chain = Promise.resolve();
+              // Read the previous run's fingerprints. A brand-new spreadsheet has no meta yet,
+              // which is not an error — it just means everything is new.
+              return sheetsReadTab(id, "meta")
+                .then(function (m) {
+                  return m || {};
+                })
+                .catch(function () {
+                  return {};
+                });
+            })
+            .then(function (prevMeta) {
+              var prevFp = prevMeta.fp || {};
+              var newFp = {};
+              var toWrite = [],
+                skipped = [],
+                shrinking = [];
+
               tabs.forEach(function (tab) {
+                var fp = syncFingerprint(tab, payloads[tab]);
+                newFp[tab] = fp;
+                var old = prevFp[tab];
+                if (old && old.h === fp.h) {
+                  skipped.push(tab); // byte-identical — nothing to do
+                } else if (old && (fp.d < old.d || fp.g < old.g)) {
+                  shrinking.push({ tab: tab, old: old, now: fp });
+                } else {
+                  toWrite.push(tab);
+                }
+              });
+
+              // Ask before letting a smaller payload replace a bigger one.
+              if (shrinking.length) {
+                var msg =
+                  "⚠️ ข้อมูลบางเดือนที่จะอัปโหลด 'น้อยกว่า' ที่มีอยู่แล้วใน Sheet:\n\n" +
+                  shrinking
+                    .map(function (s) {
+                      return (
+                        "• " +
+                        s.tab +
+                        "\n   เดิม: " +
+                        s.old.d +
+                        " วัน / GA " +
+                        fmt(s.old.g) +
+                        "\n   ใหม่: " +
+                        s.now.d +
+                        " วัน / GA " +
+                        fmt(s.now.g)
+                      );
+                    })
+                    .join("\n") +
+                  "\n\nกด OK = เขียนทับ (ข้อมูลเดิมจะหายไป)\n" +
+                  "กด Cancel = ข้ามเดือนเหล่านี้ไว้ก่อน (แนะนำ)";
+                if (confirm(msg)) {
+                  shrinking.forEach(function (s) {
+                    toWrite.push(s.tab);
+                  });
+                } else {
+                  shrinking.forEach(function (s) {
+                    skipped.push(s.tab);
+                    newFp[s.tab] = prevFp[s.tab]; // keep the old fingerprint, tab untouched
+                  });
+                }
+              }
+
+              skipped.sort().forEach(function (t) {
+                syncStep(t + " — ไม่เปลี่ยนแปลง ข้าม");
+              });
+
+              var chain = Promise.resolve();
+              toWrite.sort().forEach(function (tab) {
                 chain = chain.then(function () {
                   var li = syncStep("เขียน " + tab + "…", "run");
                   return syncWriteTab(sheetId, tab, payloads[tab]).then(
                     function () {
                       li.remove();
-                      syncStep(tab);
+                      syncStep(tab + " ✔");
                     },
                   );
                 });
               });
               return chain.then(function () {
-                return sheetId;
+                return { written: toWrite, skipped: skipped, fp: newFp };
               });
             })
-            .then(function (id) {
-              return syncPrune(id, SYNC.KEEP_MONTHS).then(function () {
-                return id;
+            .then(function (res) {
+              return syncPrune(sheetId, SYNC.KEEP_MONTHS).then(function () {
+                return res;
               });
             })
-            .then(function (id) {
-              return syncWriteTab(id, "meta", {
+            .then(function (res) {
+              // meta is always rewritten — it carries updated_at and the fingerprints
+              return syncWriteTab(sheetId, "meta", {
                 updated_at: new Date().toISOString(),
                 tabs: tabs,
                 rtr_months: tabs.filter(function (t) {
@@ -9943,19 +10057,23 @@
                 sev_months: tabs.filter(function (t) {
                   return t.indexOf("sev-") === 0;
                 }),
+                fp: res.fp,
               }).then(function () {
-                return id;
+                return res;
               });
             })
-            .then(function (id) {
+            .then(function (res) {
               localStorage.setItem("sync_lastAt", String(Date.now()));
               renderSyncStatus();
-              syncStep("meta");
+              syncStep("meta ✔");
               $("syncResult").innerHTML =
-                "✅ ซิงค์สำเร็จ " +
-                tabs.length +
-                " เดือน<br><a target='_blank' href='https://docs.google.com/spreadsheets/d/" +
-                esc(id) +
+                "✅ เสร็จแล้ว — เขียน <b>" +
+                res.written.length +
+                "</b> เดือน · ข้าม <b>" +
+                res.skipped.length +
+                "</b> เดือนที่ไม่เปลี่ยนแปลง" +
+                "<br><a target='_blank' href='https://docs.google.com/spreadsheets/d/" +
+                esc(sheetId) +
                 "/edit'>เปิด spreadsheet</a>";
             })
             .catch(function (err) {
