@@ -974,11 +974,21 @@
         overflow: hidden;
         text-overflow: ellipsis;
         max-width: 60%;
+        min-width: 0; /* flex items default to min-width:auto and refuse to shrink */
       }
+      /* .v carries a long Thai AE NAME on the zero-GA / GA<5 cards, not just a short
+         number. Left uncapped with white-space:nowrap it could neither wrap nor shrink,
+         so it pushed the whole page wider than the phone screen — which is what made the
+         sticky top bar look narrower than the content. Cap it the same way .n is capped. */
       .insight-list .v {
         font-family: "IBM Plex Mono", monospace;
         color: var(--muted);
         white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 45%;
+        min-width: 0;
+        text-align: right;
       }
       .insight-empty {
         font-size: 12px;
@@ -1479,6 +1489,23 @@
         .sort-select {
           min-height: 42px;
           font-size: 16px; /* < 16px makes iOS Safari zoom the whole page on focus */
+        }
+
+        /* On a phone, truncating a Thai AE name to an ellipsis makes it unreadable.
+           Stack the two halves instead so each gets the full width. */
+        .insight-list li {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 2px;
+        }
+        .insight-list .n,
+        .insight-list .v {
+          max-width: 100%;
+          white-space: normal;
+          text-align: left;
+        }
+        .insight-list .v {
+          font-size: 11.5px;
         }
 
         .section-head h2 {
