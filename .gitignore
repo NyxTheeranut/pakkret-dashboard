@@ -1,0 +1,10 @@
+# Belt-and-braces: never publish source data or local artefacts.
+# The real protection is that this folder simply does not contain them.
+*.xlsx
+*.xls
+*.csv
+RTR/
+7-11/
+TOL/
+*.command
+paceholder.txt

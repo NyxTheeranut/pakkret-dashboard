@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>drive.file + Sheets API — Test</title>
+<style>
+  :root{
+    --ink:#121A2B; --muted:#6B7280; --line:#E3E7EE; --paper:#F5F7FA;
+    --ok:#0F6E62; --bad:#B23B38; --warn:#8a6316; --warn-bg:#FCF1DE;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:#EEF1F5;color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif;
+       line-height:1.55;padding:24px 16px 60px;}
+  .wrap{max-width:860px;margin:0 auto;}
+  h1{font-size:20px;margin:0 0 4px;}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px;}
+  .card h2{font-size:15px;margin:0 0 4px;}
+  .card p.hint{color:var(--muted);font-size:12.5px;margin:0 0 14px;}
+  label{display:block;font-size:12px;font-weight:600;margin:10px 0 4px;}
+  input[type=text]{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;
+                   font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--paper);}
+  button{background:var(--ink);color:#fff;border:none;padding:10px 16px;border-radius:8px;
+         font-size:13px;font-weight:600;cursor:pointer;margin:4px 6px 4px 0;}
+  button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  .verdict{border-radius:10px;padding:12px 14px;margin-top:14px;font-size:13.5px;display:none;}
+  .verdict.pass{background:#E7F3EF;border:1px solid rgba(15,110,98,.3);color:var(--ok);display:block;}
+  .verdict.fail{background:#FBEBEA;border:1px solid rgba(178,59,56,.3);color:var(--bad);display:block;}
+  .verdict b{display:block;font-size:15px;margin-bottom:4px;}
+  .note{background:var(--warn-bg);border:1px solid rgba(226,163,61,.35);border-radius:9px;
+        padding:11px 13px;font-size:12.5px;color:var(--warn);margin-top:12px;}
+  pre#log{background:var(--ink);color:#D7E0EA;border-radius:10px;padding:14px;
+          font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;line-height:1.6;
+          max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:0;}
+  .log-ok{color:#7FD1B9;} .log-bad{color:#FF9E9A;} .log-dim{color:#8391A5;}
+  ol{margin:0;padding-left:20px;} ol li{margin-bottom:6px;font-size:13px;}
+  code{background:var(--paper);padding:1px 5px;border-radius:4px;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>drive.file + Sheets API — Test</h1>
+  <div class="sub">
+    ทดสอบว่า scope <code>drive.file</code> (แบบ non-sensitive) ใช้อ่าน Google Sheets ได้ไหม<br>
+    Verifies PHASE 2 &amp; 3 of <code>HOSTED_DASHBOARD_PLAN.md</code> before you build anything.
+  </div>
+
+  <div class="card">
+    <h2>1 · ตั้งค่า / Config</h2>
+    <p class="hint">From Google Cloud Console (PHASE 1). Saved in this browser only.</p>
+    <label>Client ID</label>
+    <input type="text" id="clientId" placeholder="xxxxx.apps.googleusercontent.com" autocomplete="off">
+    <label>API key <span style="font-weight:400;color:var(--muted)">— required by the Picker</span></label>
+    <input type="text" id="apiKey" placeholder="AIza..." autocomplete="off">
+    <label>Project number
+      <span style="font-weight:400;color:var(--muted)">
+        — ตัวเลขล้วน (ไม่ใช่ project ID) · จำเป็นสำหรับ drive.file
+      </span>
+    </label>
+    <input type="text" id="projectNum" placeholder="123456789012" autocomplete="off">
+    <div class="note">
+      หน้านี้ต้องเปิดจาก origin ที่ลงทะเบียนไว้ (เช่น <code>http://localhost:8080</code>)<br>
+      เปิดแบบ <code>file://</code> จะไม่ทำงาน — Google จะปฏิเสธ origin
+      <div style="margin-top:6px;font-family:ui-monospace,monospace;font-size:11.5px;">
+        python3 -m http.server 8080
+      </div>
+      <div id="originNow" style="margin-top:6px;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2 · TEST A — Sign in → Pick → Read</h2>
+    <p class="hint">
+      Signs in requesting <b>only</b> <code>drive.file</code>, opens the Picker, then reads cell
+      <code>A1</code> of whichever spreadsheet you choose.
+    </p>
+    <button id="btnA">▶ Run Test A</button>
+    <button class="ghost" id="btnClear">ล้างค่าที่จำไว้ / Reset saved file</button>
+    <div class="verdict" id="verdictA"></div>
+    <div class="note" id="warnPrompt" style="display:none;">
+      <b>คำถามสำคัญ:</b> ระหว่างล็อกอิน คุณเห็นหน้าจอเตือน
+      <i>"Google hasn't verified this app"</i> หรือไม่?<br>
+      <button class="ghost" style="margin-top:8px" onclick="warnAnswer(false)">ไม่เห็น / No warning ✅</button>
+      <button class="ghost" style="margin-top:8px" onclick="warnAnswer(true)">เห็น / Saw the warning ⚠️</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3 · TEST B — Read again <i>without</i> the Picker</h2>
+    <p class="hint">
+      Proves the grant persists. <b>Close the browser completely, come back tomorrow</b>, then run
+      this alone. It must read the same file without showing the Picker.
+    </p>
+    <button id="btnB">▶ Run Test B</button>
+    <div class="verdict" id="verdictB"></div>
+  </div>
+
+  <div class="card">
+    <h2>4 · TEST C — Sharing is the access control</h2>
+    <p class="hint">Manual, but it is the one that matters most for safety.</p>
+    <ol>
+      <li>Share the spreadsheet with a colleague (<b>Viewer</b>) → they run Test A → expect <b>200</b></li>
+      <li>Sign in with an account that was <b>NOT</b> shared → run Test A → expect <b>403</b></li>
+    </ol>
+    <div class="note" style="margin-top:12px;">
+      <b>ถ้าข้อ 2 ไม่ขึ้น 403 ให้หยุดทันที</b> — access model ไม่ทำงาน
+      และทุกอย่างที่สร้างต่อจากนี้จะไม่ปลอดภัย
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Log</h2>
+    <pre id="log">พร้อมใช้งาน / ready…</pre>
+  </div>
+
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var SCOPE = "https://www.googleapis.com/auth/drive.file"; // non-sensitive — the whole point
+  var token = null;
+  var logEl = document.getElementById("log");
+
+  function log(msg, cls) {
+    var t = new Date().toTimeString().slice(0, 8);
+    var span = '<span class="' + (cls || "log-dim") + '">';
+    logEl.innerHTML += "\n" + span + "[" + t + "] " + msg + "</span>";
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function verdict(id, pass, title, detail) {
+    var el = document.getElementById(id);
+    el.className = "verdict " + (pass ? "pass" : "fail");
+    el.innerHTML = "<b>" + (pass ? "✅ " : "❌ ") + title + "</b>" + detail;
+  }
+
+  // --- config persistence -------------------------------------------------
+  var cid = document.getElementById("clientId");
+  var key = document.getElementById("apiKey");
+  var pnum = document.getElementById("projectNum");
+  cid.value = localStorage.getItem("dt_clientId") || "";
+  key.value = localStorage.getItem("dt_apiKey") || "";
+  pnum.value = localStorage.getItem("dt_projectNum") || "";
+  cid.oninput = function () { localStorage.setItem("dt_clientId", cid.value.trim()); };
+  key.oninput = function () { localStorage.setItem("dt_apiKey", key.value.trim()); };
+  pnum.oninput = function () { localStorage.setItem("dt_projectNum", pnum.value.trim()); };
+
+  document.getElementById("originNow").textContent =
+    "origin ปัจจุบัน: " + location.origin +
+    (location.protocol === "file:" ? "  ⚠️ ต้องเสิร์ฟผ่าน http/https" : "  ✓");
+
+  // --- helpers ------------------------------------------------------------
+  function needConfig() {
+    if (!cid.value.trim() || !key.value.trim()) {
+      log("กรอก Client ID และ API key ก่อน", "log-bad");
+      return true;
+    }
+    return false;
+  }
+
+  // MUST be called from a click handler or the browser blocks the popup.
+  function getToken(cb) {
+    try {
+      google.accounts.oauth2
+        .initTokenClient({
+          client_id: cid.value.trim(),
+          scope: SCOPE,
+          callback: function (resp) {
+            if (resp.error) { log("token error: " + resp.error, "log-bad"); return; }
+            token = resp.access_token;
+            log("ได้ access token แล้ว (scope: drive.file)", "log-ok");
+            cb();
+          },
+        })
+        .requestAccessToken();
+    } catch (e) {
+      log("GIS ยังโหลดไม่เสร็จ หรือ config ผิด: " + e, "log-bad");
+    }
+  }
+
+  function openPicker(cb) {
+    gapi.load("picker", function () {
+      log("เปิด Picker — เลือกไฟล์ Google Sheets 1 ไฟล์");
+      var view = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS);
+      var builder = new google.picker.PickerBuilder()
+        .setOAuthToken(token)
+        .setDeveloperKey(key.value.trim())
+        .addView(view);
+      // REQUIRED for drive.file: without setAppId the Picker does not tell Drive WHICH app
+      // the user is granting access to, so the grant is never recorded and every later
+      // API call 404s -- exactly as if the file did not exist.
+      if (pnum.value.trim()) {
+        builder = builder.setAppId(pnum.value.trim());
+        log("setAppId = " + pnum.value.trim());
+      } else {
+        log("⚠️ ไม่ได้ใส่ Project number — drive.file grant จะไม่ถูกบันทึก", "log-bad");
+      }
+      builder
+        .setCallback(function (d) {
+          if (d.action === google.picker.Action.PICKED) {
+            var id = d.docs[0].id;
+            localStorage.setItem("dt_fileId", id);
+            log("เลือกไฟล์: " + (d.docs[0].name || id), "log-ok");
+            cb(id);
+          } else if (d.action === google.picker.Action.CANCEL) {
+            log("ยกเลิกการเลือกไฟล์", "log-bad");
+          }
+        })
+        .build()
+        .setVisible(true);
+    });
+  }
+
+  // The actual thing under test: read a Sheet using ONLY drive.file.
+  function readA1(id, whichVerdict) {
+    var url = "https://sheets.googleapis.com/v4/spreadsheets/" + id + "/values/A1";
+    log("GET " + url);
+    fetch(url, { headers: { Authorization: "Bearer " + token } })
+      .then(function (r) {
+        return r.text().then(function (body) { return { status: r.status, body: body }; });
+      })
+      .then(function (res) {
+        log("HTTP " + res.status, res.status === 200 ? "log-ok" : "log-bad");
+        log(res.body.slice(0, 400));
+        if (res.status === 200) {
+          var val = "(ว่าง)";
+          try { val = (JSON.parse(res.body).values || [["(ว่าง)"]])[0][0]; } catch (e) {}
+          verdict(whichVerdict, true,
+            "อ่าน Sheets ได้ด้วย drive.file",
+            "ค่าใน A1: <code>" + String(val) + "</code>" +
+            (whichVerdict === "verdictA"
+              ? "<br>ต่อไป: ตอบคำถามเรื่องหน้าจอเตือนด้านล่าง"
+              : "<br>สิทธิ์ยังอยู่ — ไม่ต้องเลือกไฟล์ซ้ำ ✓ ใช้แผน drive.file ต่อได้"));
+          if (whichVerdict === "verdictA")
+            document.getElementById("warnPrompt").style.display = "block";
+        } else if (res.status === 404) {
+          // Drive already confirmed the file exists AND is a native Sheet, so a 404 here
+          // can only mean the Sheets API refuses to honour the drive.file grant.
+          verdict(whichVerdict, false,
+            "Sheets API ไม่ยอมรับ drive.file",
+            "Drive เข้าถึงไฟล์นี้ได้และเป็น Google Sheets จริง แต่ Sheets API ตอบ 404<br>" +
+            "<b>ต้องใช้ fallback:</b> เปลี่ยน SCOPE ในไฟล์นี้เป็น " +
+            "<code>https://www.googleapis.com/auth/spreadsheets.readonly</code> " +
+            "แล้วเพิ่มทุกคนเป็น Test users (สูงสุด 100 คน) — จะมีหน้าจอเตือนครั้งแรกครั้งเดียว");
+          log("DIAGNOSIS: drive.file NOT accepted by Sheets API → use fallback", "log-bad");
+        } else if (res.status === 403) {
+          verdict(whichVerdict, false,
+            "403 — ไม่มีสิทธิ์",
+            "อาจเป็นเพราะ (ก) scope drive.file ใช้กับ Sheets API ไม่ได้ → " +
+            "ให้เปลี่ยนไปใช้ <code>spreadsheets.readonly</code> ตาม fallback ในแผน หรือ " +
+            "(ข) บัญชีนี้ไม่ได้ถูกแชร์ไฟล์ — ซึ่งถ้ากำลังทดสอบ TEST C ข้อ 2 อยู่ <b>ถือว่าถูกต้อง</b>");
+        } else {
+          verdict(whichVerdict, false, "HTTP " + res.status, "ดู log ด้านล่าง");
+        }
+      })
+      .catch(function (e) {
+        log("network/CORS error: " + e, "log-bad");
+        verdict(whichVerdict, false, "เรียก API ไม่สำเร็จ",
+          "มักเกิดจาก origin ไม่ตรงกับที่ลงทะเบียนไว้ใน OAuth client");
+      });
+  }
+
+  // Probe the DRIVE api for the same file before touching Sheets.
+  // A 404 from the Sheets API is ambiguous — it means EITHER "the drive.file grant is not
+  // honoured by the Sheets API" OR "this is not a native Google Sheet" (an uploaded .xlsx
+  // is a Drive file but not a spreadsheet the Sheets API can open). Drive's mimeType
+  // separates the two cases immediately.
+  function probeThenRead(id, whichVerdict) {
+    var url =
+      "https://www.googleapis.com/drive/v3/files/" +
+      id +
+      "?fields=id,name,mimeType";
+    log("PROBE (Drive) GET " + url);
+    fetch(url, { headers: { Authorization: "Bearer " + token } })
+      .then(function (r) {
+        return r.text().then(function (b) { return { status: r.status, body: b }; });
+      })
+      .then(function (res) {
+        log("Drive HTTP " + res.status, res.status === 200 ? "log-ok" : "log-bad");
+        log(res.body.slice(0, 300));
+        var mime = "";
+        try { mime = JSON.parse(res.body).mimeType || ""; } catch (e) {}
+
+        if (res.status === 200) {
+          log("mimeType: " + mime, "log-ok");
+          if (mime !== "application/vnd.google-apps.spreadsheet") {
+            verdict(whichVerdict, false,
+              "ไฟล์นี้ไม่ใช่ Google Sheets",
+              "mimeType = <code>" + mime + "</code><br>" +
+              "นี่คือไฟล์ Excel ที่อัปโหลดไว้ใน Drive — Sheets API เปิดไม่ได้ (จึงขึ้น 404)<br>" +
+              "<b>วิธีแก้:</b> สร้าง Google Sheets ใหม่จริง ๆ (sheets.new) แล้วพิมพ์ hello ใน A1 " +
+              "หรือเปิดไฟล์ Excel นั้นแล้วเลือก File → Save as Google Sheets");
+            log("DIAGNOSIS: picked file is not a native Google Sheet", "log-bad");
+            return;
+          }
+        } else {
+          var apiDisabled = /has not been used|is disabled|SERVICE_DISABLED/i.test(res.body);
+          if (apiDisabled) {
+            verdict(whichVerdict, false,
+              "ยังไม่ได้เปิดใช้ Drive API",
+              "ไปที่ APIs &amp; Services → Library → เปิด <b>Google Drive API</b> " +
+              "ใน project นี้ แล้วรอสักครู่ค่อยลองใหม่");
+            log("DIAGNOSIS: Drive API not enabled on the project", "log-bad");
+          } else if (!pnum.value.trim()) {
+            verdict(whichVerdict, false,
+              "ขาด Project number (setAppId)",
+              "drive.file ต้องมี <b>Project number</b> ตอนเปิด Picker " +
+              "ไม่งั้น Drive จะไม่บันทึกว่าแอปไหนได้สิทธิ์ ทุก API จึงตอบ 404<br>" +
+              "ใส่ Project number ในช่องด้านบนแล้วรันใหม่");
+            log("DIAGNOSIS: setAppId missing — grant never recorded", "log-bad");
+          } else {
+            verdict(whichVerdict, false,
+              "Drive ก็เข้าไม่ได้ (" + res.status + ")",
+              "grant ของ drive.file ไม่ทำงาน ทั้งที่ใส่ Project number แล้ว<br>" +
+              "ตรวจว่า Project number ตรงกับ project ที่ออก Client ID นี้จริง " +
+              "(ต้องเป็นตัวเลขล้วน ไม่ใช่ project ID)");
+            log("DIAGNOSIS: grant not working despite appId — check number matches project", "log-bad");
+          }
+          return;
+        }
+        readA1(id, whichVerdict); // native Sheet + Drive ok → now the real test
+      })
+      .catch(function (e) {
+        log("probe error: " + e, "log-bad");
+        readA1(id, whichVerdict);
+      });
+  }
+
+  // --- tests --------------------------------------------------------------
+  document.getElementById("btnA").onclick = function () {
+    if (needConfig()) return;
+    log("── TEST A ──────────────────────────");
+    getToken(function () { openPicker(function (id) { probeThenRead(id, "verdictA"); }); });
+  };
+
+  document.getElementById("btnB").onclick = function () {
+    if (needConfig()) return;
+    var id = localStorage.getItem("dt_fileId");
+    if (!id) { log("ยังไม่มีไฟล์ที่จำไว้ — รัน TEST A ก่อน", "log-bad"); return; }
+    log("── TEST B ── (ไฟล์ที่จำไว้: " + id + ")");
+    getToken(function () { probeThenRead(id, "verdictB"); });
+  };
+
+  document.getElementById("btnClear").onclick = function () {
+    localStorage.removeItem("dt_fileId");
+    token = null;
+    log("ล้างไฟล์ที่จำไว้แล้ว", "log-ok");
+  };
+
+  window.warnAnswer = function (sawWarning) {
+    document.getElementById("warnPrompt").style.display = "none";
+    if (sawWarning) {
+      verdict("verdictA", false,
+        "เห็นหน้าจอเตือน — ตรวจสอบ scope",
+        "drive.file ไม่ควรทำให้เกิดหน้าจอนี้ ถ้ายังเห็นอยู่แปลว่ามี sensitive scope ปนอยู่ " +
+        "หรือ consent screen ขอ scope อื่นเพิ่ม");
+      log("ผู้ใช้รายงานว่าเห็น unverified-app warning", "log-bad");
+    } else {
+      verdict("verdictA", true,
+        "PHASE 2 ผ่าน — ใช้ drive.file ได้",
+        "ไม่มีหน้าจอเตือน และอ่าน Sheets ได้<br>" +
+        "<b>ขั้นต่อไป:</b> ปิดเบราว์เซอร์ กลับมาพรุ่งนี้ แล้วรัน TEST B เพื่อดูว่าสิทธิ์ยังอยู่");
+      log("PHASE 2 PASS — drive.file ใช้กับ Sheets API ได้ และไม่มี warning", "log-ok");
+    }
+  };
+
+  log("พร้อมแล้ว — กรอก Client ID + API key แล้วกด Run Test A", "log-ok");
+})();
+</script>
+</body>
+</html>
