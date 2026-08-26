@@ -1395,6 +1395,116 @@
           grid-template-columns: 96px 1fr 60px;
         }
       }
+
+      /* ── PHONES ──────────────────────────────────────────────────────────
+         The dashboard is read on phones between store visits, so this is not a
+         nice-to-have. The important fix is the tables: `table{width:100%}` makes
+         an 11-column table SQUEEZE into 375px (~30px per column, unreadable)
+         instead of scrolling. Giving it a min-width forces real horizontal
+         scrolling inside its own box, which the wrapper already supports.       */
+      @media (max-width: 560px) {
+        /* top bar: it is sticky, so every pixel here is stolen from the content */
+        .topbar {
+          padding: 10px 12px;
+          gap: 8px;
+        }
+        .brand h1 {
+          font-size: 15px;
+        }
+        .brand .sub {
+          font-size: 10px;
+        }
+        .file-slots {
+          width: 100%;
+          gap: 6px;
+        }
+        .file-slot {
+          flex: 1 1 100%;
+          justify-content: space-between;
+        }
+        .file-slot .slot-status {
+          max-width: 45vw;
+        }
+
+        main {
+          padding: 14px 10px 60px;
+        }
+
+        /* KPI cards: 2 across still works down to ~360px once padding shrinks */
+        .kpi-grid {
+          gap: 8px;
+        }
+        .kpi-card {
+          padding: 12px 13px;
+        }
+        .kpi-card .value {
+          font-size: 19px;
+        }
+        .kpi-card .label,
+        .kpi-card .sub {
+          font-size: 10.5px;
+        }
+
+        /* THE FIX: scroll wide tables rather than crushing them */
+        .table-scroll-box {
+          -webkit-overflow-scrolling: touch;
+          max-height: 60vh;
+        }
+        .table-scroll-box table {
+          min-width: 700px;
+        }
+        thead th {
+          padding: 9px 10px;
+        }
+        tbody td {
+          padding: 9px 10px;
+          font-size: 12px;
+        }
+
+        /* 22 day-labels at 8px collide into mush on a narrow chart; the bars and
+           their tooltips still carry the numbers */
+        .trend-val-row {
+          display: none;
+        }
+
+        /* touch targets — 34px buttons are hard to hit accurately */
+        .file-btn,
+        .pill,
+        .cm-tab,
+        .load-more-btn,
+        .seg-tick {
+          min-height: 40px;
+        }
+        .search-input,
+        .sort-select {
+          min-height: 42px;
+          font-size: 16px; /* < 16px makes iOS Safari zoom the whole page on focus */
+        }
+
+        .section-head h2 {
+          font-size: 13.5px;
+        }
+        .section-head .hint {
+          font-size: 11px;
+        }
+        .drilldown {
+          padding: 18px 16px;
+        }
+        .modal-body {
+          padding: 14px;
+        }
+        .sheet-note {
+          font-size: 10px;
+          line-height: 1.5;
+        }
+      }
+
+      /* very small phones — 2 KPI columns finally stop fitting */
+      @media (max-width: 380px) {
+        .kpi-grid {
+          grid-template-columns: 1fr;
+        }
+      }
     </style>
   </head>
   <body>
