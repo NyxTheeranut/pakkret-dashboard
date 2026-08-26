@@ -1406,7 +1406,7 @@
           <div class="sub">NTB : Pak Kret, Bang Bua Thong, Sai Noi</div>
         </div>
       </div>
-      <div class="file-slots">
+      <div class="file-slots" id="fileSlots">
         <div class="file-slot">
           <span class="slot-label">RTR</span>
           <span class="slot-status" id="rtrStatus">ยังไม่ได้เลือกไฟล์</span>
@@ -1549,6 +1549,14 @@
 
       <!-- ============ RTR PANEL ============ -->
       <div id="panelRtr">
+        <div class="empty-panel" id="rtrCloud" style="display: none">
+          <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
+          <h2>ข้อมูล RTR</h2>
+          <p id="rtrCloudMsg">กดปุ่มด้านล่างเพื่อโหลดข้อมูลล่าสุดจาก Google Sheets</p>
+          <button class="file-btn" id="rtrCloudBtn" style="margin-top: 14px">
+            📥 โหลดข้อมูลจาก Google Sheets
+          </button>
+        </div>
         <div class="empty-panel" id="rtrEmpty">
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
           <h2>เชื่อมต่อไฟล์ RTR</h2>
@@ -1831,6 +1839,14 @@
 
       <!-- ============ 7-11 PANEL ============ -->
       <div id="panelSev" style="display: none">
+        <div class="empty-panel" id="sevCloud" style="display: none">
+          <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
+          <h2>ข้อมูล 7-11</h2>
+          <p id="sevCloudMsg">กดปุ่มด้านล่างเพื่อโหลดข้อมูลล่าสุดจาก Google Sheets</p>
+          <button class="file-btn" id="sevCloudBtn" style="margin-top: 14px">
+            📥 โหลดข้อมูลจาก Google Sheets
+          </button>
+        </div>
         <div class="empty-panel" id="sevEmpty">
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
           <h2>เชื่อมต่อไฟล์ยอดขาย 7-11</h2>
@@ -2789,7 +2805,7 @@
         });
 
         function rtrShow(which) {
-          ["rtrEmpty", "rtrLoading"].forEach(function (id) {
+          ["rtrEmpty", "rtrLoading", "rtrCloud"].forEach(function (id) {
             $(id).style.display = "none";
           });
           $("rtrDashboard").style.display = "none";
@@ -6786,7 +6802,7 @@
         });
 
         function sevShow(which) {
-          ["sevEmpty", "sevLoading"].forEach(function (id) {
+          ["sevEmpty", "sevLoading", "sevCloud"].forEach(function (id) {
             $(id).style.display = "none";
           });
           $("sevDashboard").style.display = "none";
@@ -9973,11 +9989,281 @@
             });
         });
 
+        // =====================================================================
+        // READ FROM GOOGLE SHEETS (viewer side — PHASE 5)
+        //
+        // Viewers never touch an Excel file. They open the link, sign in, and the page pulls
+        // the newest months straight out of the spreadsheet the publisher synced to.
+        //
+        // PUBLISHER MODE is opt-in via ?sync=1 — that URL shows the Excel pickers and the
+        // sync button. Everyone else gets the clean read-only view. Note this is a UX switch,
+        // NOT a security boundary: what actually stops a viewer writing is that the
+        // spreadsheet is shared with them as **Viewer**, so Google refuses the write.
+        // =====================================================================
+        var IS_PUBLISHER = new URLSearchParams(location.search).has("sync");
+
+        function sheetsReadTab(id, tab) {
+          return syncApi(
+            SYNC.SS + "/" + id + "/values/" + encodeURIComponent(tab) + "!A:A",
+          ).then(function (r) {
+            var joined = (r.values || [])
+              .map(function (row) {
+                return row[0] || "";
+              })
+              .join(""); // rejoin the 40k-char chunks
+            if (!joined) throw new Error("แท็บ " + tab + " ว่างเปล่า");
+            return JSON.parse(joined);
+          });
+        }
+
+        // Rebuilds state.rtr.months from rtr-YYYY-MM tabs.
+        function applyRtrFromCloud(monthObjs) {
+          monthObjs.forEach(function (m) {
+            // sevTxByCode is a Map at runtime and is NOT published (JSON turns a Map into {}),
+            // so give every restored month an empty one rather than letting callers crash.
+            m.sevTxByCode = new Map();
+            if (m.sevRowCount == null) m.sevRowCount = 0;
+          });
+          sortMonthsChronologically(monthObjs);
+          state.rtr.months = monthObjs;
+          state.rtr.currentMonthIdx = monthObjs.length - 1;
+          state.rtr.loaded = true;
+          state.rtr.currentCM = null;
+          state.rtr.currentDistrict = null;
+          state.rtr.currentMallType = null;
+          state.rtr.visibleCount = 20;
+          state.rtr.selectedDay = null;
+          state.rtr.allSheetCount = monthObjs.length;
+          state.rtr.mapCoverage = state.rtr.mapCoverage || {
+            totalCodes: 0,
+            mapRowsInCluster: 0,
+          };
+          state.rtr.targetDiag = state.rtr.targetDiag || [];
+          $("tabBtnRtr").classList.add("ready");
+        }
+
+        // Rebuilds state.sev.stores from sev-YYYY-MM tabs. Each tab holds only its own month,
+        // so the same store appears once per month and must be merged back into one object
+        // carrying every month — that is the shape the rest of the 7-11 code expects.
+        function applySevFromCloud(monthPayloads) {
+          var byCode = {};
+          var months = [];
+          monthPayloads.forEach(function (p) {
+            if (!p || !p.stores) return;
+            months.push(p.monthKey);
+            p.stores.forEach(function (s) {
+              var t = byCode[s.code];
+              if (!t) {
+                t = byCode[s.code] = {
+                  code: s.code,
+                  name: s.name,
+                  cm: s.cm,
+                  ae: s.ae,
+                  khet: s.khet,
+                  fyai: s.fyai,
+                  gm: s.gm,
+                  district: s.district,
+                  zone: "",
+                  fc: "",
+                  tambon: "",
+                  ga: 0,
+                  revAmt: 0,
+                  ap100: 0,
+                  ap49: 0,
+                  ap99: 0,
+                  ap199: 0,
+                  apOver199: 0,
+                  mass: 0,
+                  migrant: 0,
+                  tourist: 0,
+                  dtacGa: 0,
+                  trueGa: 0,
+                  byMonth: {},
+                  daily: {},
+                  simTypes: {},
+                };
+              }
+              Object.keys(s.byMonth || {}).forEach(function (mk) {
+                t.byMonth[mk] = s.byMonth[mk];
+              });
+              Object.keys(s.daily || {}).forEach(function (d) {
+                t.daily[d] = s.daily[d];
+              });
+            });
+          });
+          // grand totals across every month present, so "ทุกเดือนรวมกัน" still works
+          Object.keys(byCode).forEach(function (code) {
+            var t = byCode[code];
+            Object.keys(t.byMonth).forEach(function (mk) {
+              var b = t.byMonth[mk];
+              [
+                "ga",
+                "revAmt",
+                "ap100",
+                "ap49",
+                "ap99",
+                "ap199",
+                "apOver199",
+                "mass",
+                "migrant",
+                "tourist",
+                "dtacGa",
+                "trueGa",
+              ].forEach(function (k) {
+                t[k] += b[k] || 0;
+              });
+              Object.keys(b.simTypes || {}).forEach(function (st) {
+                t.simTypes[st] = (t.simTypes[st] || 0) + b.simTypes[st];
+              });
+            });
+          });
+          state.sev.stores = Object.keys(byCode).map(function (c) {
+            return byCode[c];
+          });
+          state.sev.monthsAvailable = months.sort();
+          state.sev.currentMonthKey =
+            months.length ? months[months.length - 1] : null;
+          state.sev.loaded = true;
+          state.sev.currentCM = null;
+          state.sev.currentKhet = null;
+          state.sev.currentFyai = null;
+          state.sev.currentGm = null;
+          state.sev.currentAe = null;
+          state.sev.selectedDay = null;
+          state.sev.visibleCount = 20;
+          state.sev.rosterLoaded = true; // CM already resolved by the publisher
+          $("tabBtnSev").classList.add("ready");
+        }
+
+        function cloudMsg(tab, text) {
+          var el = $(tab + "CloudMsg");
+          if (el) el.textContent = text;
+        }
+
+        // The whole viewer flow: token → (pick file once) → meta → newest 3 of each feed.
+        function loadFromCloud() {
+          if (!syncCfgReady()) {
+            cloudMsg("rtr", "ยังไม่ได้ตั้งค่า Google — กด ⚙️ ด้านบน");
+            cloudMsg("sev", "ยังไม่ได้ตั้งค่า Google — กด ⚙️ ด้านบน");
+            return Promise.resolve();
+          }
+          ["rtr", "sev"].forEach(function (t) {
+            cloudMsg(t, "กำลังเข้าสู่ระบบ Google…");
+          });
+          return syncGetToken()
+            .then(function () {
+              var id = syncCfg().sheetId;
+              if (id) return id;
+              // first visit on this device: choose the spreadsheet once, then it is remembered
+              ["rtr", "sev"].forEach(function (t) {
+                cloudMsg(t, "เลือกไฟล์ข้อมูล (ทำครั้งเดียว)…");
+              });
+              return syncOpenPicker().then(function (picked) {
+                localStorage.setItem("sync_sheetId", picked);
+                return picked;
+              });
+            })
+            .then(function (id) {
+              ["rtr", "sev"].forEach(function (t) {
+                cloudMsg(t, "กำลังโหลดข้อมูล…");
+              });
+              return sheetsReadTab(id, "meta").then(function (meta) {
+                var rtrTabs = (meta.rtr_months || []).slice(-3);
+                var sevTabs = (meta.sev_months || []).slice(-3);
+                var jobs = rtrTabs
+                  .map(function (t) {
+                    return sheetsReadTab(id, t);
+                  })
+                  .concat(
+                    sevTabs.map(function (t) {
+                      return sheetsReadTab(id, t);
+                    }),
+                  );
+                return Promise.all(jobs).then(function (all) {
+                  var rtrObjs = all.slice(0, rtrTabs.length);
+                  var sevObjs = all.slice(rtrTabs.length);
+                  if (rtrObjs.length) {
+                    applyRtrFromCloud(rtrObjs);
+                    renderRtrSheetNote();
+                    renderRtrDashboard();
+                    rtrShow("dashboard");
+                  } else {
+                    cloudMsg("rtr", "ยังไม่มีข้อมูล RTR ในไฟล์นี้");
+                  }
+                  if (sevObjs.length) {
+                    applySevFromCloud(sevObjs);
+                    renderSevSheetNote();
+                    renderSevDashboard();
+                    sevShow("dashboard");
+                  } else {
+                    cloudMsg("sev", "ยังไม่มีข้อมูล 7-11 ในไฟล์นี้");
+                  }
+                  var when = meta.updated_at
+                    ? new Date(meta.updated_at).toLocaleString("th-TH")
+                    : "-";
+                  ["rtrCacheBanner", "sevCacheBanner"].forEach(function (b) {
+                    var el = $(b);
+                    if (el)
+                      el.innerHTML =
+                        '<div class="cache-banner"><span>โหลดจาก Google Sheets · <b>ข้อมูล ณ ' +
+                        esc(when) +
+                        "</b></span></div>";
+                  });
+                });
+              });
+            })
+            .catch(function (err) {
+              console.error(err);
+              var m = String(err.message || err);
+              var friendly =
+                m.indexOf("403") !== -1
+                  ? "ยังไม่ได้รับสิทธิ์ดูข้อมูลนี้ — แจ้งผู้ดูแลให้แชร์ไฟล์ให้"
+                  : m.indexOf("404") !== -1
+                    ? "หาไฟล์ข้อมูลไม่พบ — อาจยังไม่เคยซิงค์ หรือเลือกไฟล์ผิด"
+                    : m;
+              ["rtr", "sev"].forEach(function (t) {
+                cloudMsg(t, friendly);
+              });
+            });
+        }
+
+        // --- mode switch ------------------------------------------------------
+        function applyViewerMode() {
+          if (IS_PUBLISHER) return; // full local workflow, unchanged
+          var slots = $("fileSlots");
+          if (slots) {
+            // hide the Excel pickers; keep the sync slot so ⚙️ stays reachable
+            Array.prototype.forEach.call(
+              slots.querySelectorAll(".file-slot"),
+              function (el, i) {
+                if (i < 2) el.style.display = "none";
+              },
+            );
+          }
+          var sb = $("syncBtn");
+          if (sb) sb.style.display = "none"; // viewers never publish
+        }
+
+        ["rtr", "sev"].forEach(function (t) {
+          var b = $(t + "CloudBtn");
+          if (b) b.addEventListener("click", loadFromCloud);
+        });
+
         switchTab("rtr");
-        restoreRtrFromCache();
-        restoreSevFromCache();
+        applyViewerMode();
         restoreFileHandles();
         renderSyncStatus();
+
+        // Viewers go straight to the cloud panel; publishers keep the local-file flow.
+        if (IS_PUBLISHER) {
+          restoreRtrFromCache();
+          restoreSevFromCache();
+        } else {
+          rtrShow("rtrCloud");
+          sevShow("sevCloud");
+          // a remembered spreadsheet means we can load without any clicking
+          if (syncCfgReady() && syncCfg().sheetId) loadFromCloud();
+        }
       })();
     </script>
   </body>
