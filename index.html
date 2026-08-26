@@ -10361,7 +10361,15 @@
         // NOT a security boundary: what actually stops a viewer writing is that the
         // spreadsheet is shared with them as **Viewer**, so Google refuses the write.
         // =====================================================================
-        var IS_PUBLISHER = new URLSearchParams(location.search).has("sync");
+        // PUBLISHER = running locally. Syncing is a local-only operation by design: the
+        // published copy on GitHub Pages can never show the sync controls, not even to you,
+        // because a URL flag is guessable and this is not.
+        //   http://localhost:8080/...          -> publisher (load Excel + sync)
+        //   http://localhost:8080/...?view=1   -> pretend to be a viewer, for testing
+        //   https://<user>.github.io/...       -> always a viewer, sync unreachable
+        var IS_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+        var IS_PUBLISHER =
+          IS_LOCAL && !new URLSearchParams(location.search).has("view");
 
         function sheetsReadTab(id, tab) {
           return syncApi(
