@@ -1585,7 +1585,7 @@
             multiple
           />
         </div>
-        <div class="file-slot">
+        <div class="file-slot" id="syncSlot" style="display: none">
           <span class="slot-label">SYNC</span>
           <span class="slot-status" id="syncStatus">ยังไม่ได้ตั้งค่า</span>
           <button
@@ -9861,6 +9861,7 @@
                 callback: function (resp) {
                   if (resp.error) return reject(new Error(resp.error));
                   SYNC.token = resp.access_token;
+                  if (IS_PUBLISHER) syncSetSignedIn(true);
                   resolve(resp.access_token);
                 },
               })
@@ -10163,7 +10164,12 @@
               });
             })
             .then(function (id) {
+              // Refuse early and clearly if this account only has read access
+              return syncRequireWriteAccess(id);
+            })
+            .then(function (id) {
               sheetId = id;
+              syncStep("ยืนยันสิทธิ์เขียนไฟล์แล้ว");
               // Read the previous run's fingerprints. A brand-new spreadsheet has no meta yet,
               // which is not an error — it just means everything is new.
               return sheetsReadTab(id, "meta")
@@ -10306,6 +10312,14 @@
         $("syncGo").addEventListener("click", syncRun);
         $("syncBtn").addEventListener("click", function () {
           if (!syncCfgReady()) return syncOpenModal();
+          if (!SYNC.signedIn) {
+            // signed out: this click exists purely to satisfy the popup-blocker rule that
+            // requestAccessToken() must originate from a user gesture
+            syncGetToken().catch(function (e) {
+              alert("เข้าสู่ระบบไม่สำเร็จ: " + String(e.message || e));
+            });
+            return;
+          }
           syncOpenModal();
           syncRun();
         });
@@ -10578,20 +10592,67 @@
         }
 
         // --- mode switch ------------------------------------------------------
+        // The publish controls are HIDDEN BY DEFAULT (see style on #syncSlot) and only ever
+        // revealed for the publisher URL. Note this is tidiness and defence-in-depth, NOT the
+        // security boundary: anyone can type ?sync=1. What actually prevents a colleague
+        // writing is that the spreadsheet is shared with them as Viewer, so Google refuses
+        // the write — enforced again in syncRequireWriteAccess() below.
         function applyViewerMode() {
-          if (IS_PUBLISHER) return; // full local workflow, unchanged
           var slots = $("fileSlots");
-          if (slots) {
-            // hide the Excel pickers; keep the sync slot so ⚙️ stays reachable
-            Array.prototype.forEach.call(
-              slots.querySelectorAll(".file-slot"),
-              function (el, i) {
-                if (i < 2) el.style.display = "none";
-              },
-            );
+          if (!IS_PUBLISHER) {
+            // viewers: no Excel pickers, no sync row at all
+            if (slots)
+              Array.prototype.forEach.call(
+                slots.querySelectorAll(".file-slot"),
+                function (el) {
+                  el.style.display = "none";
+                },
+              );
+            return;
           }
-          var sb = $("syncBtn");
-          if (sb) sb.style.display = "none"; // viewers never publish
+          // publisher: show the row, but keep sync unavailable until signed in
+          var slot = $("syncSlot");
+          if (slot) slot.style.display = "";
+          syncSetSignedIn(false);
+        }
+
+        // Reflects sign-in state on the publish controls.
+        //
+        // The top-bar button must stay CLICKABLE while signed out, because clicking it is what
+        // starts the Google sign-in — disabling it would deadlock the only way in. So it changes
+        // ROLE instead: "sign in" first, "sync" once authenticated. The button inside the modal,
+        // which performs the actual write, is the one that is genuinely disabled until then.
+        function syncSetSignedIn(ok) {
+          SYNC.signedIn = !!ok;
+          var b = $("syncBtn");
+          if (b) {
+            b.textContent = ok ? "☁️ ซิงค์ขึ้น Sheets" : "🔑 เข้าสู่ระบบเพื่อซิงค์";
+            b.title = ok ? "" : "ต้องเข้าสู่ระบบ Google ก่อนจึงจะซิงค์ได้";
+          }
+          var g = $("syncGo");
+          if (g) {
+            g.disabled = !ok;
+            g.style.opacity = ok ? "" : "0.45";
+            g.style.cursor = ok ? "" : "not-allowed";
+            g.title = ok ? "" : "ต้องเข้าสู่ระบบ Google ก่อน";
+          }
+        }
+
+        // Ask Google whether THIS signed-in account may actually edit the target spreadsheet.
+        // Someone shared as Viewer gets canEdit:false, so the sync is refused here with a clear
+        // message instead of failing later with a raw 403 mid-write.
+        function syncRequireWriteAccess(id) {
+          return syncApi(
+            "https://www.googleapis.com/drive/v3/files/" +
+              id +
+              "?fields=capabilities/canEdit,name",
+          ).then(function (f) {
+            if (!f.capabilities || !f.capabilities.canEdit)
+              throw new Error(
+                "บัญชีนี้มีสิทธิ์อ่านอย่างเดียว (Viewer) จึงซิงค์ไม่ได้ — ต้องเป็นเจ้าของหรือ Editor ของไฟล์",
+              );
+            return id;
+          });
         }
 
         ["rtr", "sev"].forEach(function (t) {
