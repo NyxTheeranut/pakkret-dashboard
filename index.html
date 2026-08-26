@@ -9751,7 +9751,22 @@
             out["sev-" + key] = { monthKey: mk, stores: stores };
           });
 
-          return out;
+          // Drop months that syncPrune would delete straight afterwards. Without this the
+          // 7-11 feed (8 months loaded) uploads all 8 and then deletes the oldest 2 — two
+          // wasted round trips on every single sync.
+          var trimmed = {};
+          ["rtr-", "sev-"].forEach(function (prefix) {
+            Object.keys(out)
+              .filter(function (t) {
+                return t.indexOf(prefix) === 0;
+              })
+              .sort() // "rtr-2026-04" … lexicographic == chronological for zero-padded YYYY-MM
+              .slice(-SYNC.KEEP_MONTHS) // newest N only
+              .forEach(function (t) {
+                trimmed[t] = out[t];
+              });
+          });
+          return trimmed;
         }
 
         function syncChunk(str) {
