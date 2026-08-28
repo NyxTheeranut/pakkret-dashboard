@@ -2873,6 +2873,18 @@
               },
               { passive: true },
             );
+            // The tooltip is position:fixed, so a tap-then-drag-to-scroll (the tap opens
+            // it, the drag never fires a dismiss event) leaves it floating over whatever
+            // content scrolls underneath. Close it the instant any scrolling happens.
+            // capture:true so this also catches scrolls inside nested scroll containers
+            // (e.g. the horizontally-scrolling tables), which don't bubble a scroll event.
+            window.addEventListener(
+              "scroll",
+              function () {
+                tooltipEl.classList.remove("show");
+              },
+              { passive: true, capture: true },
+            );
           }
           var bars = container.querySelectorAll("[data-tip]");
           Array.prototype.forEach.call(bars, function (bar) {
