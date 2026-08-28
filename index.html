@@ -2856,8 +2856,24 @@
         // Shared hover tooltip for bar-chart elements. Wire it to a container after setting innerHTML;
         // each hoverable bar should carry a data-tip attribute (plain text, already escaped by caller).
         var tooltipEl = null;
+        var tooltipDocDismissWired = false;
         function attachBarTooltips(container) {
           if (!tooltipEl) tooltipEl = $("chartTooltip");
+          if (!tooltipDocDismissWired) {
+            tooltipDocDismissWired = true;
+            // Touch devices fire mouseenter on tap but never mouseleave (there's no
+            // hover state to leave), so the tooltip would otherwise stay stuck open.
+            // Dismiss it on any tap that isn't on another tooltip-bearing bar.
+            document.addEventListener(
+              "touchstart",
+              function (e) {
+                if (!e.target.closest || !e.target.closest("[data-tip]")) {
+                  tooltipEl.classList.remove("show");
+                }
+              },
+              { passive: true },
+            );
+          }
           var bars = container.querySelectorAll("[data-tip]");
           Array.prototype.forEach.call(bars, function (bar) {
             bar.addEventListener("mouseenter", function () {
@@ -2871,6 +2887,17 @@
             bar.addEventListener("mouseleave", function () {
               tooltipEl.classList.remove("show");
             });
+            bar.addEventListener(
+              "touchstart",
+              function (e) {
+                var t = e.touches[0];
+                tooltipEl.innerHTML = bar.getAttribute("data-tip");
+                tooltipEl.style.left = t.clientX + "px";
+                tooltipEl.style.top = t.clientY - 10 + "px";
+                tooltipEl.classList.add("show");
+              },
+              { passive: true },
+            );
           });
         }
 
