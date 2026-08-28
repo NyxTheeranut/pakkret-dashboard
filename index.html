@@ -1701,6 +1701,14 @@
           <button class="file-btn" id="rtrCloudBtn" style="margin-top: 14px">
             📥 โหลดข้อมูลจาก Google Sheets
           </button>
+          <button
+            class="file-btn ghost-light"
+            id="rtrCloudReset"
+            style="margin-top: 8px"
+            title="ถ้าเลือกไฟล์ผิด กดปุ่มนี้เพื่อเลือกใหม่"
+          >
+            เลือกไฟล์ใหม่
+          </button>
         </div>
         <div class="empty-panel" id="rtrEmpty">
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
@@ -1990,6 +1998,14 @@
           <p id="sevCloudMsg">กดปุ่มด้านล่างเพื่อโหลดข้อมูลล่าสุดจาก Google Sheets</p>
           <button class="file-btn" id="sevCloudBtn" style="margin-top: 14px">
             📥 โหลดข้อมูลจาก Google Sheets
+          </button>
+          <button
+            class="file-btn ghost-light"
+            id="sevCloudReset"
+            style="margin-top: 8px"
+            title="ถ้าเลือกไฟล์ผิด กดปุ่มนี้เพื่อเลือกใหม่"
+          >
+            เลือกไฟล์ใหม่
           </button>
         </div>
         <div class="empty-panel" id="sevEmpty">
@@ -10521,6 +10537,7 @@
           ["rtr", "sev"].forEach(function (t) {
             cloudMsg(t, "กำลังเข้าสู่ระบบ Google…");
           });
+          var freshlyPicked = null;
           return syncGetToken()
             .then(function () {
               var id = syncCfg().sheetId;
@@ -10530,7 +10547,10 @@
                 cloudMsg(t, "เลือกไฟล์ข้อมูล (ทำครั้งเดียว)…");
               });
               return syncOpenPicker().then(function (picked) {
-                localStorage.setItem("sync_sheetId", picked);
+                // NOT saved yet — a wrong pick used to be persisted immediately, and since
+                // viewers have no ⚙️ to clear it, they were permanently stuck on the wrong
+                // file with the Picker never reopening. Only remember it once it reads.
+                freshlyPicked = picked;
                 return picked;
               });
             })
@@ -10539,6 +10559,7 @@
                 cloudMsg(t, "กำลังโหลดข้อมูล…");
               });
               return sheetsReadTab(id, "meta").then(function (meta) {
+                if (freshlyPicked) localStorage.setItem("sync_sheetId", freshlyPicked);
                 var rtrTabs = (meta.rtr_months || []).slice(-3);
                 var sevTabs = (meta.sev_months || []).slice(-3);
                 var jobs = rtrTabs
@@ -10587,12 +10608,21 @@
             .catch(function (err) {
               console.error(err);
               var m = String(err.message || err);
-              var friendly =
-                m.indexOf("403") !== -1
+              // A spreadsheet that is not ours has no "meta" tab, so the range fails to parse
+              // and Sheets answers 400 — the single most likely mistake a viewer can make.
+              var wrongFile =
+                m.indexOf("400") !== -1 ||
+                m.indexOf("Unable to parse range") !== -1 ||
+                m.indexOf("ว่างเปล่า") !== -1;
+              var friendly = wrongFile
+                ? "ไฟล์ที่เลือกไม่ใช่ไฟล์ข้อมูลของแดชบอร์ดนี้ — กด \"เลือกไฟล์ใหม่\" แล้วเลือกไฟล์ที่ผู้ดูแลแชร์ให้"
+                : m.indexOf("403") !== -1
                   ? "ยังไม่ได้รับสิทธิ์ดูข้อมูลนี้ — แจ้งผู้ดูแลให้แชร์ไฟล์ให้"
                   : m.indexOf("404") !== -1
                     ? "หาไฟล์ข้อมูลไม่พบ — อาจยังไม่เคยซิงค์ หรือเลือกไฟล์ผิด"
                     : m;
+              // a bad remembered id must not lock them out of ever choosing again
+              if (wrongFile) localStorage.removeItem("sync_sheetId");
               ["rtr", "sev"].forEach(function (t) {
                 cloudMsg(t, friendly);
               });
@@ -10666,6 +10696,17 @@
         ["rtr", "sev"].forEach(function (t) {
           var b = $(t + "CloudBtn");
           if (b) b.addEventListener("click", loadFromCloud);
+          // Escape hatch: viewers have no ⚙️, so without this a wrong file choice would be
+          // unrecoverable — the id is remembered and the Picker never reopens.
+          var r = $(t + "CloudReset");
+          if (r)
+            r.addEventListener("click", function () {
+              localStorage.removeItem("sync_sheetId");
+              ["rtr", "sev"].forEach(function (x) {
+                cloudMsg(x, "ล้างไฟล์ที่จำไว้แล้ว — กำลังให้เลือกใหม่…");
+              });
+              loadFromCloud();
+            });
         });
 
         switchTab("rtr");
