@@ -4069,19 +4069,34 @@
           // 4. coverage gaps that quietly shrink filtered views
           var noCm = 0,
             noCmGA = 0,
+            noCmStores = [],
             noMall = 0,
             noMallGA = 0;
           m.stores.forEach(function (s) {
             if (!s.cm || s.cm === UNMAPPED_CM) {
               noCm++;
               noCmGA += s.ga;
+              noCmStores.push(s);
             }
             if (!s.mallType) {
               noMall++;
               noMallGA += s.ga;
             }
           });
-          if (noCm)
+          if (noCm) {
+            // Named so this is checkable against the target-mapping sheet directly, instead of
+            // just a count that says something's missing without saying what — a store lands
+            // here when its PARTNER_CODE (Dtac or True) doesn't match any Code Dtac/True S2L2
+            // Code cell on a "RTR Target GA..." mapping-sheet row tagged with this cluster.
+            var noCmListTxt = noCmStores
+              .slice(0, 8)
+              .map(function (s) {
+                return esc(s.name) + " (" + esc(s.code) + ")";
+              })
+              .join(", ") +
+              (noCmStores.length > 8
+                ? " และอีก " + (noCmStores.length - 8) + " ร้าน"
+                : "");
             items.push({
               level: "warn",
               text:
@@ -4089,8 +4104,11 @@
                 fmt(noCm) +
                 "</b> ร้าน (GA " +
                 fmt(noCmGA) +
-                ") ไม่มี CM กำกับ — จะไม่ปรากฏเมื่อกรองราย CM",
+                ") ไม่มี CM กำกับ — จะไม่ปรากฏเมื่อกรองราย CM<br><span style=\"font-size:11px;\">" +
+                noCmListTxt +
+                " — เช็กว่ารหัสร้านนี้อยู่ในชีต mapping (RTR Target GA...) แถวที่ Cluster ตรงกับ Pak Kret หรือไม่</span>",
             });
+          }
           if (noMall)
             items.push({
               level: "warn",
