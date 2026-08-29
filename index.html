@@ -3817,6 +3817,7 @@
               cr.targetedGA = 0;
               cr.noTargetGA = 0;
               cr.noTargetCount = 0;
+              cr.targetOverridden = false;
             });
             m.stores.forEach(function (s) {
               var cr = m.cmRollup[s.cm];
@@ -3831,21 +3832,25 @@
               }
             });
             // Override with a committed target when the caller has one for this month (e.g. the
-            // KPI Set Up sheet). Deliberately narrow: only cr.target changes here, so %Achieve
-            // reflects the committed figure while cr.targetedGA/cr.m1 keep coming from the live
-            // per-store rollup above.
+            // KPI Set Up sheet). That committed figure covers the CM's WHOLE territory, not just
+            // the stores that happen to carry an individual target on the per-store mapping sheet
+            // -- pairing it with targetedGA (a handful of stores' GA, sometimes a small fraction
+            // of the CM's real total) produced a nonsense %Achieve, e.g. a CM visibly around
+            // target reading 14%. cr.targetOverridden marks this so achievePct and rtrForecast
+            // below switch to the CM's full GA instead.
             var overrideMap = moKey ? resolveOverrideMap(moKey) : null;
             if (overrideMap) {
               Object.keys(m.cmRollup).forEach(function (cmName) {
                 if (overrideMap.has(cmName)) {
                   m.cmRollup[cmName].target = overrideMap.get(cmName);
+                  m.cmRollup[cmName].targetOverridden = true;
                 }
               });
             }
             Object.keys(m.cmRollup).forEach(function (cmName) {
               var cr = m.cmRollup[cmName];
-              cr.achievePct =
-                cr.target > 0 ? cr.targetedGA / cr.target : null;
+              var achieveActual = cr.targetOverridden ? cr.ga : cr.targetedGA;
+              cr.achievePct = cr.target > 0 ? achieveActual / cr.target : null;
             });
             var targetedStores = m.stores.filter(function (s) {
               return s.hasTarget;
@@ -4720,13 +4725,16 @@
         // out the run rate still needed to hit target. This is the number a sales manager actually
         // assigns work from ("we need 62/day for the last 13 days"), which a bare %Achieve can't give.
         // Uses targetedGA/target (not total GA) so it stays consistent with how %Achieve is computed --
-        // stores with no individual target are excluded from both sides.
+        // stores with no individual target are excluded from both sides. EXCEPT when the target is a
+        // CM-wide committed figure (totals.targetOverridden, e.g. from KPI Set Up) rather than a sum
+        // of individual store targets -- there targetedGA could be a small fraction of the CM's real
+        // GA (most stores never got an individual target), so the full GA is the fair comparison.
         function rtrForecast(totals, pacing) {
           if (!pacing || !(totals.target > 0) || !(pacing.expectedPct > 0))
             return null;
           // coalesced: an IndexedDB cache written before targetedGA existed on the rollup would make
           // every number below NaN otherwise (same failure mode as the sev-side NaN bug)
-          var actual = totals.targetedGA || 0;
+          var actual = (totals.targetOverridden ? totals.ga : totals.targetedGA) || 0;
           var landing = actual / pacing.expectedPct;
           var remaining = Math.max(0, totals.target - actual);
           return {
@@ -10285,7 +10293,16 @@
               simRows.push([s.code, st, s.simTypes[st]]);
             });
           });
+          // Only CMs with a genuine committed-target override (e.g. from KPI Set Up) -- NOT
+          // every CM's resolved target. A non-overridden CM's target is the sum of just its
+          // individually-targeted stores' targets, deliberately excluding untargeted ones (see
+          // finalizeRtrMonths); writing that value here and always treating it as an override on
+          // reload would flip achievePct/rtrForecast to full-GA for CMs that were never meant to
+          // include their untargeted stores, silently changing their numbers on every cloud reload.
           var cmRows = Object.keys(m.cmRollup)
+            .filter(function (cm) {
+              return m.cmRollup[cm].targetOverridden;
+            })
             .sort()
             .map(function (cm) {
               return [cm, m.cmRollup[cm].target];
