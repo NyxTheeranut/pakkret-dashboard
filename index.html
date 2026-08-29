@@ -3365,139 +3365,12 @@
 
                 sortMonthsChronologically(months); // ascending oldest -> newest
 
-                // attach target/m1/achieve data (by month abbreviation) and compute self-consistent %MOM
-                // against the immediately preceding loaded month's own GA, per store
-                months.forEach(function (m, mi) {
-                  var abbr = parseSheetDate(m.sheetName);
-                  var tgtMap = abbr
-                    ? targetByMonth[MONTH_LABEL[abbr.monthIndex].toLowerCase()]
+                // attach target/m1/achieve data and compute self-consistent %MOM per store —
+                // see finalizeRtrMonths (shared with the cloud-sync reload path)
+                finalizeRtrMonths(months, targetByMonth, function (moKey) {
+                  return kpiSetupTargets && kpiSetupTargets.month === moKey
+                    ? kpiSetupTargets.targets
                     : null;
-                  var prevMonth = mi > 0 ? months[mi - 1] : null;
-                  // LIKE-FOR-LIKE MOM. The current month is usually still running (data through
-                  // day 22 of 31, say) while the previous month is complete, so comparing the two
-                  // totals directly understates every store: one performing at exactly last
-                  // month's daily rate would read -29% purely because 22/31 of the month has
-                  // elapsed, and would then be misfiled as "declining" by the quadrant and the
-                  // insight cards. Measured on real data this overstated the cluster's decline by
-                  // 15 points (-62.7% reported vs -47.7% actual). So the previous month is
-                  // truncated to the same day-of-month the current month's data reaches.
-                  // When the current month IS complete the cutoff is its last day, so this
-                  // degenerates to the plain full-month comparison on its own.
-                  m.momCutoffDay = monthMaxDay(m);
-                  var prevGAByCode = {};
-                  if (prevMonth)
-                    prevMonth.stores.forEach(function (s) {
-                      prevGAByCode[s.code] = gaUpToDay(s.daily, m.momCutoffDay);
-                    });
-                  m.stores.forEach(function (s) {
-                    var t = tgtMap ? tgtMap.get(s.code) : null;
-                    s.target = t ? t.target : 0;
-                    s.m1 = t ? t.m1 : 0;
-                    // target=0 mostly means "no individual target assigned" (seen on SIM-wholesale accounts,
-                    // not small retail) rather than "target of zero" — treat as untargeted, not 0% achieve
-                    s.hasTarget = s.target > 0;
-                    s.achievePct = s.hasTarget ? s.ga / s.target : null;
-                    var prevGA = prevGAByCode.hasOwnProperty(s.code)
-                      ? prevGAByCode[s.code]
-                      : null;
-                    s.lmtdGa = prevGA; // last month's GA up to the same cutoff day, for the table's GA (LMTD) column
-                    s.momPct =
-                      prevGA != null && prevGA > 0
-                        ? (s.ga - prevGA) / prevGA
-                        : null;
-                  });
-                  // roll target/m1/achieve up to CM level — %Achieve only counts stores that actually have
-                  // an individual target, so a handful of untargeted wholesale accounts can't distort it
-                  Object.keys(m.cmRollup).forEach(function (cmName) {
-                    var cr = m.cmRollup[cmName];
-                    cr.target = 0;
-                    cr.m1 = 0;
-                    cr.targetedGA = 0;
-                    cr.noTargetGA = 0;
-                    cr.noTargetCount = 0;
-                  });
-                  m.stores.forEach(function (s) {
-                    var cr = m.cmRollup[s.cm];
-                    if (!cr) return;
-                    cr.m1 += s.m1;
-                    if (s.hasTarget) {
-                      cr.target += s.target;
-                      cr.targetedGA += s.ga;
-                    } else {
-                      cr.noTargetGA += s.ga;
-                      cr.noTargetCount++;
-                    }
-                  });
-                  // Override with the KPI Set Up committed target when this sheet's month matches
-                  // the month currently being processed (see parseKpiSetUpTargets). Deliberately
-                  // narrow: only cr.target changes here, so %Achieve reflects the committed figure
-                  // while cr.targetedGA/cr.m1 keep coming from the live per-store rollup above.
-                  if (
-                    kpiSetupTargets &&
-                    kpiSetupTargets.month &&
-                    abbr &&
-                    MONTH_ABBR[kpiSetupTargets.month] === abbr.monthIndex
-                  ) {
-                    Object.keys(m.cmRollup).forEach(function (cmName) {
-                      if (kpiSetupTargets.targets.has(cmName)) {
-                        m.cmRollup[cmName].target =
-                          kpiSetupTargets.targets.get(cmName);
-                      }
-                    });
-                  }
-                  Object.keys(m.cmRollup).forEach(function (cmName) {
-                    var cr = m.cmRollup[cmName];
-                    cr.achievePct =
-                      cr.target > 0 ? cr.targetedGA / cr.target : null;
-                  });
-                  var targetedStores = m.stores.filter(function (s) {
-                    return s.hasTarget;
-                  });
-                  m.totals.target = targetedStores.reduce(function (a, s) {
-                    return a + s.target;
-                  }, 0);
-                  m.totals.targetedGA = targetedStores.reduce(function (a, s) {
-                    return a + s.ga;
-                  }, 0);
-                  m.totals.m1 = m.stores.reduce(function (a, s) {
-                    return a + s.m1;
-                  }, 0);
-                  m.totals.achievePct =
-                    m.totals.target > 0
-                      ? m.totals.targetedGA / m.totals.target
-                      : null;
-                  m.totals.noTargetGA = m.totals.ga - m.totals.targetedGA;
-                  m.totals.noTargetCount =
-                    m.stores.length - targetedStores.length;
-                  m.hasPrevMonth = !!prevMonth;
-
-                  // cluster + CM level MOM, computed from summed GA (not an average of per-store %), against
-                  // the immediately preceding loaded month
-                  if (prevMonth) {
-                    // same day-of-month cutoff as the per-store MOM above
-                    var prevClusterGA = gaUpToDay(
-                      prevMonth.daily,
-                      m.momCutoffDay,
-                    );
-                    m.totals.momPct =
-                      prevClusterGA > 0
-                        ? (m.totals.ga - prevClusterGA) / prevClusterGA
-                        : null;
-                    Object.keys(m.cmRollup).forEach(function (cmName) {
-                      var cr = m.cmRollup[cmName];
-                      var prevCr = prevMonth.cmRollup[cmName];
-                      var prevCmGA = prevCr
-                        ? gaUpToDay(prevCr.daily, m.momCutoffDay)
-                        : 0;
-                      cr.momPct =
-                        prevCmGA > 0 ? (cr.ga - prevCmGA) / prevCmGA : null;
-                    });
-                  } else {
-                    m.totals.momPct = null;
-                    Object.keys(m.cmRollup).forEach(function (cmName) {
-                      m.cmRollup[cmName].momPct = null;
-                    });
-                  }
                 });
 
                 state.rtr.loaded = true;
@@ -3796,6 +3669,229 @@
             sevTxByCode: sevTxByCode,
             sevRowCount: sevRowCount,
           };
+        }
+
+        // Rebuilds the {totals, daily, cmRollup} skeleton finalizeRtrMonths expects as its
+        // starting point, given an array of ALREADY-COMPLETE store objects (code/name/cm/
+        // district/mallType/ga/ap1d/ap1dAmt/ap30d/revAmt/mass/migrant/tourist/daily{} — the
+        // same per-store shape aggregateRtrSheet produces). Pure summation, no Excel/row
+        // parsing, so it's safe to reuse for the cloud-sync path where stores are read back
+        // from a plain spreadsheet table instead of built row-by-row from a workbook.
+        function buildRtrAggregatesFromStores(stores) {
+          var totals = {
+            ga: 0,
+            ap1d: 0,
+            ap1dAmt: 0,
+            ap30d: 0,
+            revAmt: 0,
+            mass: 0,
+            migrant: 0,
+            tourist: 0,
+          };
+          var daily = {};
+          var cmRollup = {};
+          stores.forEach(function (s) {
+            totals.ga += s.ga;
+            totals.ap1d += s.ap1d;
+            totals.ap1dAmt += s.ap1dAmt;
+            totals.ap30d += s.ap30d;
+            totals.revAmt += s.revAmt;
+            totals.mass += s.mass;
+            totals.migrant += s.migrant;
+            totals.tourist += s.tourist;
+
+            var cr = cmRollup[s.cm];
+            if (!cr) {
+              cr = cmRollup[s.cm] = {
+                ga: 0,
+                ap1d: 0,
+                ap1dAmt: 0,
+                ap30d: 0,
+                revAmt: 0,
+                mass: 0,
+                migrant: 0,
+                tourist: 0,
+                storeCount: 0,
+                daily: {},
+              };
+            }
+            cr.ga += s.ga;
+            cr.ap1d += s.ap1d;
+            cr.ap1dAmt += s.ap1dAmt;
+            cr.ap30d += s.ap30d;
+            cr.revAmt += s.revAmt;
+            cr.mass += s.mass;
+            cr.migrant += s.migrant;
+            cr.tourist += s.tourist;
+            cr.storeCount++;
+
+            Object.keys(s.daily || {}).forEach(function (day) {
+              var sd = s.daily[day];
+              daily[day] = daily[day] || {
+                ga: 0,
+                revAmt: 0,
+                mass: 0,
+                migrant: 0,
+                tourist: 0,
+              };
+              daily[day].ga += sd.ga;
+              daily[day].revAmt += sd.revAmt;
+              daily[day].mass += sd.mass || 0;
+              daily[day].migrant += sd.migrant || 0;
+              daily[day].tourist += sd.tourist || 0;
+
+              cr.daily[day] = cr.daily[day] || {
+                ga: 0,
+                revAmt: 0,
+                mass: 0,
+                migrant: 0,
+                tourist: 0,
+              };
+              cr.daily[day].ga += sd.ga;
+              cr.daily[day].revAmt += sd.revAmt;
+              cr.daily[day].mass += sd.mass || 0;
+              cr.daily[day].migrant += sd.migrant || 0;
+              cr.daily[day].tourist += sd.tourist || 0;
+            });
+          });
+          return { totals: totals, daily: daily, cmRollup: cmRollup };
+        }
+
+        // Attaches target/m1/achieve data and computes self-consistent %MOM against the
+        // immediately preceding loaded month's own GA, per store -- the one place this math
+        // happens, shared by the local-upload path (targetByMonth from the "RTR Target GA..."
+        // mapping sheet) and the cloud-sync reload path (targetByMonth synthesized directly
+        // from each month's own readable "stores" tab -- see applyRtrFromCloud). Mutates each
+        // month object in place; expects m.stores/m.daily/m.cmRollup/m.totals already holding
+        // their pre-target base sums (aggregateRtrSheet's or buildRtrAggregatesFromStores' shape).
+        //
+        // resolveOverrideMap(monthAbbrLower) optionally returns a Map(cmName -> targetGA) that
+        // REPLACES the summed cr.target for that month -- e.g. a KPI Set Up committed figure.
+        // Return null/undefined for "no override this month."
+        function finalizeRtrMonths(months, targetByMonth, resolveOverrideMap) {
+          months.forEach(function (m, mi) {
+            var abbr = parseSheetDate(m.sheetName);
+            var moKey = abbr ? MONTH_LABEL[abbr.monthIndex].toLowerCase() : null;
+            var tgtMap = moKey ? targetByMonth[moKey] : null;
+            var prevMonth = mi > 0 ? months[mi - 1] : null;
+            // LIKE-FOR-LIKE MOM. The current month is usually still running (data through
+            // day 22 of 31, say) while the previous month is complete, so comparing the two
+            // totals directly understates every store: one performing at exactly last
+            // month's daily rate would read -29% purely because 22/31 of the month has
+            // elapsed, and would then be misfiled as "declining" by the quadrant and the
+            // insight cards. Measured on real data this overstated the cluster's decline by
+            // 15 points (-62.7% reported vs -47.7% actual). So the previous month is
+            // truncated to the same day-of-month the current month's data reaches.
+            // When the current month IS complete the cutoff is its last day, so this
+            // degenerates to the plain full-month comparison on its own.
+            m.momCutoffDay = monthMaxDay(m);
+            var prevGAByCode = {};
+            if (prevMonth)
+              prevMonth.stores.forEach(function (s) {
+                prevGAByCode[s.code] = gaUpToDay(s.daily, m.momCutoffDay);
+              });
+            m.stores.forEach(function (s) {
+              var t = tgtMap ? tgtMap.get(s.code) : null;
+              s.target = t ? t.target : 0;
+              s.m1 = t ? t.m1 : 0;
+              // target=0 mostly means "no individual target assigned" (seen on SIM-wholesale accounts,
+              // not small retail) rather than "target of zero" — treat as untargeted, not 0% achieve
+              s.hasTarget = s.target > 0;
+              s.achievePct = s.hasTarget ? s.ga / s.target : null;
+              var prevGA = prevGAByCode.hasOwnProperty(s.code)
+                ? prevGAByCode[s.code]
+                : null;
+              s.lmtdGa = prevGA; // last month's GA up to the same cutoff day, for the table's GA (LMTD) column
+              s.momPct =
+                prevGA != null && prevGA > 0
+                  ? (s.ga - prevGA) / prevGA
+                  : null;
+            });
+            // roll target/m1/achieve up to CM level — %Achieve only counts stores that actually have
+            // an individual target, so a handful of untargeted wholesale accounts can't distort it
+            Object.keys(m.cmRollup).forEach(function (cmName) {
+              var cr = m.cmRollup[cmName];
+              cr.target = 0;
+              cr.m1 = 0;
+              cr.targetedGA = 0;
+              cr.noTargetGA = 0;
+              cr.noTargetCount = 0;
+            });
+            m.stores.forEach(function (s) {
+              var cr = m.cmRollup[s.cm];
+              if (!cr) return;
+              cr.m1 += s.m1;
+              if (s.hasTarget) {
+                cr.target += s.target;
+                cr.targetedGA += s.ga;
+              } else {
+                cr.noTargetGA += s.ga;
+                cr.noTargetCount++;
+              }
+            });
+            // Override with a committed target when the caller has one for this month (e.g. the
+            // KPI Set Up sheet). Deliberately narrow: only cr.target changes here, so %Achieve
+            // reflects the committed figure while cr.targetedGA/cr.m1 keep coming from the live
+            // per-store rollup above.
+            var overrideMap = moKey ? resolveOverrideMap(moKey) : null;
+            if (overrideMap) {
+              Object.keys(m.cmRollup).forEach(function (cmName) {
+                if (overrideMap.has(cmName)) {
+                  m.cmRollup[cmName].target = overrideMap.get(cmName);
+                }
+              });
+            }
+            Object.keys(m.cmRollup).forEach(function (cmName) {
+              var cr = m.cmRollup[cmName];
+              cr.achievePct =
+                cr.target > 0 ? cr.targetedGA / cr.target : null;
+            });
+            var targetedStores = m.stores.filter(function (s) {
+              return s.hasTarget;
+            });
+            m.totals.target = targetedStores.reduce(function (a, s) {
+              return a + s.target;
+            }, 0);
+            m.totals.targetedGA = targetedStores.reduce(function (a, s) {
+              return a + s.ga;
+            }, 0);
+            m.totals.m1 = m.stores.reduce(function (a, s) {
+              return a + s.m1;
+            }, 0);
+            m.totals.achievePct =
+              m.totals.target > 0
+                ? m.totals.targetedGA / m.totals.target
+                : null;
+            m.totals.noTargetGA = m.totals.ga - m.totals.targetedGA;
+            m.totals.noTargetCount =
+              m.stores.length - targetedStores.length;
+            m.hasPrevMonth = !!prevMonth;
+
+            // cluster + CM level MOM, computed from summed GA (not an average of per-store %), against
+            // the immediately preceding loaded month
+            if (prevMonth) {
+              // same day-of-month cutoff as the per-store MOM above
+              var prevClusterGA = gaUpToDay(prevMonth.daily, m.momCutoffDay);
+              m.totals.momPct =
+                prevClusterGA > 0
+                  ? (m.totals.ga - prevClusterGA) / prevClusterGA
+                  : null;
+              Object.keys(m.cmRollup).forEach(function (cmName) {
+                var cr = m.cmRollup[cmName];
+                var prevCr = prevMonth.cmRollup[cmName];
+                var prevCmGA = prevCr
+                  ? gaUpToDay(prevCr.daily, m.momCutoffDay)
+                  : 0;
+                cr.momPct =
+                  prevCmGA > 0 ? (cr.ga - prevCmGA) / prevCmGA : null;
+              });
+            } else {
+              m.totals.momPct = null;
+              Object.keys(m.cmRollup).forEach(function (cmName) {
+                m.cmRollup[cmName].momPct = null;
+              });
+            }
+          });
         }
 
         // =====================================================================
@@ -9966,9 +10062,14 @@
         // =====================================================================
         // GOOGLE SHEETS SYNC (publisher side — PHASE 4 of HOSTED_DASHBOARD_PLAN.md)
         //
-        // Publishes the ALREADY-PARSED state to one spreadsheet, one tab per month, so the
-        // hosted copy never has to touch a 108 MB Excel file. Deliberately reuses the parsed
-        // objects rather than re-deriving anything: one parser, forever.
+        // Publishes state to one spreadsheet, several human-readable tabs per month, so the
+        // hosted copy never has to touch a 108 MB Excel file. Never re-parses Excel: RTR/7-11
+        // sheet ingestion (aggregateRtrSheet, aggregateSevRows, ...) stays local-only. What DOES
+        // get shared is the small, once-fixed math layer -- finalizeRtrMonths/
+        // buildRtrAggregatesFromStores turn raw per-store facts into achievePct/momPct/lmtdGa/
+        // cmRollup/totals identically whether the facts came from this run's Excel upload or
+        // from reading a previous sync's tables back. One calculation, forever; the readable
+        // tabs hold inputs, not a second copy of the outputs.
         //
         // Scope is `drive.file` (non-sensitive → no "unverified app" warning, no user cap).
         // That scope only works if the Picker is given the Cloud PROJECT NUMBER via
@@ -10101,6 +10202,217 @@
         // One entry per month key ("2026-08"). RTR months and 7-11 months are published as
         // SEPARATE tabs (rtr-YYYY-MM / sev-YYYY-MM) because the two feeds have different
         // months available and different shapes — pairing them would force empty halves.
+        // A finalized RTR month (state.rtr.months[i], already run through finalizeRtrMonths)
+        // reduced to plain human-readable tables. Deliberately serializes RAW per-store facts
+        // (not the derived achievePct/momPct/lmtdGa/cmRollup) plus each CM's resolved target —
+        // the cloud reload path recomputes the derived fields with the exact same
+        // buildRtrAggregatesFromStores + finalizeRtrMonths pipeline used here, so the sheet
+        // can't drift from what the numbers mean, and there's nothing duplicated to keep in sync.
+        function buildRtrMonthTables(m) {
+          var storesRows = m.stores.map(function (s) {
+            return [
+              s.code,
+              s.name,
+              s.cm,
+              s.district,
+              s.mallType,
+              s.ga,
+              s.ap1d,
+              s.ap1dAmt,
+              s.ap30d,
+              s.revAmt,
+              s.mass,
+              s.migrant,
+              s.tourist,
+              s.target,
+              s.m1,
+            ].concat(s.tiers);
+          });
+          var dailyRows = [];
+          m.stores.forEach(function (s) {
+            Object.keys(s.daily)
+              .sort()
+              .forEach(function (day) {
+                var d = s.daily[day];
+                dailyRows.push([
+                  s.code,
+                  day,
+                  d.ga,
+                  d.revAmt,
+                  d.mass,
+                  d.migrant,
+                  d.tourist,
+                ]);
+              });
+          });
+          var simRows = [];
+          m.stores.forEach(function (s) {
+            Object.keys(s.simTypes || {}).forEach(function (st) {
+              simRows.push([s.code, st, s.simTypes[st]]);
+            });
+          });
+          var cmRows = Object.keys(m.cmRollup)
+            .sort()
+            .map(function (cm) {
+              return [cm, m.cmRollup[cm].target];
+            });
+          return {
+            meta: {
+              headers: ["field", "value"],
+              rows: [
+                ["sheetName", m.sheetName],
+                ["label", m.label],
+                ["rowCount", m.rowCount],
+              ],
+            },
+            stores: {
+              headers: [
+                "code",
+                "name",
+                "cm",
+                "district",
+                "mallType",
+                "ga",
+                "ap1d",
+                "ap1dAmt",
+                "ap30d",
+                "revAmt",
+                "mass",
+                "migrant",
+                "tourist",
+                "target",
+                "m1",
+              ].concat(
+                TIER_LABELS.map(function (l) {
+                  return "tier_" + l;
+                }),
+              ),
+              rows: storesRows,
+            },
+            daily: {
+              headers: ["code", "date", "ga", "revAmt", "mass", "migrant", "tourist"],
+              rows: dailyRows,
+            },
+            simtypes: {
+              headers: ["code", "simType", "ga"],
+              rows: simRows,
+            },
+            cmtargets: {
+              headers: ["cm", "target"],
+              rows: cmRows,
+            },
+          };
+        }
+
+        // One 7-11 month's worth of tables, sliced from state.sev.stores the same way
+        // syncBuildPayloads always has (each store's byMonth/daily trimmed to just this month).
+        function buildSevMonthTables(monthKey, allStores) {
+          var storesRows = [];
+          var dailyRows = [];
+          var simRows = [];
+          allStores.forEach(function (s) {
+            var bm = s.byMonth[monthKey];
+            if (!bm) return;
+            storesRows.push([
+              s.code,
+              s.name,
+              s.cm,
+              s.ae,
+              s.khet,
+              s.fyai,
+              s.gm,
+              s.district,
+              bm.ga,
+              bm.revAmt,
+              bm.ap100,
+              bm.ap49,
+              bm.ap99,
+              bm.ap199,
+              bm.apOver199,
+              bm.mass,
+              bm.migrant,
+              bm.tourist,
+              bm.dtacGa,
+              bm.trueGa,
+            ]);
+            Object.keys(bm.simTypes || {}).forEach(function (st) {
+              simRows.push([s.code, st, bm.simTypes[st]]);
+            });
+            Object.keys(s.daily || {})
+              .filter(function (dk) {
+                return dk.slice(0, 6) === monthKey;
+              })
+              .sort()
+              .forEach(function (dk) {
+                var d = s.daily[dk];
+                dailyRows.push([
+                  s.code,
+                  dk,
+                  d.ga,
+                  d.revAmt,
+                  d.dtacGa,
+                  d.trueGa,
+                  d.ap49,
+                  d.ap99,
+                  d.ap199,
+                  d.apOver199,
+                  d.mass,
+                  d.migrant,
+                  d.tourist,
+                ]);
+              });
+          });
+          return {
+            stores: {
+              headers: [
+                "code",
+                "name",
+                "cm",
+                "ae",
+                "khet",
+                "fyai",
+                "gm",
+                "district",
+                "ga",
+                "revAmt",
+                "ap100",
+                "ap49",
+                "ap99",
+                "ap199",
+                "apOver199",
+                "mass",
+                "migrant",
+                "tourist",
+                "dtacGa",
+                "trueGa",
+              ],
+              rows: storesRows,
+            },
+            daily: {
+              headers: [
+                "code",
+                "date",
+                "ga",
+                "revAmt",
+                "dtacGa",
+                "trueGa",
+                "ap49",
+                "ap99",
+                "ap199",
+                "apOver199",
+                "mass",
+                "migrant",
+                "tourist",
+              ],
+              rows: dailyRows,
+            },
+            simtypes: {
+              headers: ["code", "simType", "ga"],
+              rows: simRows,
+            },
+          };
+        }
+
         function syncBuildPayloads() {
           var out = {};
 
@@ -10111,40 +10423,12 @@
               (d.year || new Date().getFullYear()) +
               "-" +
               String(d.monthIndex + 1).padStart(2, "0");
-            var copy = {};
-            for (var k in m) if (k !== "sevTxByCode") copy[k] = m[k];
-            out["rtr-" + key] = copy; // sevTxByCode is 7-11 rows mixed into RTR sheets — not needed by viewers
+            out["rtr-" + key] = buildRtrMonthTables(m);
           });
 
           (state.sev.monthsAvailable || []).forEach(function (mk) {
             var key = mk.slice(0, 4) + "-" + mk.slice(4, 6);
-            // slice each store down to just this month, so a tab holds one month only
-            var stores = [];
-            state.sev.stores.forEach(function (s) {
-              var bm = s.byMonth[mk];
-              if (!bm) return;
-              var daily = {};
-              Object.keys(s.daily).forEach(function (dk) {
-                if (dk.slice(0, 6) === mk) daily[dk] = s.daily[dk];
-              });
-              stores.push({
-                code: s.code,
-                name: s.name,
-                cm: s.cm,
-                ae: s.ae,
-                khet: s.khet,
-                fyai: s.fyai,
-                gm: s.gm,
-                district: s.district,
-                byMonth: (function () {
-                  var o = {};
-                  o[mk] = bm;
-                  return o;
-                })(),
-                daily: daily,
-              });
-            });
-            out["sev-" + key] = { monthKey: mk, stores: stores };
+            out["sev-" + key] = buildSevMonthTables(mk, state.sev.stores);
           });
 
           // Drop months that syncPrune would delete straight afterwards. Without this the
@@ -10212,25 +10496,99 @@
           );
         }
 
+        // Creates the tab if needed, clears whatever was there before (a narrower table would
+        // otherwise leave stale trailing columns/rows behind), then writes headers+rows as a
+        // real 2D grid -- RAW input, same reasoning as syncWriteTab: a value starting with "="
+        // or "+" must not be parsed as a formula.
+        function writeTableTab(id, tab, headers, rows) {
+          var enc = encodeURIComponent(tab);
+          return syncApi(SYNC.SS + "/" + id + "?fields=sheets.properties").then(
+            function (meta) {
+              var exists = meta.sheets.some(function (s) {
+                return s.properties.title === tab;
+              });
+              var p = exists
+                ? Promise.resolve()
+                : syncApi(SYNC.SS + "/" + id + ":batchUpdate", "POST", {
+                    requests: [{ addSheet: { properties: { title: tab } } }],
+                  });
+              return p
+                .then(function () {
+                  return syncApi(
+                    SYNC.SS + "/" + id + "/values/" + enc + "!A:ZZ:clear",
+                    "POST",
+                    {},
+                  );
+                })
+                .then(function () {
+                  return syncApi(
+                    SYNC.SS +
+                      "/" +
+                      id +
+                      "/values/" +
+                      enc +
+                      "!A1?valueInputOption=RAW",
+                    "PUT",
+                    { values: [headers].concat(rows) },
+                  );
+                });
+            },
+          );
+        }
+
+        // Writes every sub-tab of one RTR/7-11 month group in sequence (e.g. "rtr-2026-08-meta",
+        // "rtr-2026-08-stores", ... -- one call per key of the {suffix: {headers,rows}} map
+        // buildRtrMonthTables/buildSevMonthTables produce).
+        function syncWriteMonthTables(id, groupKey, tables) {
+          var chain = Promise.resolve();
+          Object.keys(tables).forEach(function (suffix) {
+            chain = chain.then(function () {
+              var t = tables[suffix];
+              return writeTableTab(id, groupKey + "-" + suffix, t.headers, t.rows);
+            });
+          });
+          return chain;
+        }
+
+        // Reads one tab back as {headers, rows} -- the inverse of writeTableTab.
+        function readTable(id, tab) {
+          return syncApi(
+            SYNC.SS +
+              "/" +
+              id +
+              "/values/" +
+              encodeURIComponent(tab) +
+              "!A1:ZZ200000",
+          ).then(function (r) {
+            var values = r.values || [];
+            if (!values.length) return { headers: [], rows: [] };
+            return { headers: values[0], rows: values.slice(1) };
+          });
+        }
+
+        // Groups sheet tabs by their "rtr-YYYY-MM"/"sev-YYYY-MM" month key (now several sub-tabs
+        // per month, e.g. "-stores"/"-daily"/...) and deletes every sub-tab of the oldest groups
+        // beyond `keep`, instead of pruning tab-by-tab.
         function syncPrune(id, keep) {
           return syncApi(SYNC.SS + "/" + id + "?fields=sheets.properties").then(
             function (meta) {
               var reqs = [];
               ["rtr-", "sev-"].forEach(function (prefix) {
-                var tabs = meta.sheets
-                  .map(function (s) {
-                    return s.properties;
-                  })
-                  .filter(function (p) {
-                    return p.title.indexOf(prefix) === 0;
-                  })
-                  .sort(function (a, b) {
-                    return a.title.localeCompare(b.title); // oldest first
-                  });
-                tabs
-                  .slice(0, Math.max(0, tabs.length - keep))
-                  .forEach(function (p) {
-                    reqs.push({ deleteSheet: { sheetId: p.sheetId } });
+                var byKey = {};
+                meta.sheets.forEach(function (s) {
+                  var title = s.properties.title;
+                  if (title.indexOf(prefix) !== 0) return;
+                  var key = title.slice(0, prefix.length + 7); // "rtr-2026-08"
+                  byKey[key] = byKey[key] || [];
+                  byKey[key].push(s.properties);
+                });
+                var keys = Object.keys(byKey).sort(); // oldest first
+                keys
+                  .slice(0, Math.max(0, keys.length - keep))
+                  .forEach(function (key) {
+                    byKey[key].forEach(function (p) {
+                      reqs.push({ deleteSheet: { sheetId: p.sheetId } });
+                    });
                   });
               });
               if (!reqs.length) return null;
@@ -10314,23 +10672,22 @@
         }
 
         // Day count + GA total for a payload, whichever feed it came from.
+        // Column indices below match the fixed header order buildRtrMonthTables/
+        // buildSevMonthTables always write ("ga" is the 6th RTR store column, 9th 7-11 store
+        // column) -- cheaper and just as reliable as re-deriving them from payload.*.headers
+        // every call, since both sides are built from the same two functions.
         function syncFingerprint(tab, payload) {
           var days = 0,
             ga = 0;
-          if (tab.indexOf("rtr-") === 0) {
-            days = Object.keys(payload.daily || {}).length;
-            ga = (payload.totals && payload.totals.ga) || 0;
-          } else {
-            var seen = {};
-            (payload.stores || []).forEach(function (s) {
-              Object.keys(s.daily || {}).forEach(function (d) {
-                seen[d] = 1;
-              });
-              var b = s.byMonth && s.byMonth[payload.monthKey];
-              if (b) ga += b.ga || 0;
-            });
-            days = Object.keys(seen).length;
-          }
+          var seenDays = {};
+          (payload.daily.rows || []).forEach(function (r) {
+            seenDays[r[1]] = 1;
+          });
+          days = Object.keys(seenDays).length;
+          var gaCol = tab.indexOf("rtr-") === 0 ? 5 : 8;
+          (payload.stores.rows || []).forEach(function (r) {
+            ga += r[gaCol] || 0;
+          });
           return { h: syncHash(JSON.stringify(payload)), d: days, g: Math.round(ga) };
         }
 
@@ -10445,7 +10802,7 @@
               toWrite.sort().forEach(function (tab) {
                 chain = chain.then(function () {
                   var li = syncStep("เขียน " + tab + "…", "run");
-                  return syncWriteTab(sheetId, tab, payloads[tab]).then(
+                  return syncWriteMonthTables(sheetId, tab, payloads[tab]).then(
                     function () {
                       li.remove();
                       syncStep(tab + " ✔");
@@ -10588,24 +10945,201 @@
           });
         }
 
-        // Rebuilds state.rtr.months from rtr-YYYY-MM tabs.
-        function applyRtrFromCloud(monthObjs) {
-          monthObjs.forEach(function (m) {
-            // sevTxByCode is a Map at runtime and is NOT published (JSON turns a Map into {}),
-            // so give every restored month an empty one rather than letting callers crash.
-            m.sevTxByCode = new Map();
-            if (m.sevRowCount == null) m.sevRowCount = 0;
+        // Reads one RTR month group's sub-tabs back into raw per-store facts (target/m1/tiers/
+        // simTypes/daily attached, achievePct/momPct/cmRollup/totals NOT computed yet) plus that
+        // month's resolved CM targets -- the inverse of buildRtrMonthTables. applyRtrFromCloud
+        // runs the real aggregate+finalize pipeline over the result.
+        function readRtrMonthGroup(id, key) {
+          return Promise.all([
+            readTable(id, key + "-meta"),
+            readTable(id, key + "-stores"),
+            readTable(id, key + "-daily"),
+            readTable(id, key + "-simtypes"),
+            readTable(id, key + "-cmtargets"),
+          ]).then(function (parts) {
+            var meta = {};
+            parts[0].rows.forEach(function (r) {
+              meta[r[0]] = r[1];
+            });
+
+            var byCode = {};
+            parts[1].rows.forEach(function (r) {
+              byCode[r[0]] = {
+                code: r[0],
+                name: r[1],
+                cm: r[2],
+                district: r[3],
+                mallType: r[4],
+                ga: Number(r[5]) || 0,
+                ap1d: Number(r[6]) || 0,
+                ap1dAmt: Number(r[7]) || 0,
+                ap30d: Number(r[8]) || 0,
+                revAmt: Number(r[9]) || 0,
+                mass: Number(r[10]) || 0,
+                migrant: Number(r[11]) || 0,
+                tourist: Number(r[12]) || 0,
+                target: Number(r[13]) || 0,
+                m1: Number(r[14]) || 0,
+                tiers: r.slice(15, 23).map(function (v) {
+                  return Number(v) || 0;
+                }),
+                simTypes: {},
+                daily: {},
+              };
+            });
+            parts[2].rows.forEach(function (r) {
+              var s = byCode[r[0]];
+              if (!s) return;
+              s.daily[r[1]] = {
+                ga: Number(r[2]) || 0,
+                revAmt: Number(r[3]) || 0,
+                mass: Number(r[4]) || 0,
+                migrant: Number(r[5]) || 0,
+                tourist: Number(r[6]) || 0,
+              };
+            });
+            parts[3].rows.forEach(function (r) {
+              var s = byCode[r[0]];
+              if (!s) return;
+              s.simTypes[r[1]] = Number(r[2]) || 0;
+            });
+            var cmTargetMap = new Map();
+            parts[4].rows.forEach(function (r) {
+              cmTargetMap.set(r[0], Number(r[1]) || 0);
+            });
+
+            return {
+              sheetName: meta.sheetName,
+              label: meta.label,
+              rowCount: Number(meta.rowCount) || 0,
+              stores: Object.keys(byCode).map(function (c) {
+                return byCode[c];
+              }),
+              cmTargetMap: cmTargetMap,
+            };
           });
-          sortMonthsChronologically(monthObjs);
-          state.rtr.months = monthObjs;
-          state.rtr.currentMonthIdx = monthObjs.length - 1;
+        }
+
+        // Reads one 7-11 month group's sub-tabs into exactly the {monthKey, stores:[...]} shape
+        // applySevFromCloud already expects -- the inverse of buildSevMonthTables.
+        function readSevMonthGroup(id, key) {
+          var monthKey = key.slice(4).replace("-", ""); // "sev-2026-08" -> "202608"
+          return Promise.all([
+            readTable(id, key + "-stores"),
+            readTable(id, key + "-daily"),
+            readTable(id, key + "-simtypes"),
+          ]).then(function (parts) {
+            var byCode = {};
+            parts[0].rows.forEach(function (r) {
+              var bm = {
+                ga: Number(r[8]) || 0,
+                revAmt: Number(r[9]) || 0,
+                ap100: Number(r[10]) || 0,
+                ap49: Number(r[11]) || 0,
+                ap99: Number(r[12]) || 0,
+                ap199: Number(r[13]) || 0,
+                apOver199: Number(r[14]) || 0,
+                mass: Number(r[15]) || 0,
+                migrant: Number(r[16]) || 0,
+                tourist: Number(r[17]) || 0,
+                dtacGa: Number(r[18]) || 0,
+                trueGa: Number(r[19]) || 0,
+                simTypes: {},
+              };
+              var byMonth = {};
+              byMonth[monthKey] = bm;
+              byCode[r[0]] = {
+                code: r[0],
+                name: r[1],
+                cm: r[2],
+                ae: r[3],
+                khet: r[4],
+                fyai: r[5],
+                gm: r[6],
+                district: r[7],
+                byMonth: byMonth,
+                daily: {},
+              };
+            });
+            parts[1].rows.forEach(function (r) {
+              var s = byCode[r[0]];
+              if (!s) return;
+              s.daily[r[1]] = {
+                ga: Number(r[2]) || 0,
+                revAmt: Number(r[3]) || 0,
+                dtacGa: Number(r[4]) || 0,
+                trueGa: Number(r[5]) || 0,
+                ap49: Number(r[6]) || 0,
+                ap99: Number(r[7]) || 0,
+                ap199: Number(r[8]) || 0,
+                apOver199: Number(r[9]) || 0,
+                mass: Number(r[10]) || 0,
+                migrant: Number(r[11]) || 0,
+                tourist: Number(r[12]) || 0,
+              };
+            });
+            parts[2].rows.forEach(function (r) {
+              var s = byCode[r[0]];
+              if (!s) return;
+              s.byMonth[monthKey].simTypes[r[1]] = Number(r[2]) || 0;
+            });
+            return {
+              monthKey: monthKey,
+              stores: Object.keys(byCode).map(function (c) {
+                return byCode[c];
+              }),
+            };
+          });
+        }
+
+        // Rebuilds state.rtr.months from rtr-YYYY-MM-* tab groups (see readRtrMonthGroup). Runs
+        // the exact same buildRtrAggregatesFromStores + finalizeRtrMonths pipeline the local
+        // upload path uses, over the raw per-store facts + resolved CM targets read back from
+        // the sheet, so achievePct/momPct/lmtdGa/cmRollup/totals can't drift from what the local
+        // path computes for the same input.
+        function applyRtrFromCloud(rawGroups) {
+          var months = rawGroups.map(function (g) {
+            var agg = buildRtrAggregatesFromStores(g.stores);
+            return {
+              sheetName: g.sheetName,
+              label: g.label,
+              rowCount: g.rowCount,
+              totals: agg.totals,
+              daily: agg.daily,
+              cmRollup: agg.cmRollup,
+              stores: g.stores,
+              sevTxByCode: new Map(), // 7-11 rows mixed into RTR sheets — not published, not needed here
+              sevRowCount: 0,
+            };
+          });
+          sortMonthsChronologically(months);
+
+          var targetByMonth = {};
+          var overridesByMoKey = {};
+          rawGroups.forEach(function (g) {
+            var abbr = parseSheetDate(g.sheetName);
+            if (!abbr) return;
+            var moKey = MONTH_LABEL[abbr.monthIndex].toLowerCase();
+            var tMap = new Map();
+            g.stores.forEach(function (s) {
+              tMap.set(s.code, { target: s.target, m1: s.m1 });
+            });
+            targetByMonth[moKey] = tMap;
+            overridesByMoKey[moKey] = g.cmTargetMap;
+          });
+          finalizeRtrMonths(months, targetByMonth, function (moKey) {
+            return overridesByMoKey[moKey] || null;
+          });
+
+          state.rtr.months = months;
+          state.rtr.currentMonthIdx = months.length - 1;
           state.rtr.loaded = true;
           state.rtr.currentCM = null;
           state.rtr.currentDistrict = null;
           state.rtr.currentMallType = null;
           state.rtr.visibleCount = 20;
           state.rtr.selectedDay = null;
-          state.rtr.allSheetCount = monthObjs.length;
+          state.rtr.allSheetCount = months.length;
           state.rtr.mapCoverage = state.rtr.mapCoverage || {
             totalCodes: 0,
             mapRowsInCluster: 0,
@@ -10751,11 +11285,11 @@
                 var sevTabs = (meta.sev_months || []).slice(-3);
                 var jobs = rtrTabs
                   .map(function (t) {
-                    return sheetsReadTab(id, t);
+                    return readRtrMonthGroup(id, t);
                   })
                   .concat(
                     sevTabs.map(function (t) {
-                      return sheetsReadTab(id, t);
+                      return readSevMonthGroup(id, t);
                     }),
                   );
                 return Promise.all(jobs).then(function (all) {
