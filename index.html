@@ -1085,6 +1085,20 @@
         gap: 6px;
         cursor: pointer;
       }
+      .modal-check-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        font-size: 13px;
+        margin-bottom: 4px;
+      }
+      .modal-check-grid label {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
       .print-export-area {
         display: none;
       }
@@ -1869,6 +1883,18 @@
           </div>
           <div class="modal-body">
             <div class="modal-hint" id="rtrExportScopeHint"></div>
+
+            <label class="modal-label" id="rtrExportZoneLabel" style="display: none">
+              โซนที่จะ export
+            </label>
+            <div
+              class="modal-check-grid"
+              id="rtrExportZoneRow"
+              style="display: none"
+            ></div>
+
+            <label class="modal-label">คอลัมน์ที่จะ export</label>
+            <div class="modal-check-grid" id="rtrExportColRow"></div>
 
             <label class="modal-label">เรียงตาม</label>
             <select class="modal-select" id="rtrExportSort"></select>
@@ -6347,6 +6373,20 @@
             ? RTR_QUADRANT_EXPORT_COLS
             : RTR_EXPORT_COLS;
         }
+        // Which of the active export's columns the user left checked in the modal, in the
+        // same order rtrActiveExportCols() defines -- falls back to all of them if the modal
+        // hasn't been opened yet (e.g. a future caller that skips the UI).
+        function rtrCheckedExportCols() {
+          var boxes = document.querySelectorAll('input[name="rtrExportCol"]');
+          if (!boxes.length) return rtrActiveExportCols();
+          var checked = {};
+          Array.prototype.forEach.call(boxes, function (b) {
+            if (b.checked) checked[b.value] = true;
+          });
+          return rtrActiveExportCols().filter(function (c) {
+            return checked[c.key];
+          });
+        }
 
         function rtrExportScopeLabel() {
           var parts = [
@@ -6384,6 +6424,38 @@
             : "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
               rtrExportScopeLabel() +
               " — ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วปรับตัวกรองบนหน้าเว็บก่อน";
+
+          // Zone picker: quadrant export only, all 4 checked by default (unchecking one just
+          // drops it from this export -- doesn't touch which zone is showing on the page).
+          $("rtrExportZoneLabel").style.display = isQuadrant ? "block" : "none";
+          var zoneRow = $("rtrExportZoneRow");
+          zoneRow.style.display = isQuadrant ? "flex" : "none";
+          if (isQuadrant) {
+            zoneRow.innerHTML = QUADRANT_EXPORT_ZONE_ORDER.map(function (zk) {
+              return (
+                '<label><input type="checkbox" name="rtrExportZone" value="' +
+                zk +
+                '" checked /> ' +
+                esc(QUADRANT_ZONES[zk].label) +
+                "</label>"
+              );
+            }).join("");
+          }
+
+          // Column picker: every column the active export mode offers, all checked by default.
+          var colRow = $("rtrExportColRow");
+          colRow.innerHTML = rtrActiveExportCols()
+            .map(function (c) {
+              return (
+                '<label><input type="checkbox" name="rtrExportCol" value="' +
+                c.key +
+                '" checked /> ' +
+                esc(c.label) +
+                "</label>"
+              );
+            })
+            .join("");
+
           $("rtrExportOverlay").style.display = "flex";
         }
         function rtrCloseExportModal() {
@@ -6404,6 +6476,16 @@
                   String(s.code).toLowerCase().indexOf(q) !== -1
                 );
               });
+          } else {
+            var checkedZones = Array.prototype.map.call(
+              document.querySelectorAll('input[name="rtrExportZone"]:checked'),
+              function (el) {
+                return el.value;
+              },
+            );
+            stores = stores.filter(function (s) {
+              return checkedZones.indexOf(QUADRANT_EXPORT_ZONE_ORDER[s._zoneOrder]) !== -1;
+            });
           }
 
           var sortKey = $("rtrExportSort").value;
@@ -6453,7 +6535,7 @@
         }
 
         function rtrExportPng(stores) {
-          var cols = rtrActiveExportCols();
+          var cols = rtrCheckedExportCols();
           var canvas = document.createElement("canvas");
           var ctx = canvas.getContext("2d");
           var padX = 14,
@@ -6579,7 +6661,7 @@
         }
 
         function rtrExportCsv(stores) {
-          var cols = rtrActiveExportCols();
+          var cols = rtrCheckedExportCols();
           downloadCsv(
             "pak-kret-rtr-stores-" + Date.now() + ".csv",
             cols.map(function (c) {
@@ -6594,7 +6676,7 @@
         }
 
         function rtrExportPdf(stores) {
-          var cols = rtrActiveExportCols();
+          var cols = rtrCheckedExportCols();
           var headHtml = cols
             .map(function (c) {
               return "<th>" + esc(c.label) + "</th>";
@@ -6645,9 +6727,13 @@
           if (e.target.id === "rtrExportOverlay") rtrCloseExportModal();
         });
         $("rtrExportGo").addEventListener("click", function () {
+          if (rtrCheckedExportCols().length === 0) {
+            alert("เลือกอย่างน้อย 1 คอลัมน์ก่อน export");
+            return;
+          }
           var stores = rtrGatherExportRows();
           if (stores.length === 0) {
-            alert("ไม่มีข้อมูลให้ export ตามตัวกรองปัจจุบัน");
+            alert("ไม่มีข้อมูลให้ export ตามตัวกรอง/โซนที่เลือกอยู่ตอนนี้");
             return;
           }
           var format = document.querySelector(
