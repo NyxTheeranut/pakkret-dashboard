@@ -2859,6 +2859,79 @@
           return blocks;
         }
 
+        // The "KPI Set Up" sheet is a leadership-committed target, one row per CM, laid out as a
+        // two-row header: a group row ("Target GA (Aug)", "Ach GA (Aug)", "RR GA (Aug)", ...) sitting
+        // directly above a sub-column row ("Mass + Migrant" / "Tourist" / "Total GA" for each group,
+        // plus "CM" / "PBH" / "Cluster" / "All RTR" before the first group starts). Only the "Target
+        // GA" group's "Total GA" column is durable enough to reuse -- the sheet's own Ach/RR/%Ach
+        // columns are a snapshot from whenever the file was last exported and go stale immediately,
+        // so actual GA keeps coming from the live monthly upload as before; only cr.target below gets
+        // overridden. Anchored the same way parseTargetBlocks anchors month blocks: a group label only
+        // occupies the first (leftmost) cell of its merged span, so non-empty group cells mark block
+        // starts and the next one's start marks the previous block's end.
+        // Returns { month: 'aug', targets: Map(cmName -> totalGA) }, or null if the sheet doesn't have
+        // the expected shape (e.g. an older export with no per-CM "CM" column) -- skipped, not fatal.
+        function parseKpiSetUpTargets(rows2D) {
+          for (var gIdx = 0; gIdx < Math.min(20, rows2D.length); gIdx++) {
+            var gRow = rows2D[gIdx];
+            if (!gRow) continue;
+            var anchors = [];
+            for (var i = 0; i < gRow.length; i++) {
+              var t = normHeader(gRow[i]);
+              if (t) anchors.push({ idx: i, text: t });
+            }
+            var targetAnchor = null;
+            for (var a = 0; a < anchors.length; a++) {
+              if (anchors[a].text.indexOf("target ga") === 0) {
+                targetAnchor = anchors[a];
+                break;
+              }
+            }
+            if (!targetAnchor) continue;
+            var sRow = rows2D[gIdx + 1];
+            if (!sRow) continue;
+            var sNorm = [];
+            for (var k = 0; k < sRow.length; k++) sNorm[k] = normHeader(sRow[k]);
+            var cmIdx = sNorm.indexOf("cm");
+            if (cmIdx === -1) continue; // no per-CM breakdown on this sheet -- skip, not fatal
+            var blockEnd = gRow.length;
+            for (var a2 = 0; a2 < anchors.length; a2++) {
+              if (anchors[a2].idx > targetAnchor.idx) {
+                blockEnd = anchors[a2].idx;
+                break;
+              }
+            }
+            var totalGaIdx = -1;
+            for (var c = targetAnchor.idx; c < blockEnd; c++) {
+              if (sNorm[c] === "total ga") {
+                totalGaIdx = c;
+                break;
+              }
+            }
+            if (totalGaIdx === -1) continue;
+            var monthAbbr = null;
+            var monthAbbrs = Object.keys(MONTH_ABBR);
+            for (var mo = 0; mo < monthAbbrs.length; mo++) {
+              if (targetAnchor.text.indexOf(monthAbbrs[mo]) !== -1) {
+                monthAbbr = monthAbbrs[mo];
+                break;
+              }
+            }
+            var targets = new Map();
+            for (var r = gIdx + 2; r < rows2D.length; r++) {
+              var row = rows2D[r];
+              if (!row) continue;
+              var cmName = row[cmIdx] != null ? String(row[cmIdx]).trim() : "";
+              if (!cmName || cmName.toLowerCase() === "total") continue;
+              var val = num(row[totalGaIdx]);
+              if (val > 0) targets.set(cmName, val);
+            }
+            if (targets.size === 0) continue;
+            return { month: monthAbbr, targets: targets };
+          }
+          return null;
+        }
+
         // Shared hover tooltip for bar-chart elements. Wire it to a container after setting innerHTML;
         // each hoverable bar should carry a data-tip attribute (plain text, already escaped by caller).
         var tooltipEl = null;
@@ -3081,6 +3154,12 @@
             var mapCandidates = allNames.filter(function (n) {
               return /rtr target ga/i.test(n);
             });
+            // The "KPI Set Up" tab carries a pre-committed Total GA target per CM (set by
+            // leadership), separate from and more authoritative than the sum of that CM's
+            // individual store targets on the mapping sheets above -- see parseKpiSetUpTargets.
+            var kpiSetupCandidates = allNames.filter(function (n) {
+              return /^kpi\s*set\s*up$/i.test(n.trim());
+            });
 
             if (monthCandidates.length === 0) {
               rtrError(
@@ -3105,11 +3184,25 @@
 
             setTimeout(function () {
               try {
-                var allSheets = monthCandidates.concat(mapCandidates);
+                var allSheets = monthCandidates
+                  .concat(mapCandidates)
+                  .concat(kpiSetupCandidates);
                 var wb = XLSX.read(bytes, {
                   type: "array",
                   sheets: allSheets,
                   dense: true,
+                });
+
+                // { month: 'aug', targets: Map(cmName -> totalGA) } | null -- see function comment
+                var kpiSetupTargets = null;
+                kpiSetupCandidates.forEach(function (sheetName) {
+                  var ws = wb.Sheets[sheetName];
+                  if (!ws || kpiSetupTargets) return;
+                  var rows2D = XLSX.utils.sheet_to_json(ws, {
+                    header: 1,
+                    raw: true,
+                  });
+                  kpiSetupTargets = parseKpiSetUpTargets(rows2D);
                 });
 
                 // build code -> canonical (merges Dtac code + True code of the same retailer into one store id),
@@ -3335,6 +3428,23 @@
                       cr.noTargetCount++;
                     }
                   });
+                  // Override with the KPI Set Up committed target when this sheet's month matches
+                  // the month currently being processed (see parseKpiSetUpTargets). Deliberately
+                  // narrow: only cr.target changes here, so %Achieve reflects the committed figure
+                  // while cr.targetedGA/cr.m1 keep coming from the live per-store rollup above.
+                  if (
+                    kpiSetupTargets &&
+                    kpiSetupTargets.month &&
+                    abbr &&
+                    MONTH_ABBR[kpiSetupTargets.month] === abbr.monthIndex
+                  ) {
+                    Object.keys(m.cmRollup).forEach(function (cmName) {
+                      if (kpiSetupTargets.targets.has(cmName)) {
+                        m.cmRollup[cmName].target =
+                          kpiSetupTargets.targets.get(cmName);
+                      }
+                    });
+                  }
                   Object.keys(m.cmRollup).forEach(function (cmName) {
                     var cr = m.cmRollup[cmName];
                     cr.achievePct =
