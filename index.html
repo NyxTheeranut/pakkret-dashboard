@@ -831,11 +831,17 @@
       }
       .trend-axis {
         display: flex;
-        justify-content: space-between;
-        font-size: 10px;
+        gap: 2.5px;
+        font-size: 9px;
         color: var(--muted);
         font-family: "IBM Plex Mono", monospace;
         margin-top: 6px;
+      }
+      .trend-axis span {
+        flex: 1;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
       }
 
       .bar-row {
@@ -4925,7 +4931,7 @@
           { key: "ga", label: "GA" },
           { key: "target", label: "Target" },
           { key: "achieve", label: "%Achieve" },
-          { key: "pace", label: "จังหวะ" },
+          { key: "pace", label: "%MTD" },
           { key: "gap", label: "คาดขาด/เกิน" },
           { key: "need", label: "ต้องได้อีก/วัน" },
           { key: "mom", label: "%MOM" },
@@ -5785,11 +5791,13 @@
             })
             .join("");
           var axisHtml = days.length
-            ? '<div class="trend-axis"><span>' +
-              String(days[0]).slice(6, 8) +
-              "</span><span>" +
-              String(days[days.length - 1]).slice(6, 8) +
-              "</span></div>"
+            ? "<div class=\"trend-axis\">" +
+              days
+                .map(function (d) {
+                  return "<span>" + String(d).slice(6, 8) + "</span>";
+                })
+                .join("") +
+              "</div>"
             : "";
           $("rtrTrendChart").innerHTML = days.length
             ? '<div class="trend-val-row">' +
@@ -9134,11 +9142,13 @@
             })
             .join("");
           var axisHtml =
-            '<div class="trend-axis"><span>' +
-            String(days[0]).slice(6, 8) +
-            "</span><span>" +
-            String(days[days.length - 1]).slice(6, 8) +
-            "</span></div>";
+            "<div class=\"trend-axis\">" +
+            days
+              .map(function (d) {
+                return "<span>" + String(d).slice(6, 8) + "</span>";
+              })
+              .join("") +
+            "</div>";
           var legendHtml =
             '<div class="seg-legend" style="margin-top:8px;"><span><i style="background:#5B8DEF"></i>Dtac</span><span><i style="background:#D64541"></i>True</span></div>';
           panel.innerHTML =
@@ -10568,16 +10578,23 @@
 
         // Groups sheet tabs by their "rtr-YYYY-MM"/"sev-YYYY-MM" month key (now several sub-tabs
         // per month, e.g. "-stores"/"-daily"/...) and deletes every sub-tab of the oldest groups
-        // beyond `keep`, instead of pruning tab-by-tab.
+        // beyond `keep`, instead of pruning tab-by-tab. Also deletes any leftover tab from the
+        // OLD one-JSON-blob-per-month format (exactly "rtr-YYYY-MM"/"sev-YYYY-MM", no suffix) —
+        // unconditionally, regardless of `keep`, since nothing reads that format anymore.
         function syncPrune(id, keep) {
           return syncApi(SYNC.SS + "/" + id + "?fields=sheets.properties").then(
             function (meta) {
               var reqs = [];
               ["rtr-", "sev-"].forEach(function (prefix) {
+                var legacyRe = new RegExp("^" + prefix + "\\d{4}-\\d{2}$");
                 var byKey = {};
                 meta.sheets.forEach(function (s) {
                   var title = s.properties.title;
                   if (title.indexOf(prefix) !== 0) return;
+                  if (legacyRe.test(title)) {
+                    reqs.push({ deleteSheet: { sheetId: s.properties.sheetId } });
+                    return;
+                  }
                   var key = title.slice(0, prefix.length + 7); // "rtr-2026-08"
                   byKey[key] = byKey[key] || [];
                   byKey[key].push(s.properties);
