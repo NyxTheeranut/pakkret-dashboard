@@ -1810,12 +1810,7 @@
           <section id="quadrantSection">
             <div class="section-head">
               <h2>Analysis — Quadrant (%Ach / MoM)</h2>
-              <div style="display: flex; align-items: center; gap: 10px">
-                <span class="hint" id="quadrantHint"></span>
-                <button class="file-btn ghost-light" id="quadrantExportBtn">
-                  📤 Export
-                </button>
-              </div>
+              <span class="hint" id="quadrantHint"></span>
             </div>
             <div class="card">
               <div id="quadrantChart"></div>
@@ -5307,6 +5302,23 @@
           return out;
         }
 
+        // Zone heading row for the quadrant's store table, with the Export button riding along
+        // in the same row (moved here from the section title so it sits right next to the data
+        // it exports) -- re-rendered every renderQuadrant() call, so its click handler is
+        // (re)attached there too, not wired once at page load like a static button would be.
+        function quadrantZoneHeadHtml(zoneInfo, count) {
+          return (
+            '<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin:22px 0 12px;">' +
+            "<h4 style=\"font-family:'Space Grotesk',sans-serif; font-size:14px; font-weight:600; margin:0; color:" +
+            zoneInfo.textColor +
+            ';">' +
+            esc(zoneInfo.label) +
+            " (" +
+            count +
+            ' ร้าน)</h4><button class="file-btn ghost-light" id="quadrantExportBtn">📤 Export</button></div>'
+          );
+        }
+
         function renderQuadrant() {
           var stores = rtrCurrentStores().filter(function (s) {
             return s.hasTarget && s.momPct != null;
@@ -5542,13 +5554,7 @@
               );
             }).join("");
             tableHtml =
-              "<h4 style=\"margin:22px 0 12px; font-family:'Space Grotesk',sans-serif; font-size:14px; font-weight:600; color:" +
-              zoneInfo.textColor +
-              ';">' +
-              esc(zoneInfo.label) +
-              " (" +
-              zoneStores.length +
-              " ร้าน)</h4>" +
+              quadrantZoneHeadHtml(zoneInfo, zoneStores.length) +
               '<div class="table-scroll-box"><table><thead><tr>' +
               rzHeaderHtml +
               "</tr></thead><tbody>" +
@@ -5556,16 +5562,16 @@
               "</tbody></table></div>";
           } else {
             tableHtml =
-              "<h4 style=\"margin:22px 0 12px; font-family:'Space Grotesk',sans-serif; font-size:14px; font-weight:600; color:" +
-              zoneInfo.textColor +
-              ';">' +
-              esc(zoneInfo.label) +
-              " (0 ร้าน)</h4>" +
+              quadrantZoneHeadHtml(zoneInfo, 0) +
               '<div class="insight-empty">ไม่มีร้านในมุมนี้</div>';
           }
 
           $("quadrantChart").innerHTML = svg + tableHtml;
           attachBarTooltips($("quadrantChart"));
+          $("quadrantExportBtn").addEventListener("click", function () {
+            state.rtr.exportScope = "quadrant";
+            rtrOpenExportModal();
+          });
           Array.prototype.forEach.call(
             document.querySelectorAll("#quadrantChart circle"),
             function (c) {
@@ -6632,10 +6638,6 @@
 
         $("rtrExportBtn").addEventListener("click", function () {
           state.rtr.exportScope = "table";
-          rtrOpenExportModal();
-        });
-        $("quadrantExportBtn").addEventListener("click", function () {
-          state.rtr.exportScope = "quadrant";
           rtrOpenExportModal();
         });
         $("rtrExportClose").addEventListener("click", rtrCloseExportModal);
