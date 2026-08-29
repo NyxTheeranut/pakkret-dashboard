@@ -1804,7 +1804,12 @@
           <section id="quadrantSection">
             <div class="section-head">
               <h2>Analysis — Quadrant (%Ach / MoM)</h2>
-              <span class="hint" id="quadrantHint"></span>
+              <div style="display: flex; align-items: center; gap: 10px">
+                <span class="hint" id="quadrantHint"></span>
+                <button class="file-btn ghost-light" id="quadrantExportBtn">
+                  📤 Export
+                </button>
+              </div>
             </div>
             <div class="card">
               <div id="quadrantChart"></div>
@@ -1836,7 +1841,7 @@
                 <option value="ap30dSubs">เรียงตาม AP30D subs</option>
                 <option value="ap1dConv">เรียงตาม %AP1D</option>
                 <option value="conv">เรียงตาม %AP30D</option>
-                <option value="achieve">เรียงตาม %MTD</option>
+                <option value="lmtdGa">เรียงตาม GA (LMTD)</option>
                 <option value="mom">เรียงตาม %MOM</option>
                 <option value="arpu">เรียงตาม ARPU</option>
               </select>
@@ -2314,6 +2319,7 @@
             redZoneSortKey: "achieve",
             redZoneSortDir: "asc",
             quadrantZone: "critical",
+            exportScope: "table",
             visibleCount: 20,
             mappingCoverage: null,
             segToggle: { mass: true, migrant: true, tourist: true },
@@ -3301,6 +3307,7 @@
                     var prevGA = prevGAByCode.hasOwnProperty(s.code)
                       ? prevGAByCode[s.code]
                       : null;
+                    s.lmtdGa = prevGA; // last month's GA up to the same cutoff day, for the table's GA (LMTD) column
                     s.momPct =
                       prevGA != null && prevGA > 0
                         ? (s.ga - prevGA) / prevGA
@@ -5045,6 +5052,16 @@
           },
         };
 
+        // Same store set the quadrant chart currently plots in its selected zone, recomputed
+        // on demand for the quadrant's own Export button (see rtrGatherExportRows).
+        function rtrQuadrantZoneStores() {
+          var stores = rtrCurrentStores().filter(function (s) {
+            return s.hasTarget && s.momPct != null;
+          });
+          var zoneInfo = QUADRANT_ZONES[state.rtr.quadrantZone];
+          return stores.filter(zoneInfo.predicate);
+        }
+
         function renderQuadrant() {
           var stores = rtrCurrentStores().filter(function (s) {
             return s.hasTarget && s.momPct != null;
@@ -5699,24 +5716,18 @@
             })
             .slice(0, 5);
 
-          var tierRisk = stores
-            .filter(function (s) {
-              var sum = s.tiers.reduce(function (a, b) {
-                return a + b;
-              }, 0);
-              if (sum < 5) return false;
-              var cheap = s.tiers[0] + s.tiers[1] + s.tiers[2];
-              return cheap / sum > 0.7;
-            })
+          var lowStock = stores
             .map(function (s) {
               var sum = s.tiers.reduce(function (a, b) {
                 return a + b;
               }, 0);
-              var cheap = s.tiers[0] + s.tiers[1] + s.tiers[2];
-              return { s: s, share: sum > 0 ? cheap / sum : 0 };
+              return { s: s, sum: sum };
+            })
+            .filter(function (x) {
+              return x.sum < 5;
             })
             .sort(function (a, b) {
-              return b.s.ga - a.s.ga;
+              return a.sum - b.sum;
             })
             .slice(0, 5);
 
@@ -5806,16 +5817,16 @@
           );
           html += cardHtml(
             "tag-value",
-            "แพ็คราคาต่ำเป็นหลัก",
-            "โอกาสอัปเซล (แพ็คต่ำกว่า 120 บาทเกิน 70%)",
-            tierRisk,
+            "สต็อกต่ำ",
+            "ร้านที่ขายแพ็คได้รวมต่ำกว่า 5 ชิ้นในเดือนนี้",
+            lowStock,
             function (x) {
               return (
                 '<span class="n">' +
                 esc(x.s.name) +
                 '</span><span class="v">' +
-                pct(x.share) +
-                " ถูก</span>"
+                x.sum +
+                " แพ็ค</span>"
               );
             },
           );
@@ -5843,7 +5854,7 @@
           { key: "ap30dSubs", label: "AP30D subs" },
           { key: "ap1dConv", label: "%AP1D" },
           { key: "conv", label: "%AP30D" },
-          { key: "achieve", label: "%MTD" },
+          { key: "lmtdGa", label: "GA (LMTD)" },
           { key: "mom", label: "%MOM" },
           { key: "m1", label: "M1" },
           { key: "arpu", label: "ARPU" },
@@ -5873,6 +5884,12 @@
             return (
               '<td class="num-cell">' +
               pctBadge(s.achievePct, "achieve") +
+              "</td>"
+            );
+          if (k === "lmtdGa")
+            return (
+              '<td class="num-cell">' +
+              (s.lmtdGa != null ? fmt(s.lmtdGa) : "—") +
               "</td>"
             );
           if (k === "mom")
@@ -5911,6 +5928,7 @@
           if (key === "target") return s.target;
           if (key === "achieve")
             return s.achievePct == null ? -1 : s.achievePct;
+          if (key === "lmtdGa") return s.lmtdGa == null ? -1 : s.lmtdGa;
           if (key === "mom") return s.momPct == null ? -2 : s.momPct;
           if (key === "ap1dSubs") return s.ap1d;
           if (key === "ap30dSubs") return s.ap30d;
@@ -6067,6 +6085,9 @@
           .concat(RTR_TABLE_COLS.slice(1));
 
         function rtrExportScopeLabel() {
+          if (state.rtr.exportScope === "quadrant") {
+            return "Quadrant — " + QUADRANT_ZONES[state.rtr.quadrantZone].label;
+          }
           var parts = [
             state.rtr.currentCM,
             state.rtr.currentDistrict,
@@ -6083,11 +6104,16 @@
               '<option value="' + c.key + '">' + esc(c.label) + "</option>"
             );
           }).join("");
-          sortSel.value = state.rtr.sortKey || "m1";
-          $("rtrExportScopeHint").textContent =
-            "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
-            rtrExportScopeLabel() +
-            " — ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วปรับตัวกรองบนหน้าเว็บก่อน";
+          var isQuadrant = state.rtr.exportScope === "quadrant";
+          sortSel.value =
+            (isQuadrant ? state.rtr.redZoneSortKey : state.rtr.sortKey) || "m1";
+          $("rtrExportScopeHint").textContent = isQuadrant
+            ? "จะ export ร้านในโซนที่เลือกอยู่ตอนนี้: " +
+              rtrExportScopeLabel() +
+              " — ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วคลิกโซนอื่นในกราฟ Quadrant ก่อน"
+            : "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
+              rtrExportScopeLabel() +
+              " — ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วปรับตัวกรองบนหน้าเว็บก่อน";
           $("rtrExportOverlay").style.display = "flex";
         }
         function rtrCloseExportModal() {
@@ -6095,15 +6121,18 @@
         }
 
         function rtrGatherExportRows() {
-          var stores = rtrCurrentStores();
-          var q = state.rtr.search.trim().toLowerCase();
-          if (q)
-            stores = stores.filter(function (s) {
-              return (
-                s.name.toLowerCase().indexOf(q) !== -1 ||
-                String(s.code).toLowerCase().indexOf(q) !== -1
-              );
-            });
+          var isQuadrant = state.rtr.exportScope === "quadrant";
+          var stores = isQuadrant ? rtrQuadrantZoneStores() : rtrCurrentStores();
+          if (!isQuadrant) {
+            var q = state.rtr.search.trim().toLowerCase();
+            if (q)
+              stores = stores.filter(function (s) {
+                return (
+                  s.name.toLowerCase().indexOf(q) !== -1 ||
+                  String(s.code).toLowerCase().indexOf(q) !== -1
+                );
+              });
+          }
 
           var sortKey = $("rtrExportSort").value;
           var dir = document.querySelector(
@@ -6137,6 +6166,8 @@
           if (col.key === "target") return s.hasTarget ? fmt(s.target) : "—";
           if (col.key === "achieve")
             return s.achievePct == null ? "—" : pct(s.achievePct);
+          if (col.key === "lmtdGa")
+            return s.lmtdGa == null ? "—" : fmt(s.lmtdGa);
           if (col.key === "mom") return s.momPct == null ? "—" : pct(s.momPct);
           if (col.key === "ap1dSubs") return fmt(s.ap1d);
           if (col.key === "ap30dSubs") return fmt(s.ap30d);
@@ -6331,7 +6362,14 @@
           }, 500);
         }
 
-        $("rtrExportBtn").addEventListener("click", rtrOpenExportModal);
+        $("rtrExportBtn").addEventListener("click", function () {
+          state.rtr.exportScope = "table";
+          rtrOpenExportModal();
+        });
+        $("quadrantExportBtn").addEventListener("click", function () {
+          state.rtr.exportScope = "quadrant";
+          rtrOpenExportModal();
+        });
         $("rtrExportClose").addEventListener("click", rtrCloseExportModal);
         $("rtrExportOverlay").addEventListener("click", function (e) {
           if (e.target.id === "rtrExportOverlay") rtrCloseExportModal();
