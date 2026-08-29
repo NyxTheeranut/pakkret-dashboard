@@ -5282,14 +5282,29 @@
           },
         };
 
-        // Same store set the quadrant chart currently plots in its selected zone, recomputed
-        // on demand for the quadrant's own Export button (see rtrGatherExportRows).
-        function rtrQuadrantZoneStores() {
+        // Every store across all 4 quadrant zones (star/improving/risk/critical), respecting
+        // whatever CM/district/mallType filter is active on the page -- used by the quadrant's
+        // own Export button, which exports every zone at once rather than just whichever one is
+        // currently shown below the chart. Each returned store is a shallow copy (never mutate
+        // the real store objects the rest of the page renders from) tagged with _zoneLabel (for
+        // display) and _zoneOrder (0=วิกฤต..3=ดาวเด่น, for the "group by zone" sort option).
+        var QUADRANT_EXPORT_ZONE_ORDER = ["critical", "risk", "improving", "star"];
+        function rtrAllQuadrantZoneStores() {
           var stores = rtrCurrentStores().filter(function (s) {
             return s.hasTarget && s.momPct != null;
           });
-          var zoneInfo = QUADRANT_ZONES[state.rtr.quadrantZone];
-          return stores.filter(zoneInfo.predicate);
+          var out = [];
+          QUADRANT_EXPORT_ZONE_ORDER.forEach(function (zoneKey, zi) {
+            var zoneInfo = QUADRANT_ZONES[zoneKey];
+            stores.filter(zoneInfo.predicate).forEach(function (s) {
+              var copy = {};
+              for (var k in s) copy[k] = s[k];
+              copy._zoneLabel = zoneInfo.label;
+              copy._zoneOrder = zi;
+              out.push(copy);
+            });
+          });
+          return out;
         }
 
         function renderQuadrant() {
@@ -6156,6 +6171,7 @@
         }
         function rtrSortValue(s, key) {
           if (key === "name") return s.name || "";
+          if (key === "zone") return s._zoneOrder != null ? s._zoneOrder : 99;
           if (key === "ga") return s.ga;
           if (key === "target") return s.target;
           if (key === "achieve")
@@ -6315,34 +6331,50 @@
         var RTR_EXPORT_COLS = RTR_TABLE_COLS.slice(0, 1)
           .concat([{ key: "code", label: "รหัสร้าน" }])
           .concat(RTR_TABLE_COLS.slice(1));
+        // Quadrant export adds a "โซน" column right after the store code, so a single export can
+        // hold all 4 zones at once instead of just whichever one is currently shown on the page.
+        var RTR_QUADRANT_EXPORT_COLS = RTR_EXPORT_COLS.slice(0, 2)
+          .concat([{ key: "zone", label: "โซน" }])
+          .concat(RTR_EXPORT_COLS.slice(2));
+        function rtrActiveExportCols() {
+          return state.rtr.exportScope === "quadrant"
+            ? RTR_QUADRANT_EXPORT_COLS
+            : RTR_EXPORT_COLS;
+        }
 
         function rtrExportScopeLabel() {
-          if (state.rtr.exportScope === "quadrant") {
-            return "Quadrant — " + QUADRANT_ZONES[state.rtr.quadrantZone].label;
-          }
           var parts = [
             state.rtr.currentCM,
             state.rtr.currentDistrict,
             state.rtr.currentMallType,
           ].filter(Boolean);
           var scope = parts.length ? parts.join(" / ") : "ภาพรวมทุก CM";
+          if (state.rtr.exportScope === "quadrant") {
+            return "Quadrant (ทุกโซน) — " + scope;
+          }
           var q = state.rtr.search.trim();
           return scope + (q ? ' · ค้นหา "' + q + '"' : "");
         }
         function rtrOpenExportModal() {
           var sortSel = $("rtrExportSort");
-          sortSel.innerHTML = RTR_TABLE_COLS.map(function (c) {
-            return (
-              '<option value="' + c.key + '">' + esc(c.label) + "</option>"
-            );
-          }).join("");
           var isQuadrant = state.rtr.exportScope === "quadrant";
-          sortSel.value =
-            (isQuadrant ? state.rtr.redZoneSortKey : state.rtr.sortKey) || "m1";
+          // Quadrant export can group by zone first (most urgent first: วิกฤต → เสี่ยงตก →
+          // กำลังฟื้นตัว → ดาวเด่น), on top of whatever the regular table can already sort by.
+          var sortCols = isQuadrant
+            ? [{ key: "zone", label: "โซน" }].concat(RTR_TABLE_COLS)
+            : RTR_TABLE_COLS;
+          sortSel.innerHTML = sortCols
+            .map(function (c) {
+              return (
+                '<option value="' + c.key + '">' + esc(c.label) + "</option>"
+              );
+            })
+            .join("");
+          sortSel.value = isQuadrant ? "zone" : state.rtr.sortKey || "m1";
           $("rtrExportScopeHint").textContent = isQuadrant
-            ? "จะ export ร้านในโซนที่เลือกอยู่ตอนนี้: " +
+            ? "จะ export ร้านทุกโซนตามตัวกรองที่เลือกอยู่ตอนนี้: " +
               rtrExportScopeLabel() +
-              " — ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วคลิกโซนอื่นในกราฟ Quadrant ก่อน"
+              " — ถ้าอยากเปลี่ยน CM/พื้นที่ ให้ปิดหน้าต่างนี้แล้วปรับตัวกรองบนหน้าเว็บก่อน"
             : "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
               rtrExportScopeLabel() +
               " — ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วปรับตัวกรองบนหน้าเว็บก่อน";
@@ -6354,7 +6386,9 @@
 
         function rtrGatherExportRows() {
           var isQuadrant = state.rtr.exportScope === "quadrant";
-          var stores = isQuadrant ? rtrQuadrantZoneStores() : rtrCurrentStores();
+          var stores = isQuadrant
+            ? rtrAllQuadrantZoneStores()
+            : rtrCurrentStores();
           if (!isQuadrant) {
             var q = state.rtr.search.trim().toLowerCase();
             if (q)
@@ -6394,6 +6428,7 @@
         function rtrExportCellText(col, s) {
           if (col.key === "name") return s.name;
           if (col.key === "code") return s.code;
+          if (col.key === "zone") return s._zoneLabel || "";
           if (col.key === "ga") return fmt(s.ga);
           if (col.key === "target") return s.hasTarget ? fmt(s.target) : "—";
           if (col.key === "achieve")
@@ -6412,7 +6447,7 @@
         }
 
         function rtrExportPng(stores) {
-          var cols = RTR_EXPORT_COLS;
+          var cols = rtrActiveExportCols();
           var canvas = document.createElement("canvas");
           var ctx = canvas.getContext("2d");
           var padX = 14,
@@ -6538,13 +6573,14 @@
         }
 
         function rtrExportCsv(stores) {
+          var cols = rtrActiveExportCols();
           downloadCsv(
             "pak-kret-rtr-stores-" + Date.now() + ".csv",
-            RTR_EXPORT_COLS.map(function (c) {
+            cols.map(function (c) {
               return c.label;
             }),
             stores.map(function (s) {
-              return RTR_EXPORT_COLS.map(function (c) {
+              return cols.map(function (c) {
                 return rtrExportCellText(c, s);
               });
             }),
@@ -6552,7 +6588,7 @@
         }
 
         function rtrExportPdf(stores) {
-          var cols = RTR_EXPORT_COLS;
+          var cols = rtrActiveExportCols();
           var headHtml = cols
             .map(function (c) {
               return "<th>" + esc(c.label) + "</th>";
