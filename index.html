@@ -1893,9 +1893,6 @@
               style="display: none"
             ></div>
 
-            <label class="modal-label">คอลัมน์ที่จะ export</label>
-            <div class="modal-check-grid" id="rtrExportColRow"></div>
-
             <label class="modal-label">เรียงตาม</label>
             <select class="modal-select" id="rtrExportSort"></select>
 
@@ -6373,20 +6370,6 @@
             ? RTR_QUADRANT_EXPORT_COLS
             : RTR_EXPORT_COLS;
         }
-        // Which of the active export's columns the user left checked in the modal, in the
-        // same order rtrActiveExportCols() defines -- falls back to all of them if the modal
-        // hasn't been opened yet (e.g. a future caller that skips the UI).
-        function rtrCheckedExportCols() {
-          var boxes = document.querySelectorAll('input[name="rtrExportCol"]');
-          if (!boxes.length) return rtrActiveExportCols();
-          var checked = {};
-          Array.prototype.forEach.call(boxes, function (b) {
-            if (b.checked) checked[b.value] = true;
-          });
-          return rtrActiveExportCols().filter(function (c) {
-            return checked[c.key];
-          });
-        }
 
         function rtrExportScopeLabel() {
           var parts = [
@@ -6441,20 +6424,6 @@
               );
             }).join("");
           }
-
-          // Column picker: every column the active export mode offers, all checked by default.
-          var colRow = $("rtrExportColRow");
-          colRow.innerHTML = rtrActiveExportCols()
-            .map(function (c) {
-              return (
-                '<label><input type="checkbox" name="rtrExportCol" value="' +
-                c.key +
-                '" checked /> ' +
-                esc(c.label) +
-                "</label>"
-              );
-            })
-            .join("");
 
           $("rtrExportOverlay").style.display = "flex";
         }
@@ -6535,7 +6504,7 @@
         }
 
         function rtrExportPng(stores) {
-          var cols = rtrCheckedExportCols();
+          var cols = rtrActiveExportCols();
           var canvas = document.createElement("canvas");
           var ctx = canvas.getContext("2d");
           var padX = 14,
@@ -6661,7 +6630,7 @@
         }
 
         function rtrExportCsv(stores) {
-          var cols = rtrCheckedExportCols();
+          var cols = rtrActiveExportCols();
           downloadCsv(
             "pak-kret-rtr-stores-" + Date.now() + ".csv",
             cols.map(function (c) {
@@ -6676,7 +6645,7 @@
         }
 
         function rtrExportPdf(stores) {
-          var cols = rtrCheckedExportCols();
+          var cols = rtrActiveExportCols();
           var headHtml = cols
             .map(function (c) {
               return "<th>" + esc(c.label) + "</th>";
@@ -6727,10 +6696,6 @@
           if (e.target.id === "rtrExportOverlay") rtrCloseExportModal();
         });
         $("rtrExportGo").addEventListener("click", function () {
-          if (rtrCheckedExportCols().length === 0) {
-            alert("เลือกอย่างน้อย 1 คอลัมน์ก่อน export");
-            return;
-          }
           var stores = rtrGatherExportRows();
           if (stores.length === 0) {
             alert("ไม่มีข้อมูลให้ export ตามตัวกรอง/โซนที่เลือกอยู่ตอนนี้");
