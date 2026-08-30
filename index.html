@@ -2885,9 +2885,14 @@
         // collects every month's CM-level block, not just the first (most recent) one, keyed by
         // month abbreviation, so June's stores get June's committed target instead of falling
         // back to a stale sum-of-individual-store-targets calculation just because they're not
-        // August. April is deliberately excluded: its section has multiple inconsistent
-        // sub-tables (differing store-count totals, at least one PBH name not seen in any later
-        // month) suggesting a mid-quarter roster change that isn't safe to resolve automatically.
+        // August.
+        //
+        // A month is only trusted if its own "Total" row has a real number in "All RTR" (the
+        // store-count column) -- checked per month from the data itself, not by naming specific
+        // months, so this doesn't need updating as the sheet grows. On the real file, an
+        // incomplete/inconsistent month (e.g. mid-quarter roster changes still being reconciled)
+        // leaves that cell blank while settled months always have it; that blank is what gets a
+        // month excluded, not a hardcoded name.
         //
         // Returns { aug: Map(cmName -> totalGA), jul: Map(...), ... }, or null if nothing usable
         // was found (e.g. an export with no per-CM "CM" column anywhere) -- skipped, not fatal.
@@ -2916,6 +2921,7 @@
               sNorm[k] = normHeader(sRow[k]);
             var cmIdx = sNorm.indexOf("cm");
             if (cmIdx === -1) continue; // PBH-only or RSR-level block -- keep scanning past it
+            var allRtrIdx = sNorm.indexOf("all rtr");
             var blockEnd = gRow.length;
             for (var a2 = 0; a2 < anchors.length; a2++) {
               if (anchors[a2].idx > targetAnchor.idx) {
@@ -2939,9 +2945,10 @@
                 break;
               }
             }
-            if (!monthAbbr || monthAbbr === "apr") continue;
+            if (!monthAbbr) continue;
             if (results[monthAbbr]) continue; // already have this month's CM-level block
             var targets = new Map();
+            var trustworthy = true;
             for (var r = gIdx + 2; r < rows2D.length; r++) {
               var row = rows2D[r];
               if (!row) continue;
@@ -2953,13 +2960,18 @@
               var isTotalRow = row.some(function (v) {
                 return v != null && String(v).trim().toLowerCase() === "total";
               });
-              if (isTotalRow) break;
+              if (isTotalRow) {
+                if (allRtrIdx === -1 || !(num(row[allRtrIdx]) > 0)) {
+                  trustworthy = false;
+                }
+                break;
+              }
               var cmName = row[cmIdx] != null ? String(row[cmIdx]).trim() : "";
               if (!cmName) continue;
               var val = num(row[totalGaIdx]);
               if (val > 0) targets.set(cmName, val);
             }
-            if (targets.size > 0) results[monthAbbr] = targets;
+            if (trustworthy && targets.size > 0) results[monthAbbr] = targets;
           }
           return Object.keys(results).length ? results : null;
         }
