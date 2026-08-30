@@ -3201,8 +3201,11 @@
             // The "KPI Set Up" tab carries a pre-committed Total GA target per CM (set by
             // leadership), separate from and more authoritative than the sum of that CM's
             // individual store targets on the mapping sheets above -- see parseKpiSetUpTargets.
+            // Substring match, same reasoning as mapCandidates above: a sheet renamed to
+            // something like "KPI Set Up Q3" or "2026 KPI Set Up" should still be found, not
+            // silently stop matching because of an exact-name requirement.
             var kpiSetupCandidates = allNames.filter(function (n) {
-              return /^kpi\s*set\s*up$/i.test(n.trim());
+              return /kpi\s*set\s*up/i.test(n);
             });
 
             if (monthCandidates.length === 0) {
