@@ -1675,7 +1675,11 @@
 
           <div id="syncProgressPane" style="display: none">
             <ul class="health-list" id="syncSteps"></ul>
-            <div class="modal-hint" id="syncResult" style="margin-top: 12px"></div>
+            <div
+              class="modal-hint"
+              id="syncResult"
+              style="margin-top: 12px"
+            ></div>
             <button
               class="file-btn ghost-light"
               id="syncBackBtn"
@@ -1703,7 +1707,9 @@
         <div class="empty-panel" id="rtrCloud" style="display: none">
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
           <h2>ข้อมูล RTR</h2>
-          <p id="rtrCloudMsg">กดปุ่มด้านล่างเพื่อโหลดข้อมูลล่าสุดจาก Google Sheets</p>
+          <p id="rtrCloudMsg">
+            กดปุ่มด้านล่างเพื่อโหลดข้อมูลล่าสุดจาก Google Sheets
+          </p>
           <button class="file-btn" id="rtrCloudBtn" style="margin-top: 14px">
             📥 โหลดข้อมูลจาก Google Sheets
           </button>
@@ -2001,7 +2007,9 @@
         <div class="empty-panel" id="sevCloud" style="display: none">
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
           <h2>ข้อมูล 7-11</h2>
-          <p id="sevCloudMsg">กดปุ่มด้านล่างเพื่อโหลดข้อมูลล่าสุดจาก Google Sheets</p>
+          <p id="sevCloudMsg">
+            กดปุ่มด้านล่างเพื่อโหลดข้อมูลล่าสุดจาก Google Sheets
+          </p>
           <button class="file-btn" id="sevCloudBtn" style="margin-top: 14px">
             📥 โหลดข้อมูลจาก Google Sheets
           </button>
@@ -2892,7 +2900,8 @@
             var sRow = rows2D[gIdx + 1];
             if (!sRow) continue;
             var sNorm = [];
-            for (var k = 0; k < sRow.length; k++) sNorm[k] = normHeader(sRow[k]);
+            for (var k = 0; k < sRow.length; k++)
+              sNorm[k] = normHeader(sRow[k]);
             var cmIdx = sNorm.indexOf("cm");
             if (cmIdx === -1) continue; // no per-CM breakdown on this sheet -- skip, not fatal
             var blockEnd = gRow.length;
@@ -3353,6 +3362,8 @@
                     stores: result.stores,
                     sevTxByCode: result.sevTxByCode,
                     sevRowCount: result.sevRowCount,
+                    unmappedCount: result.unmappedCount,
+                    unmappedGA: result.unmappedGA,
                   });
                 });
 
@@ -3394,7 +3405,7 @@
                 rtrShow("dashboard");
                 $("rtrCacheBanner").innerHTML = ""; // fresh load, not from cache -- clear any stale banner
 
-                cacheSet("rtrV3", {
+                cacheSet("rtrV4", {
                   fileName: fileName,
                   savedAt: Date.now(),
                   months: rtrMonthsToCacheable(months),
@@ -3458,6 +3469,13 @@
           var rowCount = 0;
           var sevTxByCode = new Map(); // 7-11-named rows in this cluster get routed here instead, keyed by PARTNER_CODE
           var sevRowCount = 0;
+          // A code with no CM match on the mapping sheet is treated as belonging to some other
+          // area's roster (a mismatched cluster tag, most likely -- see the ชานนท์/กันต์ฤทัย case),
+          // not as "this cluster's data with a blank label" -- so it's dropped entirely rather than
+          // showing up as an "ไม่ระบุ CM" row. Counted (not just silently discarded) so the health
+          // panel can still flag it as worth checking in the source file.
+          var unmappedCodes = new Set();
+          var unmappedGA = 0;
 
           for (var r = 1; r < rows2D.length; r++) {
             var row = rows2D[r];
@@ -3535,10 +3553,15 @@
               continue;
             }
 
-            rowCount++;
             // merge Dtac-code and True-code rows for the same physical retailer into one store id
             var canonicalCode = codeToCanonical.get(codeStr) || codeStr;
             var cm = canonicalToCM.get(canonicalCode) || UNMAPPED_CM;
+            if (cm === UNMAPPED_CM) {
+              unmappedCodes.add(canonicalCode);
+              unmappedGA += ga;
+              continue;
+            }
+            rowCount++;
 
             totals.ga += ga;
             totals.ap1d += ap1d;
@@ -3669,6 +3692,8 @@
             stores: Array.from(stores.values()),
             sevTxByCode: sevTxByCode,
             sevRowCount: sevRowCount,
+            unmappedCount: unmappedCodes.size,
+            unmappedGA: unmappedGA,
           };
         }
 
@@ -3772,7 +3797,9 @@
         function finalizeRtrMonths(months, targetByMonth, resolveOverrideMap) {
           months.forEach(function (m, mi) {
             var abbr = parseSheetDate(m.sheetName);
-            var moKey = abbr ? MONTH_LABEL[abbr.monthIndex].toLowerCase() : null;
+            var moKey = abbr
+              ? MONTH_LABEL[abbr.monthIndex].toLowerCase()
+              : null;
             var tgtMap = moKey ? targetByMonth[moKey] : null;
             var prevMonth = mi > 0 ? months[mi - 1] : null;
             // LIKE-FOR-LIKE MOM. The current month is usually still running (data through
@@ -3804,9 +3831,7 @@
                 : null;
               s.lmtdGa = prevGA; // last month's GA up to the same cutoff day, for the table's GA (LMTD) column
               s.momPct =
-                prevGA != null && prevGA > 0
-                  ? (s.ga - prevGA) / prevGA
-                  : null;
+                prevGA != null && prevGA > 0 ? (s.ga - prevGA) / prevGA : null;
             });
             // roll target/m1/achieve up to CM level — %Achieve only counts stores that actually have
             // an individual target, so a handful of untargeted wholesale accounts can't distort it
@@ -3869,8 +3894,7 @@
                 ? m.totals.targetedGA / m.totals.target
                 : null;
             m.totals.noTargetGA = m.totals.ga - m.totals.targetedGA;
-            m.totals.noTargetCount =
-              m.stores.length - targetedStores.length;
+            m.totals.noTargetCount = m.stores.length - targetedStores.length;
             m.hasPrevMonth = !!prevMonth;
 
             // cluster + CM level MOM, computed from summed GA (not an average of per-store %), against
@@ -3888,8 +3912,7 @@
                 var prevCmGA = prevCr
                   ? gaUpToDay(prevCr.daily, m.momCutoffDay)
                   : 0;
-                cr.momPct =
-                  prevCmGA > 0 ? (cr.ga - prevCmGA) / prevCmGA : null;
+                cr.momPct = prevCmGA > 0 ? (cr.ga - prevCmGA) / prevCmGA : null;
               });
             } else {
               m.totals.momPct = null;
@@ -4067,46 +4090,29 @@
           }
 
           // 4. coverage gaps that quietly shrink filtered views
-          var noCm = 0,
-            noCmGA = 0,
-            noCmStores = [],
-            noMall = 0,
+          // Stores whose code never matched a CM on the mapping sheet are treated as belonging
+          // to some other area's roster (most likely a mismatched cluster tag) and are dropped
+          // entirely during ingestion (see aggregateRtrSheet) -- they never reach m.stores, so
+          // this reads the count/GA aggregateRtrSheet tracked on its way out instead of scanning
+          // m.stores for them.
+          var noMall = 0,
             noMallGA = 0;
           m.stores.forEach(function (s) {
-            if (!s.cm || s.cm === UNMAPPED_CM) {
-              noCm++;
-              noCmGA += s.ga;
-              noCmStores.push(s);
-            }
             if (!s.mallType) {
               noMall++;
               noMallGA += s.ga;
             }
           });
-          if (noCm) {
-            // Named so this is checkable against the target-mapping sheet directly, instead of
-            // just a count that says something's missing without saying what — a store lands
-            // here when its PARTNER_CODE (Dtac or True) doesn't match any Code Dtac/True S2L2
-            // Code cell on a "RTR Target GA..." mapping-sheet row tagged with this cluster.
-            var noCmListTxt = noCmStores
-              .slice(0, 8)
-              .map(function (s) {
-                return esc(s.name) + " (" + esc(s.code) + ")";
-              })
-              .join(", ") +
-              (noCmStores.length > 8
-                ? " และอีก " + (noCmStores.length - 8) + " ร้าน"
-                : "");
+          if (m.unmappedCount) {
             items.push({
               level: "warn",
               text:
                 "<b>" +
-                fmt(noCm) +
+                fmt(m.unmappedCount) +
                 "</b> ร้าน (GA " +
-                fmt(noCmGA) +
-                ") ไม่มี CM กำกับ — จะไม่ปรากฏเมื่อกรองราย CM<br><span style=\"font-size:11px;\">" +
-                noCmListTxt +
-                " — เช็กว่ารหัสร้านนี้อยู่ในชีต mapping (RTR Target GA...) แถวที่ Cluster ตรงกับ Pak Kret หรือไม่</span>",
+                fmt(m.unmappedGA) +
+                ") ไม่มี CM กำกับ ถูกคัดออกจากแดชบอร์ดนี้ทั้งหมด (ถือว่าเป็นของพื้นที่อื่น) — " +
+                "ถ้าร้านนี้ควรอยู่ Pak Kret ให้เช็กชีต mapping (RTR Target GA...) ว่ามีรหัสร้านนี้ และ Cluster ตรงกับ Pak Kret หรือไม่",
             });
           }
           if (noMall)
@@ -4734,7 +4740,8 @@
             return null;
           // coalesced: an IndexedDB cache written before targetedGA existed on the rollup would make
           // every number below NaN otherwise (same failure mode as the sev-side NaN bug)
-          var actual = (totals.targetOverridden ? totals.ga : totals.targetedGA) || 0;
+          var actual =
+            (totals.targetOverridden ? totals.ga : totals.targetedGA) || 0;
           var landing = actual / pacing.expectedPct;
           var remaining = Math.max(0, totals.target - actual);
           return {
@@ -5824,7 +5831,7 @@
             })
             .join("");
           var axisHtml = days.length
-            ? "<div class=\"trend-axis\">" +
+            ? '<div class="trend-axis">' +
               days
                 .map(function (d) {
                   return "<span>" + String(d).slice(6, 8) + "</span>";
@@ -9174,7 +9181,7 @@
             })
             .join("");
           var axisHtml =
-            "<div class=\"trend-axis\">" +
+            '<div class="trend-axis">' +
             days
               .map(function (d) {
                 return "<span>" + String(d).slice(6, 8) + "</span>";
@@ -10003,7 +10010,14 @@
         }
 
         function restoreRtrFromCache() {
-          return cacheGet("rtrV3")
+          // Bumped V3 -> V4: the calculation logic changed (cr.targetOverridden and the
+          // achievePct/rtrForecast fix that depends on it) but this cache stores already-computed
+          // month objects verbatim, with no re-run of finalizeRtrMonths on restore -- an old V3
+          // cache would silently restore CM rollups missing the new field, so Sync would keep
+          // writing an empty cmtargets table and %Achieve would stay wrong, forever, with no
+          // visible error. Bumping the key makes old caches simply miss and fall through to "no
+          // cache, please load a file," which forces one real parse that writes a fresh V4 cache.
+          return cacheGet("rtrV4")
             .then(function (cached) {
               if (!cached || !cached.months || !cached.months.length) return;
               var months = rtrMonthsFromCacheable(cached.months);
@@ -10166,11 +10180,10 @@
           if (!syncCfgReady()) el.textContent = "ยังไม่ได้ตั้งค่า";
           else if (!c.sheetId) el.textContent = "ยังไม่ได้เลือกไฟล์ปลายทาง";
           else
-            el.textContent =
-              localStorage.getItem("sync_lastAt")
-                ? "ซิงค์ล่าสุด " +
-                  formatCacheTime(Number(localStorage.getItem("sync_lastAt")))
-                : "พร้อมซิงค์";
+            el.textContent = localStorage.getItem("sync_lastAt")
+              ? "ซิงค์ล่าสุด " +
+                formatCacheTime(Number(localStorage.getItem("sync_lastAt")))
+              : "พร้อมซิงค์";
         }
 
         // --- tiny REST helper -------------------------------------------------
@@ -10217,7 +10230,8 @@
 
         function syncOpenPicker() {
           return new Promise(function (resolve, reject) {
-            if (!window.gapi) return reject(new Error("Picker ยังโหลดไม่เสร็จ"));
+            if (!window.gapi)
+              return reject(new Error("Picker ยังโหลดไม่เสร็จ"));
             gapi.load("picker", function () {
               var c = syncCfg();
               new google.picker.PickerBuilder()
@@ -10341,7 +10355,15 @@
               rows: storesRows,
             },
             daily: {
-              headers: ["code", "date", "ga", "revAmt", "mass", "migrant", "tourist"],
+              headers: [
+                "code",
+                "date",
+                "ga",
+                "revAmt",
+                "mass",
+                "migrant",
+                "tourist",
+              ],
               rows: dailyRows,
             },
             simtypes: {
@@ -10595,7 +10617,12 @@
           Object.keys(tables).forEach(function (suffix) {
             chain = chain.then(function () {
               var t = tables[suffix];
-              return writeTableTab(id, groupKey + "-" + suffix, t.headers, t.rows);
+              return writeTableTab(
+                id,
+                groupKey + "-" + suffix,
+                t.headers,
+                t.rows,
+              );
             });
           });
           return chain;
@@ -10633,7 +10660,9 @@
                   var title = s.properties.title;
                   if (title.indexOf(prefix) !== 0) return;
                   if (legacyRe.test(title)) {
-                    reqs.push({ deleteSheet: { sheetId: s.properties.sheetId } });
+                    reqs.push({
+                      deleteSheet: { sheetId: s.properties.sheetId },
+                    });
                     return;
                   }
                   var key = title.slice(0, prefix.length + 7); // "rtr-2026-08"
@@ -10724,7 +10753,9 @@
           var h = 0x811c9dc5;
           for (var i = 0; i < str.length; i++) {
             h ^= str.charCodeAt(i);
-            h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+            h =
+              (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>>
+              0;
           }
           return h.toString(16);
         }
@@ -10746,7 +10777,11 @@
           (payload.stores.rows || []).forEach(function (r) {
             ga += r[gaCol] || 0;
           });
-          return { h: syncHash(JSON.stringify(payload)), d: days, g: Math.round(ga) };
+          return {
+            h: syncHash(JSON.stringify(payload)),
+            d: days,
+            g: Math.round(ga),
+          };
         }
 
         function syncRun() {
@@ -10943,8 +10978,7 @@
         });
         $("syncNewSheet").addEventListener("click", function () {
           localStorage.removeItem("sync_sheetId");
-          $("syncSheetState").textContent =
-            "จะสร้างไฟล์ใหม่ตอนซิงค์ครั้งถัดไป";
+          $("syncSheetState").textContent = "จะสร้างไฟล์ใหม่ตอนซิงค์ครั้งถัดไป";
           renderSyncStatus();
         });
         $("syncForgetSheet").addEventListener("click", function () {
@@ -10985,7 +11019,9 @@
         //   http://localhost:8080/...          -> publisher (load Excel + sync)
         //   http://localhost:8080/...?view=1   -> pretend to be a viewer, for testing
         //   https://<user>.github.io/...       -> always a viewer, sync unreachable
-        var IS_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+        var IS_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(
+          location.hostname,
+        );
         var IS_PUBLISHER =
           IS_LOCAL && !new URLSearchParams(location.search).has("view");
 
@@ -11286,8 +11322,9 @@
             return byCode[c];
           });
           state.sev.monthsAvailable = months.sort();
-          state.sev.currentMonthKey =
-            months.length ? months[months.length - 1] : null;
+          state.sev.currentMonthKey = months.length
+            ? months[months.length - 1]
+            : null;
           state.sev.loaded = true;
           state.sev.currentCM = null;
           state.sev.currentKhet = null;
@@ -11338,7 +11375,8 @@
                 cloudMsg(t, "กำลังโหลดข้อมูล…");
               });
               return sheetsReadTab(id, "meta").then(function (meta) {
-                if (freshlyPicked) localStorage.setItem("sync_sheetId", freshlyPicked);
+                if (freshlyPicked)
+                  localStorage.setItem("sync_sheetId", freshlyPicked);
                 var rtrTabs = (meta.rtr_months || []).slice(-3);
                 var sevTabs = (meta.sev_months || []).slice(-3);
                 var jobs = rtrTabs
@@ -11394,7 +11432,7 @@
                 m.indexOf("Unable to parse range") !== -1 ||
                 m.indexOf("ว่างเปล่า") !== -1;
               var friendly = wrongFile
-                ? "ไฟล์ที่เลือกไม่ใช่ไฟล์ข้อมูลของแดชบอร์ดนี้ — กด \"เลือกไฟล์ใหม่\" แล้วเลือกไฟล์ที่ผู้ดูแลแชร์ให้"
+                ? 'ไฟล์ที่เลือกไม่ใช่ไฟล์ข้อมูลของแดชบอร์ดนี้ — กด "เลือกไฟล์ใหม่" แล้วเลือกไฟล์ที่ผู้ดูแลแชร์ให้'
                 : m.indexOf("403") !== -1
                   ? "ยังไม่ได้รับสิทธิ์ดูข้อมูลนี้ — แจ้งผู้ดูแลให้แชร์ไฟล์ให้"
                   : m.indexOf("404") !== -1
@@ -11443,7 +11481,9 @@
           SYNC.signedIn = !!ok;
           var b = $("syncBtn");
           if (b) {
-            b.textContent = ok ? "☁️ ซิงค์ขึ้น Sheets" : "🔑 เข้าสู่ระบบเพื่อซิงค์";
+            b.textContent = ok
+              ? "☁️ ซิงค์ขึ้น Sheets"
+              : "🔑 เข้าสู่ระบบเพื่อซิงค์";
             b.title = ok ? "" : "ต้องเข้าสู่ระบบ Google ก่อนจึงจะซิงค์ได้";
           }
           var g = $("syncGo");
