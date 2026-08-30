@@ -5201,8 +5201,10 @@
           );
         }
 
-        function renderApMix() {
-          var stores = rtrCurrentStores();
+        // Buckets any list of stores' AP1D price tiers into the same 3 bands (<250/250-300/>300)
+        // the AP Mix & Portion card has always shown -- shared so the store drilldown can show
+        // one store's own mix in the exact same shape instead of a different chart.
+        function apMixHtml(stores) {
           var buckets = [0, 0, 0]; // <250, 250-300, >300
           stores.forEach(function (s) {
             buckets[0] +=
@@ -5219,11 +5221,9 @@
           var labels = ["AP < 250", "AP 250-300", "AP > 300"];
           var colors = ["var(--accent)", "var(--warn)", "var(--alert)"];
           if (total === 0) {
-            $("apMixChart").innerHTML =
-              '<div class="insight-empty">ไม่มีข้อมูล AP1D ในมุมมองนี้</div>';
-            return;
+            return '<div class="insight-empty">ไม่มีข้อมูล AP1D ในมุมมองนี้</div>';
           }
-          var html =
+          return (
             '<div class="seg-stack">' +
             buckets
               .map(function (v, i) {
@@ -5253,8 +5253,43 @@
                 );
               })
               .join("") +
-            "</div>";
-          $("apMixChart").innerHTML = html;
+            "</div>"
+          );
+        }
+        function renderApMix() {
+          $("apMixChart").innerHTML = apMixHtml(rtrCurrentStores());
+        }
+
+        // Mass/Migrant/Tourist proportion bar -- shared by the page-level สัดส่วนกลุ่มลูกค้า card
+        // (fed the current scope's totals) and the store drilldown (fed one store's own mass/
+        // migrant/tourist numbers).
+        function rtrSegMixHtml(mass, migrant, tourist) {
+          var totalSeg = mass + migrant + tourist;
+          var mp = totalSeg ? (mass / totalSeg) * 100 : 0,
+            gp = totalSeg ? (migrant / totalSeg) * 100 : 0,
+            tp = totalSeg ? (tourist / totalSeg) * 100 : 0;
+          return (
+            '<div class="seg-stack">' +
+            (mp > 0
+              ? '<div class="seg-mass" style="width:' + mp + '%"></div>'
+              : "") +
+            (gp > 0
+              ? '<div class="seg-migrant" style="width:' + gp + '%"></div>'
+              : "") +
+            (tp > 0
+              ? '<div class="seg-tourist" style="width:' + tp + '%"></div>'
+              : "") +
+            '</div><div class="seg-legend">' +
+            '<span><i style="background:var(--accent)"></i>Mass ' +
+            pct(mp / 100) +
+            "</span>" +
+            '<span><i style="background:var(--warn)"></i>Migrant ' +
+            pct(gp / 100) +
+            "</span>" +
+            '<span><i style="background:var(--alert)"></i>Tourist ' +
+            pct(tp / 100) +
+            "</span></div>"
+          );
         }
 
         var QUADRANT_ZONES = {
@@ -5881,32 +5916,11 @@
           }
 
           var t = scope.totals;
-          var totalSeg = t.mass + t.migrant + t.tourist;
-          var mp = totalSeg ? (t.mass / totalSeg) * 100 : 0,
-            gp = totalSeg ? (t.migrant / totalSeg) * 100 : 0,
-            tp = totalSeg ? (t.tourist / totalSeg) * 100 : 0;
-          var segHtml =
-            '<div class="seg-stack">' +
-            (mp > 0
-              ? '<div class="seg-mass" style="width:' + mp + '%"></div>'
-              : "") +
-            (gp > 0
-              ? '<div class="seg-migrant" style="width:' + gp + '%"></div>'
-              : "") +
-            (tp > 0
-              ? '<div class="seg-tourist" style="width:' + tp + '%"></div>'
-              : "") +
-            '</div><div class="seg-legend">' +
-            '<span><i style="background:var(--accent)"></i>Mass ' +
-            pct(mp / 100) +
-            "</span>" +
-            '<span><i style="background:var(--warn)"></i>Migrant ' +
-            pct(gp / 100) +
-            "</span>" +
-            '<span><i style="background:var(--alert)"></i>Tourist ' +
-            pct(tp / 100) +
-            "</span></div>";
-          $("rtrSegmentMix").innerHTML = segHtml;
+          $("rtrSegmentMix").innerHTML = rtrSegMixHtml(
+            t.mass,
+            t.migrant,
+            t.tourist,
+          );
         }
 
         function renderRtrInsights() {
@@ -7217,7 +7231,11 @@
             '<div class="dd-kpi"><div class="l">%AP30D</div><div class="v">' +
             pct(conv) +
             "</div></div>" +
-            "</div><h4>SIM Type ที่ขายมากสุด</h4>" +
+            "</div><h4>สัดส่วนกลุ่มลูกค้า</h4>" +
+            rtrSegMixHtml(s.mass, s.migrant, s.tourist) +
+            "<h4>AP Mix &amp; Portion</h4>" +
+            apMixHtml([s]) +
+            "<h4>SIM Type ที่ขายมากสุด</h4>" +
             simHtml +
             "<h4>สัดส่วนราคาแพ็ค (AP1D)</h4>" +
             tierHtml;
