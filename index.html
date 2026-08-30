@@ -11361,7 +11361,7 @@
           if (el) el.textContent = text;
         }
 
-        // The whole viewer flow: token → (pick file once) → meta → newest 3 of each feed.
+        // The whole viewer flow: token → (pick file once) → meta → newest SYNC.KEEP_MONTHS of each feed.
         function loadFromCloud() {
           if (!syncCfgReady()) {
             cloudMsg("rtr", "ยังไม่ได้ตั้งค่า Google — กด ⚙️ ด้านบน");
@@ -11395,8 +11395,11 @@
               return sheetsReadTab(id, "meta").then(function (meta) {
                 if (freshlyPicked)
                   localStorage.setItem("sync_sheetId", freshlyPicked);
-                var rtrTabs = (meta.rtr_months || []).slice(-3);
-                var sevTabs = (meta.sev_months || []).slice(-3);
+                // Load every month the sync retention keeps (SYNC.KEEP_MONTHS), not an
+                // independent smaller number -- previously hardcoded to 3, so only half of
+                // what was actually synced (and prune keeps) ever reached viewers.
+                var rtrTabs = (meta.rtr_months || []).slice(-SYNC.KEEP_MONTHS);
+                var sevTabs = (meta.sev_months || []).slice(-SYNC.KEEP_MONTHS);
                 var jobs = rtrTabs
                   .map(function (t) {
                     return readRtrMonthGroup(id, t);
