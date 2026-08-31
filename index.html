@@ -2145,6 +2145,16 @@
             </div>
           </section>
 
+          <section id="sevCmLeaderboardSection" style="display: none">
+            <div class="section-head">
+              <h2>เปรียบเทียบ CM</h2>
+              <span class="hint" id="sevCmLeaderboardHint"></span>
+            </div>
+            <div class="card">
+              <div id="sevCmLeaderboardWrap"></div>
+            </div>
+          </section>
+
           <section id="sevAeLeaderboardSection" style="display: none">
             <div class="section-head">
               <h2>เปรียบเทียบ AE</h2>
@@ -2403,6 +2413,10 @@
             filtersExpanded: false,
             aeLbSortKey: "ga",
             aeLbSortDir: "desc",
+            cmLbSortKey: "ga",
+            cmLbSortDir: "desc",
+            cmTargets: {}, // CM name -> committed GA target, from the "TG CM" sheet
+            cmTargetMonthKey: null,
             visibleCount: 20,
           },
         };
@@ -7719,6 +7733,7 @@
                 target: 0,
                 hasTarget: false,
                 targetMonthKey: null, // which byMonth key the target below is actually FOR
+                aeMonthKey: null, // newest month s.ae was actually set from -- see fillIfPlaceholder note below
               };
               storesMap.set(codeStr, s);
             }
@@ -7736,11 +7751,26 @@
             }
             if (idx["DISTRICT_EN"] != null && !s.district)
               s.district = row[idx["DISTRICT_EN"]] || "";
-            s.ae = fillIfPlaceholder(
-              s.ae,
-              UNMAPPED_AE,
-              aeIdx != null ? row[aeIdx] : null,
-            );
+            // BUGFIX: unlike GM/ฝ่าย/เขต (which are genuinely missing from some month-sheets and
+            // just need SOME real value to replace the placeholder), AE assignment actually changes
+            // over time -- confirmed real case: store 71117324 was under AE "นรเศรษฐ์ นุชสา" in the
+            // Mar sheet but reassigned to "ทักข์ธนภรณ์ วัฒนา" by the Aug sheet. fillIfPlaceholder's
+            // "only replace the placeholder" rule left it permanently stuck on whichever AE the
+            // FIRST-processed sheet happened to name, silently crediting a store to someone who no
+            // longer owns it. Track the newest month an AE value actually came from and let a later
+            // month's row always win, regardless of file/sheet processing order.
+            if (aeIdx != null && row[aeIdx]) {
+              var aeVal = String(row[aeIdx]).trim();
+              if (
+                aeVal &&
+                (monthKey == null ||
+                  s.aeMonthKey == null ||
+                  monthKey >= s.aeMonthKey)
+              ) {
+                s.ae = aeVal;
+                if (monthKey) s.aeMonthKey = monthKey;
+              }
+            }
             if (idx["Zone"] != null && !s.zone)
               s.zone = String(row[idx["Zone"]] || "").trim();
             s.gm = fillIfPlaceholder(
@@ -7958,6 +7988,59 @@
           }
         }
 
+        // "TG CM" specifically (not "TG COM" -- a different, one-letter-off sheet name for a
+        // different role/person set, confirmed by cross-referencing real names: "TG CM" lists
+        // e.g. "ชานนท์ สิงหเรศร์" (the CM/"CM Name" column's people), "TG COM" lists e.g. "ทักข์
+        // ธนภรณ์ วัฒนา" (the COM/"AE Name" column's people) -- matched against the same store's
+        // real Aug rows in Data Aug to confirm which sheet's names line up with which column).
+        // Anchored to "cm" so a trailing space or different casing in the sheet name still matches,
+        // but NOT to "com" (the extra letter is deliberate, not a typo).
+        function looksLikeSevCmTargetSheet(sheetName) {
+          return /^tg\s*cm\s*$/i.test(String(sheetName || "").trim());
+        }
+        // Rollup target per CM (not per store) -- feeds the "เปรียบเทียบ CM" leaderboard's Target/
+        // %Achieve columns, the way aggregateSevTargetRows' per-store numbers feed the store table.
+        // The sheet lays out TWO side-by-side pivot tables on one tab (GA Mass/Migrant/Tourist/All
+        // on the left, M1 Mass/Migrant/Tourist/All on the right), each with its OWN "Row Labels"
+        // name column -- so the name column can't be found by header text alone (it appears twice).
+        // Resolved by scanning left from "GA All" for the nearest "Row Labels", i.e. the one that
+        // belongs to the same (GA) pivot table rather than the M1 one three columns over.
+        function aggregateSevCmTargetRows(rows2D, cmToTarget, stats) {
+          var hIdx = findHeaderRow(rows2D, ["row labels", "ga all"], 10);
+          if (hIdx < 0) return;
+          var header = rows2D[hIdx];
+          var gaAllIdx = -1;
+          for (var i = 0; i < header.length; i++) {
+            if (normHeader(header[i]) === "ga all") {
+              gaAllIdx = i;
+              break;
+            }
+          }
+          if (gaAllIdx < 0) return;
+          var nameIdx = -1;
+          for (var j = gaAllIdx; j >= 0; j--) {
+            if (normHeader(header[j]) === "row labels") {
+              nameIdx = j;
+              break;
+            }
+          }
+          if (nameIdx < 0) return;
+
+          for (var r = hIdx + 1; r < rows2D.length; r++) {
+            var row = rows2D[r];
+            if (!row) continue;
+            var name = row[nameIdx];
+            if (name == null || String(name).trim() === "") continue;
+            var nameTrimmed = String(name).trim();
+            if (/grand total/i.test(nameTrimmed)) continue; // pivot's own summary row, not a CM
+            var target = num(row[gaAllIdx]);
+            if (target > 0) {
+              cmToTarget.set(nameTrimmed, target);
+              stats.rows++;
+            }
+          }
+        }
+
         function handleSevFiles(files) {
           if (!files || files.length === 0) return;
           sevShow("sevLoading");
@@ -7982,6 +8065,8 @@
           var rosterStats = { rows: 0 };
           var codeToTarget = new Map();
           var targetStats = { rows: 0 };
+          var cmToTarget = new Map();
+          var cmTargetStats = { rows: 0 };
 
           files
             .reduce(function (chain, file) {
@@ -7992,7 +8077,13 @@
                     truncWarnings = truncWarnings.concat(result.truncWarnings);
                   result.sheets.forEach(function (sheet) {
                     try {
-                      if (looksLikeSevTargetSheet(sheet.name))
+                      if (looksLikeSevCmTargetSheet(sheet.name))
+                        aggregateSevCmTargetRows(
+                          sheet.rows2D,
+                          cmToTarget,
+                          cmTargetStats,
+                        );
+                      else if (looksLikeSevTargetSheet(sheet.name))
                         aggregateSevTargetRows(
                           sheet.rows2D,
                           codeToTarget,
@@ -8068,6 +8159,12 @@
                   }
                 });
               }
+              var cmTargets = {};
+              if (cmToTarget.size > 0 && targetMonthKey) {
+                cmToTarget.forEach(function (t, cmName) {
+                  cmTargets[cmName] = t;
+                });
+              }
 
               state.sev.loaded = true;
               state.sev.stores = stores;
@@ -8086,6 +8183,9 @@
               state.sev.truncWarnings = truncWarnings;
               state.sev.rosterLoaded = rosterStats.rows > 0;
               state.sev.cmMatchCount = cmMatchCount;
+              state.sev.cmTargets = cmTargets;
+              state.sev.cmTargetMonthKey =
+                Object.keys(cmTargets).length > 0 ? targetMonthKey : null;
 
               $("tabBtnSev").classList.add("ready");
               renderSevSheetNote();
@@ -8102,6 +8202,8 @@
                 clusterRows: stats.clusterRows,
                 rosterLoaded: rosterStats.rows > 0,
                 cmMatchCount: cmMatchCount,
+                cmTargets: cmTargets,
+                cmTargetMonthKey: state.sev.cmTargetMonthKey,
               }).catch(function (err) {
                 console.warn("cache save failed (non-fatal):", err);
               });
@@ -8518,6 +8620,7 @@
           renderSevSalesPanel();
           renderSevApMix();
           renderSevSegMix();
+          renderSevCmLeaderboard();
           renderSevAeLeaderboard();
           renderSevInsights();
           renderSevTable();
@@ -8855,6 +8958,272 @@
           if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
           return 0;
         }
+        var CM_LB_COLS = [
+          { key: "name", label: "CM", align: "left" },
+          { key: "stores", label: "ร้าน" },
+          { key: "ga", label: "GA" },
+          { key: "target", label: "Target" },
+          { key: "achieve", label: "%Achieve" },
+          { key: "ap49", label: "AP 49" },
+          { key: "ap99", label: "AP 99" },
+          { key: "ap199", label: "AP 199" },
+          { key: "apOver199", label: "AP > 199" },
+          { key: "mom", label: "%MOM" },
+          { key: "rev", label: "รายได้" },
+          { key: "arpu", label: "ARPU" },
+        ];
+        function cmLbSortValue(row, key) {
+          if (key === "name") return row.cm;
+          if (key === "stores") return row.storeCount;
+          if (key === "ga") return row.ga;
+          if (key === "target") return row.target == null ? -1 : row.target;
+          if (key === "achieve")
+            return row.achievePct == null ? -1 : row.achievePct;
+          if (key === "ap49") return row.ap49;
+          if (key === "ap99") return row.ap99;
+          if (key === "ap199") return row.ap199;
+          if (key === "apOver199") return row.apOver199;
+          if (key === "mom") return row.momPct == null ? -2 : row.momPct;
+          if (key === "rev") return row.revAmt;
+          if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
+          return 0;
+        }
+        // Mirrors renderSevAeLeaderboard exactly (same rollup/sort/click-to-scope plumbing), grouped
+        // by s.cm instead of s.ae, with Target/%Achieve added -- the "TG CM" sheet's committed GA is
+        // a per-CM figure (not per-store, that's "TG Store"), so it only fits this rollup, not the
+        // store table. Target/%Achieve only shown when the target's own month (cmTargetMonthKey) is
+        // the exact month selected, same reasoning as the store table's target gating.
+        function renderSevCmLeaderboard() {
+          var section = $("sevCmLeaderboardSection");
+          var wrap = $("sevCmLeaderboardWrap");
+          var stores = sevFilteredStores("cm");
+          var mk = state.sev.currentMonthKey,
+            day = state.sev.selectedDay;
+          var targetActive =
+            !day &&
+            mk &&
+            mk === state.sev.cmTargetMonthKey &&
+            Object.keys(state.sev.cmTargets).length > 0;
+          var byCm = {};
+          stores.forEach(function (s) {
+            var v = sevScopedValue(s, mk, day);
+            var row =
+              byCm[s.cm] ||
+              (byCm[s.cm] = {
+                cm: s.cm,
+                storeCount: 0,
+                ga: 0,
+                revAmt: 0,
+                ap49: 0,
+                ap99: 0,
+                ap199: 0,
+                apOver199: 0,
+                prevGA: 0,
+                hasPrevGA: false,
+                prevRev: 0,
+                curRevMature: 0,
+                hasPrevRev: false,
+              });
+            row.storeCount++;
+            row.ga += v.ga;
+            row.revAmt += v.revAmt;
+            row.ap49 += v.ap49;
+            row.ap99 += v.ap99;
+            row.ap199 += v.ap199;
+            row.apOver199 += v.apOver199;
+            if (mk && !day) {
+              var prev = sevPrevMonthGA(s);
+              if (prev != null) {
+                row.prevGA += prev;
+                row.hasPrevGA = true;
+              }
+              var rc = sevRevComparison(s);
+              if (rc != null) {
+                row.curRevMature += rc.cur;
+                row.prevRev += rc.prev;
+                row.hasPrevRev = true;
+              }
+            }
+          });
+          var cmNames = Object.keys(byCm);
+          if (cmNames.length <= 1) {
+            section.style.display = "none";
+            return;
+          }
+          section.style.display = "block";
+          var rows = cmNames.map(function (cm) {
+            var r = byCm[cm];
+            r.momPct =
+              mk && !day && r.hasPrevGA && r.prevGA > 0
+                ? (r.ga - r.prevGA) / r.prevGA
+                : null;
+            r.revDeltaPct =
+              mk && !day && r.hasPrevRev && r.prevRev > 0
+                ? (r.curRevMature - r.prevRev) / r.prevRev
+                : null;
+            r.arpu = r.ga > 0 ? r.revAmt / r.ga : null;
+            r.target = targetActive ? state.sev.cmTargets[cm] || null : null;
+            r.achievePct =
+              targetActive && r.target > 0 ? r.ga / r.target : null;
+            return r;
+          });
+
+          var sortKey = state.sev.cmLbSortKey,
+            mult = state.sev.cmLbSortDir === "asc" ? 1 : -1;
+          rows.sort(function (a, b) {
+            var av = cmLbSortValue(a, sortKey),
+              bv = cmLbSortValue(b, sortKey);
+            if (sortKey === "name")
+              return mult * String(av).localeCompare(String(bv));
+            return mult * (av - bv);
+          });
+
+          $("sevCmLeaderboardHint").textContent =
+            sevPeriodLabel() +
+            (day
+              ? " (คลิกวันในกราฟด้านบนอีกครั้งเพื่อยกเลิก)"
+              : mk
+                ? " · %MOM เทียบวันที่ 1-" +
+                  (sevMomCutoffDay || "?") +
+                  (sevRevCutoffDay && sevRevCutoffDay !== sevMomCutoffDay
+                    ? " · รายได้เทียบวันที่ 1-" +
+                      sevRevCutoffDay +
+                      " (ตัดวันท้ายที่รายได้ยังเข้าไม่ครบ)"
+                    : "")
+                : " · เลือกเดือนใดเดือนหนึ่งเพื่อดู %MOM") +
+            " · คลิกแถวเพื่อดูเฉพาะ CM นั้น";
+
+          var headerHtml = CM_LB_COLS.map(function (col) {
+            var isActive = state.sev.cmLbSortKey === col.key;
+            var arrow = isActive
+              ? state.sev.cmLbSortDir === "asc"
+                ? " ▲"
+                : " ▼"
+              : "";
+            var alignStyle =
+              col.align === "left" ? "" : ' style="text-align:right"';
+            return (
+              '<th class="sortable-th' +
+              (isActive ? " active-sort" : "") +
+              '" data-sort-key="' +
+              col.key +
+              '" tabindex="0" role="button" aria-label="เรียงตาม ' +
+              esc(col.label) +
+              '"' +
+              alignStyle +
+              ">" +
+              esc(col.label) +
+              arrow +
+              "</th>"
+            );
+          }).join("");
+
+          var bodyHtml = rows
+            .map(function (r) {
+              var isCurrent = state.sev.currentCM === r.cm;
+              return (
+                '<tr class="clickable" data-cm="' +
+                esc(r.cm) +
+                '"' +
+                (isCurrent ? ' style="background:var(--paper);"' : "") +
+                ">" +
+                "<td>" +
+                esc(r.cm) +
+                "</td>" +
+                '<td class="num-cell">' +
+                fmt(r.storeCount) +
+                "</td>" +
+                '<td class="num-cell">' +
+                fmt(r.ga) +
+                "</td>" +
+                '<td class="num-cell">' +
+                (r.target != null ? fmt(r.target) : "—") +
+                "</td>" +
+                '<td class="num-cell">' +
+                pctBadge(r.achievePct, "achieve") +
+                "</td>" +
+                '<td class="num-cell">' +
+                fmt(r.ap49) +
+                "</td>" +
+                '<td class="num-cell">' +
+                fmt(r.ap99) +
+                "</td>" +
+                '<td class="num-cell">' +
+                fmt(r.ap199) +
+                "</td>" +
+                '<td class="num-cell">' +
+                fmt(r.apOver199) +
+                "</td>" +
+                '<td class="num-cell">' +
+                pctBadge(r.momPct, "mom") +
+                "</td>" +
+                '<td class="num-cell"' +
+                (r.revDeltaPct != null
+                  ? ' title="' +
+                    esc(
+                      "เทียบเฉพาะวันที่ 1-" +
+                        sevRevCutoffDay +
+                        " (ตัดวันท้ายที่รายได้ยังเข้าไม่ครบ)\nเดือนก่อน " +
+                        fmtBaht(r.prevRev) +
+                        " → เดือนนี้ " +
+                        fmtBaht(r.curRevMature),
+                    ) +
+                    '"'
+                  : "") +
+                ">" +
+                fmtBaht(r.revAmt) +
+                deltaArrow(r.revDeltaPct) +
+                "</td>" +
+                '<td class="num-cell">' +
+                (r.arpu != null ? fmtBaht(r.arpu) : "—") +
+                "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+
+          wrap.innerHTML =
+            '<div class="table-scroll-box"><table><thead><tr>' +
+            headerHtml +
+            "</tr></thead><tbody>" +
+            bodyHtml +
+            "</tbody></table></div>";
+
+          Array.prototype.forEach.call(
+            wrap.querySelectorAll("tbody tr"),
+            function (tr) {
+              tr.addEventListener("click", function () {
+                var cm = tr.getAttribute("data-cm");
+                state.sev.currentCM = state.sev.currentCM === cm ? null : cm;
+                renderSevDashboard();
+              });
+            },
+          );
+          Array.prototype.forEach.call(
+            wrap.querySelectorAll("thead th.sortable-th"),
+            function (th) {
+              function doSort() {
+                var key = th.getAttribute("data-sort-key");
+                if (state.sev.cmLbSortKey === key) {
+                  state.sev.cmLbSortDir =
+                    state.sev.cmLbSortDir === "asc" ? "desc" : "asc";
+                } else {
+                  state.sev.cmLbSortKey = key;
+                  state.sev.cmLbSortDir = "desc";
+                }
+                renderSevCmLeaderboard();
+              }
+              th.addEventListener("click", doSort);
+              th.addEventListener("keydown", function (e) {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  doSort();
+                }
+              });
+            },
+          );
+        }
+
         function renderSevAeLeaderboard() {
           var section = $("sevAeLeaderboardSection");
           var wrap = $("sevAeLeaderboardWrap");
@@ -10422,6 +10791,8 @@
               state.sev.fileNames = cached.fileNames || [];
               state.sev.rosterLoaded = !!cached.rosterLoaded;
               state.sev.cmMatchCount = cached.cmMatchCount || 0;
+              state.sev.cmTargets = cached.cmTargets || {};
+              state.sev.cmTargetMonthKey = cached.cmTargetMonthKey || null;
 
               $("tabBtnSev").classList.add("ready");
               if (cached.fileNames)
