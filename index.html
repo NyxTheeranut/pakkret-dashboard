@@ -979,20 +979,25 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        max-width: 60%;
+        max-width: 44%;
         min-width: 0; /* flex items default to min-width:auto and refuse to shrink */
       }
       /* .v carries a long Thai AE NAME on the zero-GA / GA<5 cards, not just a short
          number. Left uncapped with white-space:nowrap it could neither wrap nor shrink,
          so it pushed the whole page wider than the phone screen — which is what made the
-         sticky top bar look narrower than the content. Cap it the same way .n is capped. */
+         sticky top bar look narrower than the content. Cap it the same way .n is capped.
+         Widened 45% -> 62% (and .n above shrunk 60% -> 44% to make room): once a row grew a
+         GA (LMTD) + %+/- column on top of its original value -- or, for the RTR "ความเสี่ยง
+         คุณภาพ" card, 4 fixed-width columns (GA/AP1D/AP30D/conv%) -- 45% wasn't enough and
+         the trailing % was getting cut off mid-column instead of just a long name truncating.
+         62% has margin above the ~56% the 4-column row actually needs. */
       .insight-list .v {
         font-family: "IBM Plex Mono", monospace;
         color: var(--muted);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        max-width: 45%;
+        max-width: 62%;
         min-width: 0;
         text-align: right;
       }
@@ -6146,18 +6151,22 @@
             "ยอดขายเยอะ แต่ AP30D conversion ต่ำ",
             riskStores,
             function (x) {
+              // Same fixed-width .col-num/.col-pct columns as the 7-11 insight cards (see
+              // renderSevInsights) -- this is the one RTR card with more than one number per
+              // row, so it's the one that actually benefits; the other three below show a
+              // single value each, which already right-aligns fine without it.
               return (
                 '<span class="n">' +
                 esc(x.s.name) +
-                '</span><span class="v">GA ' +
+                '</span><span class="v"><span class="col-num">GA ' +
                 fmt(x.s.ga) +
-                " · AP1D " +
+                '</span> · <span class="col-num">AP1D ' +
                 fmt(x.s.ap1d) +
-                " · AP30D " +
+                '</span> · <span class="col-num">AP30D ' +
                 fmt(x.s.ap30d) +
-                " · " +
+                '</span> · <span class="col-pct">' +
                 pct(x.conv) +
-                "</span>"
+                "</span></span>"
               );
             },
           );
