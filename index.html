@@ -3474,7 +3474,9 @@
                 // attach target/m1/achieve data and compute self-consistent %MOM per store —
                 // see finalizeRtrMonths (shared with the cloud-sync reload path)
                 finalizeRtrMonths(months, targetByMonth, function (moKey) {
-                  return kpiSetupTargets ? kpiSetupTargets[moKey] || null : null;
+                  return kpiSetupTargets
+                    ? kpiSetupTargets[moKey] || null
+                    : null;
                 });
 
                 state.rtr.loaded = true;
@@ -7657,6 +7659,10 @@
             "Sum of AP100UP",
             "Sum of AP 100UP",
           ]);
+          // Renamed in the Aug'26 BMA West export: "AE Name" -> "COM", "CM Name" -> "CM" (same
+          // roles/people, confirmed against the old files -- just a title change in the source).
+          var aeIdx = findHeaderIdx(idx, ["AE Name", "COM"]);
+          var cmIdx = findHeaderIdx(idx, ["CM Name", "CM"]);
 
           for (var r = 1; r < rows2D.length; r++) {
             var row = rows2D[r];
@@ -7710,6 +7716,9 @@
                 daily: {},
                 byMonth: {},
                 simTypes: {},
+                target: 0,
+                hasTarget: false,
+                targetMonthKey: null, // which byMonth key the target below is actually FOR
               };
               storesMap.set(codeStr, s);
             }
@@ -7730,7 +7739,7 @@
             s.ae = fillIfPlaceholder(
               s.ae,
               UNMAPPED_AE,
-              idx["AE Name"] != null ? row[idx["AE Name"]] : null,
+              aeIdx != null ? row[aeIdx] : null,
             );
             if (idx["Zone"] != null && !s.zone)
               s.zone = String(row[idx["Zone"]] || "").trim();
@@ -7757,8 +7766,7 @@
             // -- capture it opportunistically so CM coverage doesn't depend solely on the separate
             // roster file. The roster (if also loaded) still gets the final say -- see handleSevFiles,
             // which applies the roster lookup over whatever's here as the authoritative source.
-            if (idx["CM Name"] != null && row[idx["CM Name"]])
-              s.cm = String(row[idx["CM Name"]]).trim();
+            if (cmIdx != null && row[cmIdx]) s.cm = String(row[cmIdx]).trim();
             s.ga += ga;
             s.revAmt += revAmt;
             s.ap100 += ap100;
@@ -7872,6 +7880,84 @@
           }
         }
 
+        // Any "TG ..." sheet from a 7-11 target/commit file (e.g. "Target 7-eleven Aug'26_BMA
+        // West.xlsx" has TG Province/TG CM/TG COM/TG Store) is routed here by sheet NAME
+        // (substring, case-insensitive -- same reasoning as the RTR "KPI Set Up" fix: a rename
+        // next quarter shouldn't silently stop this from matching), not by header signature,
+        // since a coarser rollup sheet's header shape would otherwise be hard to tell apart from
+        // other sheet types reliably. Only "TG Store" (one row per store, under a title block
+        // rather than a plain row-1 header, located the same way findHeaderRow already locates
+        // RTR's mapping-sheet headers) has the PARTNER_CODE-level shape aggregateSevTargetRows
+        // looks for; the coarser TG Province/CM/COM rollups are routed here too but simply
+        // produce nothing (rather than falling through to aggregateSevRows/looksLikeRosterSheet
+        // and generating a spurious "missing column" error for a sheet that was never sales or
+        // roster data to begin with).
+        function looksLikeSevTargetSheet(sheetName) {
+          return /^tg\s/i.test(String(sheetName || "").trim());
+        }
+        var SEV_TARGET_REQUIRED_NORM = ["partner_code", "cm"];
+        // Only the "Overall" group's own "Gross Add" column is used as the target -- the sheet
+        // also splits Mass/Migrant/Tourist by their own Gross Add/M1 Inflow/ARPU triples, but a
+        // single committed GA figure per store is all %Achieve needs. The group label ("Overall")
+        // sits in its own row above the header, so its column position is found by scanning the
+        // few rows immediately above the header for it, then locating "Gross Add" at or after that
+        // column in the header row itself -- same anchor-then-scan approach as parseKpiSetUpTargets.
+        function aggregateSevTargetRows(rows2D, codeToTarget, targetStats) {
+          var hIdx = findHeaderRow(rows2D, SEV_TARGET_REQUIRED_NORM, 10);
+          if (hIdx < 0) return;
+          var header = rows2D[hIdx];
+          var idx = {};
+          for (var i = 0; i < header.length; i++) {
+            idx[normHeader(header[i])] = i;
+          }
+          var codeIdx = idx["partner_code"];
+          if (codeIdx == null) return;
+
+          var groupRowIdx = -1;
+          for (var gr = hIdx - 1; gr >= Math.max(0, hIdx - 5); gr--) {
+            var candidate = rows2D[gr];
+            if (
+              candidate &&
+              candidate.some(function (v) {
+                return normHeader(v) === "overall";
+              })
+            ) {
+              groupRowIdx = gr;
+              break;
+            }
+          }
+          if (groupRowIdx < 0) return; // shape doesn't match -- skip, not fatal
+          var groupRow = rows2D[groupRowIdx];
+          var overallIdx = -1;
+          for (var g = 0; g < groupRow.length; g++) {
+            if (normHeader(groupRow[g]) === "overall") {
+              overallIdx = g;
+              break;
+            }
+          }
+          if (overallIdx < 0) return;
+          var targetGaIdx = -1;
+          for (var c = overallIdx; c < header.length; c++) {
+            if (normHeader(header[c]) === "gross add") {
+              targetGaIdx = c;
+              break;
+            }
+          }
+          if (targetGaIdx < 0) return;
+
+          for (var r = hIdx + 1; r < rows2D.length; r++) {
+            var row = rows2D[r];
+            if (!row) continue;
+            var code = row[codeIdx];
+            if (code == null || code === "") continue;
+            var target = num(row[targetGaIdx]);
+            if (target > 0) {
+              codeToTarget.set(String(code).trim(), target);
+              targetStats.rows++;
+            }
+          }
+        }
+
         function handleSevFiles(files) {
           if (!files || files.length === 0) return;
           sevShow("sevLoading");
@@ -7894,6 +7980,8 @@
           var truncWarnings = [];
           var codeToCm = new Map();
           var rosterStats = { rows: 0 };
+          var codeToTarget = new Map();
+          var targetStats = { rows: 0 };
 
           files
             .reduce(function (chain, file) {
@@ -7904,7 +7992,13 @@
                     truncWarnings = truncWarnings.concat(result.truncWarnings);
                   result.sheets.forEach(function (sheet) {
                     try {
-                      if (looksLikeRosterSheet(sheet.rows2D))
+                      if (looksLikeSevTargetSheet(sheet.name))
+                        aggregateSevTargetRows(
+                          sheet.rows2D,
+                          codeToTarget,
+                          targetStats,
+                        );
+                      else if (looksLikeRosterSheet(sheet.rows2D))
                         aggregateRosterRows(
                           sheet.rows2D,
                           codeToCm,
@@ -7955,6 +8049,25 @@
                 });
               });
               var monthsAvailable = Object.keys(monthsSet).sort();
+
+              // The target file is scoped to a single month (e.g. "Aug'26"), so there's no month
+              // column to key targets by -- attach every matched target to the newest month seen
+              // across all loaded sales files, which is the only month a target commit file would
+              // ever realistically accompany.
+              var targetMonthKey =
+                monthsAvailable.length > 0
+                  ? monthsAvailable[monthsAvailable.length - 1]
+                  : null;
+              if (codeToTarget.size > 0 && targetMonthKey) {
+                stores.forEach(function (s) {
+                  var t = codeToTarget.get(s.code);
+                  if (t != null) {
+                    s.target = t;
+                    s.hasTarget = true;
+                    s.targetMonthKey = targetMonthKey;
+                  }
+                });
+              }
 
               state.sev.loaded = true;
               state.sev.stores = stores;
@@ -9041,9 +9154,11 @@
           // "ใส่แค่ชื่อ CO ได้มั้ย นามสกุลไม่ต้องใส่" -- these cards are a scan list, not a directory,
           // so the surname just adds width without adding anything the reader needs.
           function firstName(name) {
-            return String(name || "")
-              .trim()
-              .split(/\s+/)[0] || "";
+            return (
+              String(name || "")
+                .trim()
+                .split(/\s+/)[0] || ""
+            );
           }
           // Each piece in its own fixed-width .col-* span (desktop only -- see the mobile media
           // query resetting them back to natural inline flow) so a scanned-down column of GA/
@@ -9088,10 +9203,7 @@
               return clickableRow(
                 x.s.code,
                 '<span class="n">' + esc(x.s.name) + "</span>",
-                '<span class="v">' +
-                  aeCol(x.s.ae) +
-                  lmtdAndMom(x) +
-                  "</span>",
+                '<span class="v">' + aeCol(x.s.ae) + lmtdAndMom(x) + "</span>",
               );
             },
           );
@@ -9484,6 +9596,8 @@
         var SEV_TABLE_COLS = [
           { key: "name", label: "ร้านค้า", align: "left" },
           { key: "ga", label: "GA" },
+          { key: "target", label: "Target" },
+          { key: "achieve", label: "%Achieve" },
           { key: "ap49", label: "AP 49" },
           { key: "ap99", label: "AP 99" },
           { key: "ap199", label: "AP 199" },
@@ -9497,6 +9611,9 @@
           if (key === "name") return s.name || "";
           if (key === "khet") return s.khet || "";
           if (key === "ga") return sv.ga;
+          if (key === "target") return sv.target == null ? -1 : sv.target;
+          if (key === "achieve")
+            return sv.achievePct == null ? -1 : sv.achievePct;
           if (key === "rev") return sv.revAmt;
           if (key === "ap49") return sv.ap49;
           if (key === "ap99") return sv.ap99;
@@ -9520,6 +9637,12 @@
             prevRevAmt != null && prevRevAmt > 0
               ? (v.revAmt - prevRevAmt) / prevRevAmt
               : null;
+          // The target commit file is scoped to a single month, so target/%Achieve only mean
+          // anything when that exact month is the one selected (not "all months combined", whose
+          // summed GA a single-month target was never meant to be measured against, and not a
+          // single day, which a whole-month commit can't be prorated against either).
+          var targetActive =
+            s.hasTarget && !day && state.sev.currentMonthKey === s.targetMonthKey;
           return {
             ga: v.ga,
             revAmt: v.revAmt,
@@ -9531,6 +9654,8 @@
             revMomPct: revMomPct,
             lmtdGa: prevGA, // last month's GA up to the same cutoff day -- GA (LMTD)
             m1ga: v.ga > 0 ? v.revAmt / v.ga : null,
+            target: targetActive ? s.target : null,
+            achievePct: targetActive && s.target > 0 ? v.ga / s.target : null,
           };
         }
 
@@ -9629,6 +9754,18 @@
           // here) -- reordering or renaming a column now only requires editing SEV_TABLE_COLS itself.
           function sevTableCellHtml(col, s, d) {
             if (col.key === "khet") return "<td>" + esc(s.khet) + "</td>";
+            if (col.key === "target")
+              return (
+                '<td class="num-cell">' +
+                (d.target != null ? fmt(d.target) : "—") +
+                "</td>"
+              );
+            if (col.key === "achieve")
+              return (
+                '<td class="num-cell">' +
+                pctBadge(d.achievePct, "achieve") +
+                "</td>"
+              );
             if (col.key === "mtd")
               return (
                 '<td class="num-cell">' + pctBadge(d.momPct, "mom") + "</td>"
@@ -11644,7 +11781,9 @@
                     if (el)
                       el.innerHTML =
                         '<div class="cache-banner"><span>โหลดจาก Google Sheets' +
-                        (b.dataAsOf ? " · <b>" + esc(b.dataAsOf) + "</b>" : "") +
+                        (b.dataAsOf
+                          ? " · <b>" + esc(b.dataAsOf) + "</b>"
+                          : "") +
                         " · ซิงค์ล่าสุด " +
                         esc(when) +
                         "</span></div>";
