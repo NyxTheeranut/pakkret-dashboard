@@ -11112,6 +11112,11 @@
           allStores.forEach(function (s) {
             var bm = s.byMonth[monthKey];
             if (!bm) return;
+            // The target commit file is scoped to ONE month -- only write it into that specific
+            // month's row (0 elsewhere), same convention as RTR's per-store target column, so a
+            // cloud reader can tell which month it actually applies to just by which row is nonzero.
+            var targetVal =
+              s.hasTarget && s.targetMonthKey === monthKey ? s.target : 0;
             storesRows.push([
               s.code,
               s.name,
@@ -11133,6 +11138,7 @@
               bm.tourist,
               bm.dtacGa,
               bm.trueGa,
+              targetVal,
             ]);
             Object.keys(bm.simTypes || {}).forEach(function (st) {
               simRows.push([s.code, st, bm.simTypes[st]]);
@@ -11184,6 +11190,7 @@
                 "tourist",
                 "dtacGa",
                 "trueGa",
+                "target",
               ],
               rows: storesRows,
             },
@@ -11208,6 +11215,20 @@
             simtypes: {
               headers: ["code", "simType", "ga"],
               rows: simRows,
+            },
+            // Only the month matching cmTargetMonthKey actually carries rows -- same one-month
+            // scoping as the per-store target column above, and the same "cm"/"target" shape as
+            // RTR's cmtargets table.
+            cmtargets: {
+              headers: ["cm", "target"],
+              rows:
+                state.sev.cmTargetMonthKey === monthKey
+                  ? Object.keys(state.sev.cmTargets)
+                      .sort()
+                      .map(function (cm) {
+                        return [cm, state.sev.cmTargets[cm]];
+                      })
+                  : [],
             },
           };
         }
@@ -11844,10 +11865,17 @@
         // applySevFromCloud already expects -- the inverse of buildSevMonthTables.
         function readSevMonthGroup(id, key) {
           var monthKey = key.slice(4).replace("-", ""); // "sev-2026-08" -> "202608"
+          // cmtargets is a newer sub-tab -- a spreadsheet last synced before this feature existed
+          // won't have it yet (until the publisher syncs again), so a missing tab must not break
+          // the whole month read. Same reasoning as the store/target columns below: absent data
+          // degrades to "no target shown", never an error.
           return Promise.all([
             readTable(id, key + "-stores"),
             readTable(id, key + "-daily"),
             readTable(id, key + "-simtypes"),
+            readTable(id, key + "-cmtargets").catch(function () {
+              return { headers: [], rows: [] };
+            }),
           ]).then(function (parts) {
             var byCode = {};
             parts[0].rows.forEach(function (r) {
@@ -11866,6 +11894,7 @@
                 trueGa: Number(r[19]) || 0,
                 simTypes: {},
               };
+              var target = Number(r[20]) || 0;
               var byMonth = {};
               byMonth[monthKey] = bm;
               byCode[r[0]] = {
@@ -11879,6 +11908,9 @@
                 district: r[7],
                 byMonth: byMonth,
                 daily: {},
+                target: target,
+                hasTarget: target > 0,
+                targetMonthKey: target > 0 ? monthKey : null,
               };
             });
             parts[1].rows.forEach(function (r) {
@@ -11903,11 +11935,16 @@
               if (!s) return;
               s.byMonth[monthKey].simTypes[r[1]] = Number(r[2]) || 0;
             });
+            var cmTargets = {};
+            parts[3].rows.forEach(function (r) {
+              cmTargets[r[0]] = Number(r[1]) || 0;
+            });
             return {
               monthKey: monthKey,
               stores: Object.keys(byCode).map(function (c) {
                 return byCode[c];
               }),
+              cmTargets: cmTargets,
             };
           });
         }
@@ -11975,9 +12012,18 @@
         function applySevFromCloud(monthPayloads) {
           var byCode = {};
           var months = [];
+          var cmTargets = {};
+          var cmTargetMonthKey = null;
           monthPayloads.forEach(function (p) {
             if (!p || !p.stores) return;
             months.push(p.monthKey);
+            // The target commit file (and its CM rollup) is scoped to one month -- whichever
+            // month's group actually carries cmTargets rows is that month, same convention as
+            // each store's own target/targetMonthKey below.
+            if (p.cmTargets && Object.keys(p.cmTargets).length > 0) {
+              cmTargets = p.cmTargets;
+              cmTargetMonthKey = p.monthKey;
+            }
             p.stores.forEach(function (s) {
               var t = byCode[s.code];
               if (!t) {
@@ -12008,6 +12054,9 @@
                   byMonth: {},
                   daily: {},
                   simTypes: {},
+                  target: 0,
+                  hasTarget: false,
+                  targetMonthKey: null,
                 };
               }
               Object.keys(s.byMonth || {}).forEach(function (mk) {
@@ -12016,6 +12065,11 @@
               Object.keys(s.daily || {}).forEach(function (d) {
                 t.daily[d] = s.daily[d];
               });
+              if (s.hasTarget) {
+                t.target = s.target;
+                t.hasTarget = true;
+                t.targetMonthKey = s.targetMonthKey;
+              }
             });
           });
           // grand totals across every month present, so "ทุกเดือนรวมกัน" still works
@@ -12061,6 +12115,8 @@
           state.sev.visibleCount = 20;
           state.sev.rosterLoaded = true; // CM already resolved by the publisher
           state.sev.fromCloud = true; // suppresses file-parsing notes/warnings
+          state.sev.cmTargets = cmTargets;
+          state.sev.cmTargetMonthKey = cmTargetMonthKey;
           $("tabBtnSev").classList.add("ready");
         }
 
