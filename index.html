@@ -2424,6 +2424,26 @@
           );
         }
 
+        // Small inline ↑/↓ next to a baht figure -- same up/down-vs-last-month idea as pctColored,
+        // just compact enough to sit beside a value instead of needing its own column.
+        function revMomArrowHtml(n) {
+          if (n == null) return "";
+          var rounded = Math.round(n * 100);
+          if (rounded === 0) return "";
+          var color = rounded < 0 ? "var(--alert)" : "var(--accent)";
+          var arrow = rounded < 0 ? "↓" : "↑";
+          return (
+            ' <span style="color:' +
+            color +
+            '; font-weight: 700;" title="รายได้เทียบเดือนก่อน (LMTD) ' +
+            (rounded > 0 ? "+" : "") +
+            rounded +
+            '%">' +
+            arrow +
+            "</span>"
+          );
+        }
+
         // ===== percent heat scale — many-color gradient instead of a flat red/black split,
         // so a table full of %MTD / %MOM numbers reads at a glance instead of requiring
         // the reader to parse every digit. Two color scales:
@@ -8418,7 +8438,11 @@
             "%</span>"
           );
         }
-        function sevPrevMonthGA(s) {
+        // Like-for-like: only count the previous month's days up to the same day-of-month the
+        // selected month reaches. Comparing a part-month against a full month made every store
+        // look like it was collapsing -- see the RTR-side note on momCutoffDay. `metric` is
+        // whichever field both s.byMonth[mk] and s.daily[d] carry (e.g. "ga", "revAmt").
+        function sevPrevMonthMetric(s, metric) {
           var mk = state.sev.currentMonthKey;
           if (!mk) return null;
           var avail = state.sev.monthsAvailable;
@@ -8426,16 +8450,16 @@
           if (idx <= 0) return null;
           var prevKey = avail[idx - 1];
           if (!s.byMonth[prevKey]) return 0;
-          // Like-for-like: only count the previous month's days up to the same day-of-month the
-          // selected month reaches. Comparing a part-month against a full month made every store
-          // look like it was collapsing -- see the RTR-side note on momCutoffDay.
-          if (!sevMomCutoffDay) return s.byMonth[prevKey].ga;
+          if (!sevMomCutoffDay) return s.byMonth[prevKey][metric] || 0;
           var t = 0;
           Object.keys(s.daily).forEach(function (d) {
             if (d.slice(0, 6) === prevKey && dayOfMonth(d) <= sevMomCutoffDay)
-              t += s.daily[d].ga || 0;
+              t += s.daily[d][metric] || 0;
           });
           return t;
+        }
+        function sevPrevMonthGA(s) {
+          return sevPrevMonthMetric(s, "ga");
         }
 
         function renderSevApMix() {
@@ -8861,8 +8885,12 @@
           var mk = state.sev.currentMonthKey,
             day = state.sev.selectedDay;
           var periodLabel = sevPeriodLabel();
+          // rd (momPct/lmtdGa) computed once per store here rather than re-deriving it inside
+          // each card below -- sevRowData() re-scopes to mk/day internally, so calling it once
+          // per store per render is enough.
           var withSales = stores.map(function (s) {
-            return { s: s, sv: sevScopedValue(s, mk, day) };
+            var rd = sevRowData(s);
+            return { s: s, sv: rd, momPct: rd.momPct, lmtdGa: rd.lmtdGa };
           });
 
           var topGA = withSales
@@ -8884,9 +8912,6 @@
           // MOM% only means something once a specific month is selected (sevPrevMonthGA returns null
           // otherwise) -- same gating convention as the table's MTD% column and RTR's quadrant chart.
           var declining = withSales
-            .map(function (x) {
-              return { s: x.s, sv: x.sv, momPct: sevRowData(x.s).momPct };
-            })
             .filter(function (x) {
               return x.sv.ga > 0 && x.momPct != null && x.momPct < 0;
             })
@@ -8924,6 +8949,22 @@
               "</li>"
             );
           }
+          // "ใส่แค่ชื่อ CO ได้มั้ย นามสกุลไม่ต้องใส่" -- these cards are a scan list, not a directory,
+          // so the surname just adds width without adding anything the reader needs.
+          function firstName(name) {
+            return String(name || "")
+              .trim()
+              .split(/\s+/)[0] || "";
+          }
+          // "GA (LMTD)" + "%+/-" on every card, same shape as the RTR store table's own columns.
+          function lmtdAndMom(x) {
+            return (
+              " · LMTD " +
+              (x.lmtdGa != null ? fmt(x.lmtdGa) : "—") +
+              " · " +
+              pctColored(x.momPct)
+            );
+          }
 
           var html = "";
           html += cardHtml(
@@ -8935,7 +8976,10 @@
               return clickableRow(
                 x.s.code,
                 '<span class="n">' + esc(x.s.name) + "</span>",
-                '<span class="v">GA ' + fmt(x.sv.ga) + "</span>",
+                '<span class="v">GA ' +
+                  fmt(x.sv.ga) +
+                  lmtdAndMom(x) +
+                  "</span>",
               );
             },
           );
@@ -8948,7 +8992,10 @@
               return clickableRow(
                 x.s.code,
                 '<span class="n">' + esc(x.s.name) + "</span>",
-                '<span class="v">' + esc(x.s.ae) + "</span>",
+                '<span class="v">' +
+                  esc(firstName(x.s.ae)) +
+                  lmtdAndMom(x) +
+                  "</span>",
               );
             },
           );
@@ -8964,7 +9011,8 @@
                 '<span class="v">GA ' +
                   fmt(x.sv.ga) +
                   " · " +
-                  esc(x.s.ae) +
+                  esc(firstName(x.s.ae)) +
+                  lmtdAndMom(x) +
                   "</span>",
               );
             },
@@ -8981,8 +9029,7 @@
                   '<span class="n">' + esc(x.s.name) + "</span>",
                   '<span class="v">GA ' +
                     fmt(x.sv.ga) +
-                    " · " +
-                    pctColored(x.momPct) +
+                    lmtdAndMom(x) +
                     "</span>",
                 );
               },
@@ -9372,9 +9419,14 @@
           var day = state.sev.selectedDay;
           var v = sevScopedValue(s, state.sev.currentMonthKey, day);
           // MOM (vs previous month) doesn't mean anything once scoped down to a single day
-          var prevGA = day ? null : sevPrevMonthGA(s);
+          var prevGA = day ? null : sevPrevMonthMetric(s, "ga");
+          var prevRevAmt = day ? null : sevPrevMonthMetric(s, "revAmt");
           var momPct =
             prevGA != null && prevGA > 0 ? (v.ga - prevGA) / prevGA : null;
+          var revMomPct =
+            prevRevAmt != null && prevRevAmt > 0
+              ? (v.revAmt - prevRevAmt) / prevRevAmt
+              : null;
           return {
             ga: v.ga,
             revAmt: v.revAmt,
@@ -9383,6 +9435,8 @@
             ap199: v.ap199,
             apOver199: v.apOver199,
             momPct: momPct,
+            revMomPct: revMomPct,
+            lmtdGa: prevGA, // last month's GA up to the same cutoff day -- GA (LMTD)
             m1ga: v.ga > 0 ? v.revAmt / v.ga : null,
           };
         }
@@ -9493,7 +9547,12 @@
                 "</td>"
               );
             if (col.key === "rev")
-              return '<td class="num-cell">' + fmtBaht(d.revAmt) + "</td>";
+              return (
+                '<td class="num-cell">' +
+                fmtBaht(d.revAmt) +
+                revMomArrowHtml(d.revMomPct) +
+                "</td>"
+              );
             return '<td class="num-cell">' + fmt(d[col.key]) + "</td>"; // ga, ap49, ap99, ap199
           }
           var visible = rowsData.slice(0, state.sev.visibleCount);
