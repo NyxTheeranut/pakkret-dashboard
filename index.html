@@ -996,6 +996,27 @@
         min-width: 0;
         text-align: right;
       }
+      /* Experimental: fixed-width columns so GA/LMTD/% line up down a card without an actual
+         <table> (which would cramp badly in a 2-col card grid on mobile). Opt-in per span, scoped
+         under .col-wrap so it doesn't touch .v's existing free-text behavior used elsewhere
+         (RTR's insight cards, sev's AE-name-only rows). */
+      .insight-list .v .col-num {
+        display: inline-block;
+        width: 58px;
+        text-align: right;
+      }
+      .insight-list .v .col-pct {
+        display: inline-block;
+        width: 46px;
+        text-align: right;
+      }
+      .insight-list .v .col-ae {
+        display: inline-block;
+        max-width: 80px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        vertical-align: bottom;
+      }
       .insight-empty {
         font-size: 12px;
         color: var(--muted);
@@ -1520,6 +1541,17 @@
         }
         .insight-list .v {
           font-size: 11.5px;
+        }
+        /* The fixed-width columns are a desktop-only reading aid (lining up a scanned-down
+           column of numbers) -- on a phone each row is already its own stacked line, so a
+           fixed pixel width just wastes space or wraps oddly. Let them size to content instead. */
+        .insight-list .v .col-num,
+        .insight-list .v .col-pct,
+        .insight-list .v .col-ae {
+          display: inline;
+          width: auto;
+          max-width: none;
+          text-align: left;
         }
 
         .section-head h2 {
@@ -9004,14 +9036,24 @@
               .trim()
               .split(/\s+/)[0] || "";
           }
-          // "GA (LMTD)" + "%+/-" on every card, same shape as the RTR store table's own columns.
+          // Each piece in its own fixed-width .col-* span (desktop only -- see the mobile media
+          // query resetting them back to natural inline flow) so a scanned-down column of GA/
+          // LMTD/% numbers lines up without needing an actual <table>, which would cramp badly
+          // at half-width in this 2-col card grid on a phone.
+          function gaCol(x) {
+            return '<span class="col-num">GA ' + fmt(x.sv.ga) + "</span>";
+          }
           function lmtdAndMom(x) {
             return (
-              " · LMTD " +
+              ' · <span class="col-num">LMTD ' +
               (x.lmtdGa != null ? fmt(x.lmtdGa) : "—") +
-              " · " +
-              pctColored(x.momPct)
+              '</span> · <span class="col-pct">' +
+              pctColored(x.momPct) +
+              "</span>"
             );
+          }
+          function aeCol(name) {
+            return '<span class="col-ae">' + esc(firstName(name)) + "</span>";
           }
 
           var html = "";
@@ -9024,10 +9066,7 @@
               return clickableRow(
                 x.s.code,
                 '<span class="n">' + esc(x.s.name) + "</span>",
-                '<span class="v">GA ' +
-                  fmt(x.sv.ga) +
-                  lmtdAndMom(x) +
-                  "</span>",
+                '<span class="v">' + gaCol(x) + lmtdAndMom(x) + "</span>",
               );
             },
           );
@@ -9041,7 +9080,7 @@
                 x.s.code,
                 '<span class="n">' + esc(x.s.name) + "</span>",
                 '<span class="v">' +
-                  esc(firstName(x.s.ae)) +
+                  aeCol(x.s.ae) +
                   lmtdAndMom(x) +
                   "</span>",
               );
@@ -9056,10 +9095,10 @@
               return clickableRow(
                 x.s.code,
                 '<span class="n">' + esc(x.s.name) + "</span>",
-                '<span class="v">GA ' +
-                  fmt(x.sv.ga) +
+                '<span class="v">' +
+                  gaCol(x) +
                   " · " +
-                  esc(firstName(x.s.ae)) +
+                  aeCol(x.s.ae) +
                   lmtdAndMom(x) +
                   "</span>",
               );
@@ -9075,10 +9114,7 @@
                 return clickableRow(
                   x.s.code,
                   '<span class="n">' + esc(x.s.name) + "</span>",
-                  '<span class="v">GA ' +
-                    fmt(x.sv.ga) +
-                    lmtdAndMom(x) +
-                    "</span>",
+                  '<span class="v">' + gaCol(x) + lmtdAndMom(x) + "</span>",
                 );
               },
             );
