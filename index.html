@@ -8193,7 +8193,14 @@
               sevShow("dashboard");
               $("sevCacheBanner").innerHTML = "";
 
-              cacheSet("sevV5", {
+              // Bumped V5 -> V6: store objects gained target/hasTarget/targetMonthKey/aeMonthKey
+              // this session. restoreSevFromCache (unlike RTR's) assigns cached.stores straight
+              // into state with no rebuild pass, so a pre-existing V5 cache would keep silently
+              // restoring target-less stores forever -- syncing would then upload whatever's in
+              // memory (the stale, targetless cache), never picking up real target data even
+              // after re-selecting the Target file, since the cache restore runs on every load
+              // before a fresh file selection happens. Forces one fresh parse to clear this.
+              cacheSet("sevV6", {
                 fileNames: fileNames,
                 savedAt: Date.now(),
                 stores: stores,
@@ -8958,7 +8965,15 @@
           if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
           return 0;
         }
-        var CM_LB_COLS = [
+        // BUGFIX: previously named CM_LB_COLS/cmLbSortValue -- RTR's own "เปรียบเทียบ CM"
+        // leaderboard (renderCmLeaderboard, above) already uses those exact global names for its
+        // own, differently-shaped columns. Both are plain `var`/`function` declarations in the
+        // same top-level scope, so this one being LATER in the file silently overwrote RTR's,
+        // leaving RTR's header row driven by these 7-11-shaped columns while its <td> markup was
+        // still hard-coded for the old ones -- every cell after %Achieve rendered under the wrong
+        // header, and RTR's default "gap" sort silently stopped working (this function has no
+        // "gap" case). Renamed to be unambiguously sev-only.
+        var SEV_CM_LB_COLS = [
           { key: "name", label: "CM", align: "left" },
           { key: "stores", label: "ร้าน" },
           { key: "ga", label: "GA" },
@@ -8972,7 +8987,7 @@
           { key: "rev", label: "รายได้" },
           { key: "arpu", label: "ARPU" },
         ];
-        function cmLbSortValue(row, key) {
+        function sevCmLbSortValue(row, key) {
           if (key === "name") return row.cm;
           if (key === "stores") return row.storeCount;
           if (key === "ga") return row.ga;
@@ -9071,8 +9086,8 @@
           var sortKey = state.sev.cmLbSortKey,
             mult = state.sev.cmLbSortDir === "asc" ? 1 : -1;
           rows.sort(function (a, b) {
-            var av = cmLbSortValue(a, sortKey),
-              bv = cmLbSortValue(b, sortKey);
+            var av = sevCmLbSortValue(a, sortKey),
+              bv = sevCmLbSortValue(b, sortKey);
             if (sortKey === "name")
               return mult * String(av).localeCompare(String(bv));
             return mult * (av - bv);
@@ -9093,7 +9108,7 @@
                 : " · เลือกเดือนใดเดือนหนึ่งเพื่อดู %MOM") +
             " · คลิกแถวเพื่อดูเฉพาะ CM นั้น";
 
-          var headerHtml = CM_LB_COLS.map(function (col) {
+          var headerHtml = SEV_CM_LB_COLS.map(function (col) {
             var isActive = state.sev.cmLbSortKey === col.key;
             var arrow = isActive
               ? state.sev.cmLbSortDir === "asc"
@@ -10773,7 +10788,7 @@
         }
 
         function restoreSevFromCache() {
-          return cacheGet("sevV5")
+          return cacheGet("sevV6")
             .then(function (cached) {
               if (!cached || !cached.stores || !cached.stores.length) return;
               state.sev.loaded = true;
