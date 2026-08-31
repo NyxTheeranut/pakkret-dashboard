@@ -4184,6 +4184,23 @@
           renderHealth("rtr", items);
         }
 
+        // "ข้อมูล ณ [timestamp]" says WHEN the sync/load happened -- not what day the underlying
+        // data itself actually reaches, which can lag behind that (the source file might only
+        // have sales through the 22nd even if you synced it today). This is that second, separate
+        // fact: the latest loaded month's own highest day-of-month with real data, independent of
+        // sync/parse time. Same idea as momCutoffDay, just not gated on a month being "current".
+        function rtrLatestDataDay() {
+          var months = state.rtr.months || [];
+          if (!months.length) return null;
+          var m = months[months.length - 1]; // ascending order -- see sortMonthsChronologically
+          var day = monthMaxDay(m);
+          return day ? { label: m.label || m.sheetName, day: day } : null;
+        }
+        function rtrDataAsOfText() {
+          var d = rtrLatestDataDay();
+          return d ? "ข้อมูลถึงวันที่ " + d.day + " (" + d.label + ")" : "";
+        }
+
         function renderRtrSheetNote() {
           // Data pulled from Google Sheets was parsed by the PUBLISHER, not here — so the
           // file-parsing statistics below (sheet counts, CM-mapping coverage, stray 7-11 rows)
@@ -4198,8 +4215,10 @@
                   return m.label || m.sheetName;
                 })
                 .join(", ") +
+              " · " +
+              rtrDataAsOfText() +
               (state.cloudUpdatedAt
-                ? " · ข้อมูล ณ " +
+                ? " · ซิงค์ล่าสุด " +
                   new Date(state.cloudUpdatedAt).toLocaleString("th-TH")
                 : "");
             return;
@@ -4216,6 +4235,8 @@
             state.rtr.months.length +
             " ชีตรายเดือน (เรียงตามวันที่): " +
             names +
+            " · " +
+            rtrDataAsOfText() +
             " · CM mapping ครอบคลุม " +
             state.rtr.mapCoverage.totalCodes +
             " รหัสร้าน (นับทั้งรหัส Dtac และ True)";
@@ -8023,6 +8044,30 @@
           renderHealth("sev", items);
         }
 
+        // See rtrLatestDataDay/rtrDataAsOfText — same distinction: when the data was synced/loaded
+        // vs. what day the latest loaded month's data actually reaches.
+        function sevLatestDataDay() {
+          var avail = state.sev.monthsAvailable || [];
+          if (!avail.length) return null;
+          var latestMk = avail[avail.length - 1]; // ascending order
+          var maxDay = 0;
+          (state.sev.stores || []).forEach(function (s) {
+            Object.keys(s.daily || {}).forEach(function (d) {
+              if (d.slice(0, 6) === latestMk) {
+                var day = dayOfMonth(d);
+                if (day > maxDay) maxDay = day;
+              }
+            });
+          });
+          return maxDay
+            ? { label: sevMonthLabel(latestMk), day: maxDay }
+            : null;
+        }
+        function sevDataAsOfText() {
+          var d = sevLatestDataDay();
+          return d ? "ข้อมูลถึงวันที่ " + d.day + " (" + d.label + ")" : "";
+        }
+
         function renderSevSheetNote() {
           // See renderRtrSheetNote — in cloud mode the parse counters are all zero, which made
           // this claim "หา CM ไม่เจอ 326 ร้าน" even though every store HAS a CM.
@@ -8038,8 +8083,10 @@
                   return sevMonthLabel(mk);
                 })
                 .join(", ") +
+              " · " +
+              sevDataAsOfText() +
               (state.cloudUpdatedAt
-                ? " · ข้อมูล ณ " +
+                ? " · ซิงค์ล่าสุด " +
                   new Date(state.cloudUpdatedAt).toLocaleString("th-TH")
                 : "");
             return;
@@ -8052,7 +8099,8 @@
             fmt(state.sev.clusterRows) +
             " แถว, " +
             fmt(state.sev.stores.length) +
-            " ร้าน";
+            " ร้าน · " +
+            sevDataAsOfText();
           if (state.sev.rosterLoaded) {
             var unmatched = state.sev.stores.length - state.sev.cmMatchCount;
             note +=
@@ -10158,10 +10206,13 @@
               renderRtrSheetNote();
               renderRtrDashboard();
               rtrShow("dashboard");
+              var rtrCacheDataAsOf = rtrDataAsOfText();
               $("rtrCacheBanner").innerHTML =
                 '<div class="cache-banner"><span>โหลดจากแคช: <b>' +
                 esc(cached.fileName || "ไฟล์ที่เคยเลือก") +
-                "</b> · บันทึกเมื่อ " +
+                "</b>" +
+                (rtrCacheDataAsOf ? " · " + esc(rtrCacheDataAsOf) : "") +
+                " · บันทึกเมื่อ " +
                 esc(formatCacheTime(cached.savedAt)) +
                 '</span><span class="refresh-hint">เลือกไฟล์ใหม่ (ปุ่ม RTR ด้านบน) เพื่ออัปเดตข้อมูล</span></div>';
             })
@@ -10196,10 +10247,13 @@
               renderSevSheetNote();
               renderSevDashboard();
               sevShow("dashboard");
+              var sevCacheDataAsOf = sevDataAsOfText();
               $("sevCacheBanner").innerHTML =
                 '<div class="cache-banner"><span>โหลดจากแคช: <b>' +
                 esc((cached.fileNames || []).join(", ") || "ไฟล์ที่เคยเลือก") +
-                "</b> · บันทึกเมื่อ " +
+                "</b>" +
+                (sevCacheDataAsOf ? " · " + esc(sevCacheDataAsOf) : "") +
+                " · บันทึกเมื่อ " +
                 esc(formatCacheTime(cached.savedAt)) +
                 '</span><span class="refresh-hint">เลือกไฟล์ใหม่ (ปุ่ม 7-11 ด้านบน) เพื่ออัปเดตข้อมูล</span></div>';
             })
@@ -11533,13 +11587,22 @@
                   var when = meta.updated_at
                     ? new Date(meta.updated_at).toLocaleString("th-TH")
                     : "-";
-                  ["rtrCacheBanner", "sevCacheBanner"].forEach(function (b) {
-                    var el = $(b);
+                  // Two different facts, kept visibly separate: when this device last synced
+                  // from the sheet (when) vs. what day the latest month's own data actually
+                  // reaches (rtrDataAsOfText/sevDataAsOfText) -- syncing today doesn't mean the
+                  // source data itself is current through today.
+                  [
+                    { id: "rtrCacheBanner", dataAsOf: rtrDataAsOfText() },
+                    { id: "sevCacheBanner", dataAsOf: sevDataAsOfText() },
+                  ].forEach(function (b) {
+                    var el = $(b.id);
                     if (el)
                       el.innerHTML =
-                        '<div class="cache-banner"><span>โหลดจาก Google Sheets · <b>ข้อมูล ณ ' +
+                        '<div class="cache-banner"><span>โหลดจาก Google Sheets' +
+                        (b.dataAsOf ? " · <b>" + esc(b.dataAsOf) + "</b>" : "") +
+                        " · ซิงค์ล่าสุด " +
                         esc(when) +
-                        "</b></span></div>";
+                        "</span></div>";
                   });
                 });
               });
