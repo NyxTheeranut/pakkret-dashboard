@@ -8823,6 +8823,94 @@
           sevMomCutoffDay = mx || null;
           sevRevCutoffDay = revenueMatureCutoff(perDay, mx) || sevMomCutoffDay;
         }
+
+        // 7-11's run-rate/forecast, mirroring RTR's rtrPacingCurveFrac/rtrMonthPacing/rtrForecast
+        // (see those for the reasoning) but built as its own parallel set rather than reusing them
+        // directly -- RTR's versions read a pre-aggregated per-month object shape (m.daily/
+        // m.sheetName) that 7-11's per-STORE daily maps don't have, and 7-11's target coverage is
+        // comprehensive (TG Store covers essentially every cluster store) rather than RTR's
+        // historically-partial coverage, so there's no need for RTR's targetedGA-vs-full-GA
+        // override distinction here -- total scoped GA vs total scoped target is always the fair
+        // comparison.
+        //
+        // What fraction of the PREVIOUS month's GA (summed across the given, already-filtered
+        // stores) had landed by the same day-of-month cutoff -- a better "expected progress" curve
+        // than pure linear daysElapsed/daysInMonth when last month's shape is available and
+        // essentially complete.
+        function sevPacingCurveFrac(prevDaily, prevMonthKey, daysElapsed) {
+          if (!prevDaily || !prevMonthKey) return null;
+          var keys = Object.keys(prevDaily);
+          if (!keys.length) return null;
+          var year = parseInt(prevMonthKey.slice(0, 4), 10);
+          var monthIdx = parseInt(prevMonthKey.slice(4, 6), 10) - 1;
+          var pDaysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+          var maxDay = 0;
+          keys.forEach(function (d) {
+            var n = dayOfMonth(d);
+            if (n > maxDay) maxDay = n;
+          });
+          if (maxDay < pDaysInMonth - 2) return null; // prev month not essentially complete
+          var total = 0,
+            upto = 0;
+          keys.forEach(function (d) {
+            var v = prevDaily[d] || 0;
+            total += v;
+            if (dayOfMonth(d) <= daysElapsed) upto += v;
+          });
+          if (total <= 0) return null;
+          var frac = upto / total;
+          return frac > 0 && frac <= 1 ? frac : null;
+        }
+        // Previous month's daily GA totals, summed across `stores` (the CURRENT filter's stores,
+        // so the curve reflects the same scope the forecast is being computed for) -- null if
+        // there's no earlier month loaded at all.
+        function sevPrevMonthDailyTotals(stores, monthKey) {
+          var avail = state.sev.monthsAvailable;
+          var idx = avail.indexOf(monthKey);
+          if (idx <= 0) return null;
+          var prevKey = avail[idx - 1];
+          var daily = {};
+          stores.forEach(function (s) {
+            Object.keys(s.daily).forEach(function (d) {
+              if (d.slice(0, 6) === prevKey)
+                daily[d] = (daily[d] || 0) + (s.daily[d].ga || 0);
+            });
+          });
+          return { monthKey: prevKey, daily: daily };
+        }
+        function sevMonthPacing(mk, stores) {
+          if (!sevMomCutoffDay) return null;
+          var year = parseInt(mk.slice(0, 4), 10);
+          var monthIdx = parseInt(mk.slice(4, 6), 10) - 1;
+          var daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+          if (!daysInMonth) return null;
+          var prev = sevPrevMonthDailyTotals(stores, mk);
+          var curve = prev
+            ? sevPacingCurveFrac(prev.daily, prev.monthKey, sevMomCutoffDay)
+            : null;
+          return {
+            daysElapsed: sevMomCutoffDay,
+            daysInMonth: daysInMonth,
+            daysLeft: Math.max(0, daysInMonth - sevMomCutoffDay),
+            expectedPct:
+              curve != null ? curve : Math.min(1, sevMomCutoffDay / daysInMonth),
+            method: curve != null ? "curve" : "linear",
+          };
+        }
+        function sevForecast(totGa, totTarget, pacing) {
+          if (!pacing || !(totTarget > 0) || !(pacing.expectedPct > 0))
+            return null;
+          var landing = totGa / pacing.expectedPct;
+          var remaining = Math.max(0, totTarget - totGa);
+          return {
+            landing: landing,
+            surplus: landing - totTarget, // negative = projected to miss
+            needPerDay: pacing.daysLeft > 0 ? remaining / pacing.daysLeft : null,
+            currentPerDay:
+              pacing.daysElapsed > 0 ? totGa / pacing.daysElapsed : null,
+            remaining: remaining,
+          };
+        }
         // Sum one store's GA/revenue for a given month key, up to and including maxDay.
         function sevMonthSumUpTo(s, monthKey, maxDay, field) {
           var t = 0;
@@ -9918,6 +10006,96 @@
               sub: "",
             },
           ];
+
+          // Run-rate cards -- only meaningful once the target's own month is selected (the
+          // Target 7-eleven file is scoped to a single month) and scoped to a whole month, not a
+          // single day. Summed from each currently-visible store's own target rather than the CM
+          // rollup, so this stays correct under ANY filter combination (khet/ฝ่าย/GM/AE), not just
+          // a single-CM selection.
+          var totTarget = 0;
+          if (mk && !day) {
+            stores.forEach(function (s) {
+              if (s.hasTarget && s.targetMonthKey === mk) totTarget += s.target;
+            });
+          }
+          if (totTarget > 0) {
+            var achievePct = totGa / totTarget;
+            cards.push({
+              label: "Target GA (" + periodLabel + ")",
+              value: fmt(totTarget),
+              sub: "",
+            });
+            cards.push({
+              label: "%Achieve",
+              value: pctBadge(achievePct, "achieve", "lg"),
+              sub: "",
+            });
+            var pacing = sevMonthPacing(mk, stores);
+            var fc = sevForecast(totGa, totTarget, pacing);
+            if (fc) {
+              cards.push({
+                label: "คาดว่าจะจบเดือนที่",
+                value:
+                  fmt(fc.landing) +
+                  ' <span style="font-size:14px;">(' +
+                  signedUnits(fc.surplus) +
+                  ")</span>",
+                sub:
+                  "ถ้ายังทำได้เท่าจังหวะนี้ · เทียบเป้า " +
+                  fmt(totTarget) +
+                  " → " +
+                  (fc.surplus < 0 ? "ขาด " : "เกิน ") +
+                  fmt(Math.abs(fc.surplus)) +
+                  " GA",
+              });
+              var needTxt, needSub;
+              if (fc.remaining <= 0) {
+                needTxt = '<span style="color:var(--accent);">ถึงเป้าแล้ว ✓</span>';
+                needSub =
+                  "ทำได้ " +
+                  fmt(totGa) +
+                  " จากเป้า " +
+                  fmt(totTarget) +
+                  " — ที่เหลือคือส่วนเกิน";
+              } else if (fc.needPerDay != null) {
+                var enough =
+                  fc.currentPerDay != null && fc.currentPerDay >= fc.needPerDay;
+                needTxt =
+                  '<span style="color:' +
+                  (enough ? "var(--accent)" : "var(--alert)") +
+                  ';">' +
+                  fmt(fc.needPerDay) +
+                  "</span>";
+                needSub =
+                  "ขาดอีก " +
+                  fmt(fc.remaining) +
+                  " GA ใน " +
+                  pacing.daysLeft +
+                  " วันที่เหลือ" +
+                  (fc.currentPerDay != null
+                    ? enough
+                      ? " — ตอนนี้ทำได้วันละ " +
+                        fmt(fc.currentPerDay) +
+                        " เร็วกว่าที่ต้องการอยู่แล้ว ✓"
+                      : " — ตอนนี้ทำได้วันละ " +
+                        fmt(fc.currentPerDay) +
+                        " ต้องเร่งขึ้นอีก " +
+                        fmt(fc.needPerDay - fc.currentPerDay) +
+                        "/วัน"
+                    : "");
+              } else {
+                needTxt = '<span style="color:var(--alert);">หมดเดือนแล้ว</span>';
+                needSub =
+                  "ขาดอีก " + fmt(fc.remaining) + " GA แต่ไม่เหลือวันให้ทำแล้ว";
+              }
+              cards.push({
+                label: "ต้องได้อีก/วัน",
+                value: needTxt,
+                sub: needSub,
+              });
+            }
+          }
+
           $("sevKpiGrid").innerHTML = cards
             .map(function (c) {
               return (
