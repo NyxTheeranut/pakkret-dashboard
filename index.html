@@ -11509,10 +11509,16 @@
         // beyond `keep`, instead of pruning tab-by-tab. Also deletes any leftover tab from the
         // OLD one-JSON-blob-per-month format (exactly "rtr-YYYY-MM"/"sev-YYYY-MM", no suffix) —
         // unconditionally, regardless of `keep`, since nothing reads that format anymore.
+        // Also returns which "rtr-YYYY-MM"/"sev-YYYY-MM" groups actually SURVIVE pruning (from
+        // the live sheet inventory, not from whatever this sync session happened to build
+        // locally) -- see the syncRun caller for why that distinction matters: writing meta from
+        // the local session's own month list silently erased older months from every viewer's
+        // view the moment someone synced with fewer files loaded than usual.
         function syncPrune(id, keep) {
           return syncApi(SYNC.SS + "/" + id + "?fields=sheets.properties").then(
             function (meta) {
               var reqs = [];
+              var survivors = { "rtr-": [], "sev-": [] };
               ["rtr-", "sev-"].forEach(function (prefix) {
                 var legacyRe = new RegExp("^" + prefix + "\\d{4}-\\d{2}$");
                 var byKey = {};
@@ -11537,10 +11543,20 @@
                       reqs.push({ deleteSheet: { sheetId: p.sheetId } });
                     });
                   });
+                survivors[prefix] = keys.slice(
+                  Math.max(0, keys.length - keep),
+                );
               });
-              if (!reqs.length) return null;
-              return syncApi(SYNC.SS + "/" + id + ":batchUpdate", "POST", {
-                requests: reqs,
+              var batch = reqs.length
+                ? syncApi(SYNC.SS + "/" + id + ":batchUpdate", "POST", {
+                    requests: reqs,
+                  })
+                : Promise.resolve(null);
+              return batch.then(function () {
+                return {
+                  rtrMonths: survivors["rtr-"],
+                  sevMonths: survivors["sev-"],
+                };
               });
             },
           );
@@ -11768,21 +11784,28 @@
               });
             })
             .then(function (res) {
-              return syncPrune(sheetId, SYNC.KEEP_MONTHS).then(function () {
+              return syncPrune(sheetId, SYNC.KEEP_MONTHS).then(function (
+                survivors,
+              ) {
+                res.survivors = survivors;
                 return res;
               });
             })
             .then(function (res) {
-              // meta is always rewritten — it carries updated_at and the fingerprints
+              // meta is always rewritten — it carries updated_at and the fingerprints.
+              // BUGFIX: rtr_months/sev_months used to be derived from `tabs` (this session's own
+              // locally-loaded months), which OVERWROTE the viewer-facing month list with
+              // whatever was loaded THIS time even when older months' tabs were still sitting
+              // untouched in the sheet -- syncing with only some files loaded (e.g. just the
+              // latest quarter + a target file, not the full multi-quarter history) silently made
+              // every earlier month invisible to viewers, though its data was never deleted. Now
+              // sourced from syncPrune's actual post-prune sheet inventory instead, so the meta
+              // always reflects what's really there.
               return syncWriteTab(sheetId, "meta", {
                 updated_at: new Date().toISOString(),
                 tabs: tabs,
-                rtr_months: tabs.filter(function (t) {
-                  return t.indexOf("rtr-") === 0;
-                }),
-                sev_months: tabs.filter(function (t) {
-                  return t.indexOf("sev-") === 0;
-                }),
+                rtr_months: res.survivors.rtrMonths,
+                sev_months: res.survivors.sevMonths,
                 fp: res.fp,
               }).then(function () {
                 return res;
