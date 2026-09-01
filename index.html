@@ -2166,7 +2166,16 @@
           </section>
 
           <section id="sevInsightsSection" style="display: none">
-            <div class="section-head"><h2>สิ่งที่ควรลงมือทำ</h2></div>
+            <div class="section-head">
+              <h2>สิ่งที่ควรลงมือทำ</h2>
+              <button
+                class="file-btn ghost-light"
+                id="sevInsightsExportBtn"
+                style="margin-left: auto"
+              >
+                📤 Export
+              </button>
+            </div>
             <div class="insights-grid" id="sevInsightsGrid"></div>
           </section>
           <section>
@@ -9724,6 +9733,41 @@
           }
           $("sevInsightsGrid").innerHTML = html;
 
+          // Snapshot of exactly what was just rendered (same slice(0,10) per card), so the export
+          // button paints the identical rows without re-deriving topGA/zeroGA/lowGA/declining --
+          // recomputing them independently in the export function would risk drifting from what's
+          // actually on screen.
+          state.sev._insightsSnapshot = {
+            periodLabel: periodLabel,
+            cards: [
+              {
+                title: "ร้าน Top 10 ตามยอดขาย (" + periodLabel + ")",
+                items: topGA.slice(0, 10),
+              },
+              {
+                title: "ร้านที่ GA=0 ในช่วงนี้ (" + zeroGA.length + " ร้าน)",
+                items: zeroGA.slice(0, 10),
+              },
+              {
+                title:
+                  "ร้านที่ขายได้แต่น้อยกว่า 5 GA (" + lowGA.length + " ร้าน)",
+                items: lowGA.slice(0, 10),
+              },
+            ].concat(
+              mk && !day
+                ? [
+                    {
+                      title:
+                        "ร้านที่ GA ลดลงจากเดือนก่อน (" +
+                        declining.length +
+                        " ร้าน)",
+                      items: declining.slice(0, 10),
+                    },
+                  ]
+                : [],
+            ),
+          };
+
           Array.prototype.forEach.call(
             document.querySelectorAll(
               "#sevInsightsGrid .insight-list li.clickable",
@@ -10450,6 +10494,130 @@
           return "";
         }
 
+        // Exports the "สิ่งที่ควรลงมือทำ" cards (Top GA / GA=0 / GA<5 / declining, whichever are
+        // currently showing) as a single PNG, using the SAME drawCanvasTable/cellFont/
+        // summaryValueColor painter the RTR one-page summary already uses -- one section header
+        // + table per card, stacked vertically, sized by the same two-pass measure-then-draw
+        // approach. Reads state.sev._insightsSnapshot (set by renderSevInsights on every render)
+        // rather than recomputing topGA/zeroGA/lowGA/declining itself, so the export can never
+        // drift from what's actually on screen.
+        function sevInsightsExportRows(items) {
+          function firstName(name) {
+            return (
+              String(name || "")
+                .trim()
+                .split(/\s+/)[0] || ""
+            );
+          }
+          return items.map(function (x) {
+            return [
+              x.s.name,
+              fmt(x.sv.ga),
+              firstName(x.s.ae),
+              x.lmtdGa != null ? fmt(x.lmtdGa) : "—",
+              x.momPct == null
+                ? "—"
+                : (x.momPct > 0 ? "+" : "") + pct(x.momPct),
+            ];
+          });
+        }
+        function sevInsightsExportPng() {
+          var snap = state.sev._insightsSnapshot;
+          if (!snap || !snap.cards.length) return;
+          var cols = ["ร้าน", "GA", "AE", "LMTD", "%MOM"];
+          var tables = snap.cards.map(function (c) {
+            return { title: c.title, rows: sevInsightsExportRows(c.items) };
+          });
+
+          var probe = document.createElement("canvas").getContext("2d");
+          var widest = 0;
+          function measureTable(rows) {
+            var padX = 12;
+            var w = cols.map(function (c) {
+              probe.font = "bold 12px Inter, sans-serif";
+              return probe.measureText(c).width;
+            });
+            rows.forEach(function (r) {
+              r.forEach(function (cell, i) {
+                probe.font = cellFont(i);
+                var m2 = probe.measureText(String(cell)).width;
+                if (m2 > w[i]) w[i] = m2;
+              });
+            });
+            return w.reduce(function (a, b) {
+              return a + b + padX * 2;
+            }, 0);
+          }
+          tables.forEach(function (t) {
+            widest = Math.max(widest, measureTable(t.rows));
+            probe.font = "bold 13px Inter, sans-serif";
+            widest = Math.max(widest, probe.measureText(t.title).width);
+          });
+          probe.font = "bold 20px Space Grotesk, sans-serif";
+          widest = Math.max(
+            widest,
+            probe.measureText("สิ่งที่ควรลงมือทำ").width,
+          );
+
+          var padPage = 22;
+          var W = Math.ceil(widest) + padPage * 2;
+          var H =
+            padPage +
+            34 + // title
+            18 + // subtitle
+            tables.reduce(function (sum, t) {
+              var rowCount = t.rows.length || 1; // "ไม่พบร้าน..." still takes one line
+              return sum + 30 + 30 + rowCount * 26 + 20;
+            }, 0) +
+            padPage;
+
+          var canvas = document.createElement("canvas");
+          canvas.width = W;
+          canvas.height = H;
+          var ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#EEF1F5";
+          ctx.fillRect(0, 0, W, H);
+
+          var y = padPage + 8;
+          ctx.fillStyle = "#121A2B";
+          ctx.font = "bold 20px Space Grotesk, sans-serif";
+          ctx.fillText("สิ่งที่ควรลงมือทำ", padPage, y + 12);
+          y += 26;
+          ctx.fillStyle = "#6B7280";
+          ctx.font = "12.5px Inter, sans-serif";
+          ctx.fillText(snap.periodLabel, padPage, y + 12);
+          y += 34;
+
+          tables.forEach(function (t) {
+            ctx.fillStyle = "#121A2B";
+            ctx.font = "bold 13px Inter, sans-serif";
+            ctx.fillText(t.title, padPage, y);
+            y += 20;
+            if (t.rows.length) {
+              y = drawCanvasTable(ctx, padPage, y, cols, t.rows);
+            } else {
+              ctx.fillStyle = "#6B7280";
+              ctx.font = "12.5px Inter, sans-serif";
+              ctx.fillText("ไม่พบร้านที่เข้าเงื่อนไขนี้", padPage, y + 8);
+              y += 26;
+            }
+            y += 20;
+          });
+
+          canvas.toBlob(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = "pak-kret-7-11-actions-" + Date.now() + ".png";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () {
+              URL.revokeObjectURL(url);
+            }, 2000);
+          });
+        }
+
         function sevExportPng(rowsData) {
           var cols = SEV_EXPORT_COLS;
           var canvas = document.createElement("canvas");
@@ -10605,6 +10773,10 @@
           }, 500);
         }
 
+        $("sevInsightsExportBtn").addEventListener(
+          "click",
+          sevInsightsExportPng,
+        );
         $("sevExportBtn").addEventListener("click", sevOpenExportModal);
         $("sevExportClose").addEventListener("click", sevCloseExportModal);
         $("sevExportOverlay").addEventListener("click", function (e) {
