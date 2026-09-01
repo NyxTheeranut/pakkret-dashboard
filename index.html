@@ -10513,18 +10513,18 @@
             return [
               x.s.name,
               fmt(x.sv.ga),
-              firstName(x.s.ae),
               x.lmtdGa != null ? fmt(x.lmtdGa) : "—",
               x.momPct == null
                 ? "—"
                 : (x.momPct > 0 ? "+" : "") + pct(x.momPct),
+              firstName(x.s.ae),
             ];
           });
         }
         function sevInsightsExportPng() {
           var snap = state.sev._insightsSnapshot;
           if (!snap || !snap.cards.length) return;
-          var cols = ["ร้าน", "GA", "AE", "LMTD", "%MOM"];
+          var cols = ["ร้าน", "GA", "LMTD", "%MOM", "AE"];
           var tables = snap.cards.map(function (c) {
             return { title: c.title, rows: sevInsightsExportRows(c.items) };
           });
