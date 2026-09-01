@@ -7651,7 +7651,43 @@
           return null;
         }
 
-        function aggregateSevRows(rows2D, storesMap, stats) {
+        // dayOwner/sheetIdx (both optional -- omitted, this behaves exactly as before) resolve
+        // the case where two different uploaded sheets both cover the same calendar day, e.g. an
+        // older quarterly file's month-sheet frozen mid-month (Q3's own "Aug" sheet: complete
+        // through day 16, a stray 2 rows on day 17, nothing after) and a newer target-commit
+        // file's full re-export of the same month (Aug'26 BMA West's "Data Aug" sheet: complete
+        // through day 30). Without this, loading both doubles every day both sheets cover and
+        // leaves days only the newer sheet has looking like a cliff -- confirmed against the real
+        // files: summing the two sheets' per-day GA for the pak-kret cluster reproduces the
+        // reported chart's numbers exactly (day 1: 133+133=266, day 16: 155+155=310, day 17:
+        // 2+136=138, day 30: 0+38=38). dayOwner[day] names which sheet (by index into the
+        // caller's sales-sheet list) has the most rows for that day; every other sheet's rows for
+        // that same day are skipped here, so exactly one sheet's data wins per day regardless of
+        // upload order.
+        // Counts in-cluster rows per TM_KEY_DAY -- same province/day extraction as aggregateSevRows'
+        // own loop, kept separate and cheap (no per-row business logic) so handleSevFiles can run
+        // it once per sales sheet up front, before deciding which sheet actually owns each day.
+        function sevCountRowsByDay(rows2D) {
+          var counts = {};
+          if (!rows2D || rows2D.length < 2) return counts;
+          var header = rows2D[0];
+          var idx = {};
+          for (var i = 0; i < header.length; i++) {
+            idx[String(header[i] == null ? "" : header[i]).trim()] = i;
+          }
+          var dayIdx = idx["TM_KEY_DAY"],
+            provIdx = idx["TDS_PROVINCE"];
+          if (dayIdx == null || provIdx == null) return counts;
+          for (var r = 1; r < rows2D.length; r++) {
+            var row = rows2D[r];
+            if (!row || !inTargetCluster(row[provIdx])) continue;
+            var day = String(row[dayIdx] == null ? "" : row[dayIdx]).trim();
+            if (day.length < 6) continue;
+            counts[day] = (counts[day] || 0) + 1;
+          }
+          return counts;
+        }
+        function aggregateSevRows(rows2D, storesMap, stats, dayOwner, sheetIdx) {
           if (!rows2D || rows2D.length < 2) return;
           var header = rows2D[0];
           var idx = {};
@@ -7690,6 +7726,12 @@
             if (code == null || code === "") continue;
             var codeStr = String(code).trim();
             var day = String(row[idx["TM_KEY_DAY"]]).trim();
+            if (
+              dayOwner &&
+              dayOwner[day] != null &&
+              dayOwner[day] !== sheetIdx
+            )
+              continue; // a different sheet has more complete data for this exact day
             var monthKey = day.length >= 6 ? day.slice(0, 6) : null;
             var ga = num(row[idx["Sum of GA"]]);
             var revAmt = revIdx != null ? num(row[revIdx]) : 0;
@@ -8068,6 +8110,10 @@
           var cmToTarget = new Map();
           var cmTargetStats = { rows: 0 };
 
+          // Phase 1: read every file's sheets into memory without aggregating anything yet --
+          // day-ownership (below) needs to see every sales sheet's day coverage before any of
+          // them get aggregated, so it can't be decided file-by-file as each one streams in.
+          var allSheets = []; // { fileName, name, rows2D }
           files
             .reduce(function (chain, file) {
               return chain.then(function () {
@@ -8076,39 +8122,82 @@
                   if (result.truncWarnings && result.truncWarnings.length)
                     truncWarnings = truncWarnings.concat(result.truncWarnings);
                   result.sheets.forEach(function (sheet) {
-                    try {
-                      if (looksLikeSevCmTargetSheet(sheet.name))
-                        aggregateSevCmTargetRows(
-                          sheet.rows2D,
-                          cmToTarget,
-                          cmTargetStats,
-                        );
-                      else if (looksLikeSevTargetSheet(sheet.name))
-                        aggregateSevTargetRows(
-                          sheet.rows2D,
-                          codeToTarget,
-                          targetStats,
-                        );
-                      else if (looksLikeRosterSheet(sheet.rows2D))
-                        aggregateRosterRows(
-                          sheet.rows2D,
-                          codeToCm,
-                          rosterStats,
-                        );
-                      else aggregateSevRows(sheet.rows2D, storesMap, stats);
-                    } catch (err) {
-                      sheetErrors.push(
-                        file.name +
-                          " / " +
-                          sheet.name +
-                          ": " +
-                          (err && err.message ? err.message : err),
-                      );
-                    }
+                    allSheets.push({
+                      fileName: file.name,
+                      name: sheet.name,
+                      rows2D: sheet.rows2D,
+                    });
                   });
                 });
               });
             }, Promise.resolve())
+            .then(function () {
+              // Phase 2: classify every sheet, then for the genuine sales sheets, resolve which
+              // sheet owns each calendar day (the one with the most in-cluster rows for that
+              // day) BEFORE aggregating any of them -- see aggregateSevRows' dayOwner param for
+              // why this matters (two sheets covering the same day would otherwise double it).
+              var salesSheets = [];
+              var otherSheets = [];
+              allSheets.forEach(function (sh) {
+                if (
+                  looksLikeSevCmTargetSheet(sh.name) ||
+                  looksLikeSevTargetSheet(sh.name) ||
+                  looksLikeRosterSheet(sh.rows2D)
+                ) {
+                  otherSheets.push(sh);
+                } else {
+                  sh.dayCounts = sevCountRowsByDay(sh.rows2D);
+                  salesSheets.push(sh);
+                }
+              });
+              var dayOwner = {}; // day -> index into salesSheets
+              salesSheets.forEach(function (sh, idx) {
+                Object.keys(sh.dayCounts).forEach(function (day) {
+                  var cur = dayOwner[day];
+                  if (cur == null || sh.dayCounts[day] > salesSheets[cur].dayCounts[day])
+                    dayOwner[day] = idx;
+                });
+              });
+              salesSheets.forEach(function (sh, idx) {
+                try {
+                  aggregateSevRows(sh.rows2D, storesMap, stats, dayOwner, idx);
+                } catch (err) {
+                  sheetErrors.push(
+                    sh.fileName +
+                      " / " +
+                      sh.name +
+                      ": " +
+                      (err && err.message ? err.message : err),
+                  );
+                }
+              });
+              otherSheets.forEach(function (sh) {
+                try {
+                  if (looksLikeSevCmTargetSheet(sh.name))
+                    aggregateSevCmTargetRows(
+                      sh.rows2D,
+                      cmToTarget,
+                      cmTargetStats,
+                    );
+                  else if (looksLikeSevTargetSheet(sh.name))
+                    aggregateSevTargetRows(
+                      sh.rows2D,
+                      codeToTarget,
+                      targetStats,
+                    );
+                  else
+                    aggregateRosterRows(sh.rows2D, codeToCm, rosterStats);
+                } catch (err) {
+                  sheetErrors.push(
+                    sh.fileName +
+                      " / " +
+                      sh.name +
+                      ": " +
+                      (err && err.message ? err.message : err),
+                  );
+                }
+              });
+            })
             .then(function () {
               if (storesMap.size === 0) {
                 var extra = sheetErrors.length
@@ -8199,8 +8288,12 @@
               // restoring target-less stores forever -- syncing would then upload whatever's in
               // memory (the stale, targetless cache), never picking up real target data even
               // after re-selecting the Target file, since the cache restore runs on every load
-              // before a fresh file selection happens. Forces one fresh parse to clear this.
-              cacheSet("sevV6", {
+              // before a fresh file selection happens.
+              // Bumped V6 -> V7: fixed a double-counting bug (two sheets covering the same
+              // calendar days got summed instead of deduped) that would have corrupted any
+              // already-cached stores -- see aggregateSevRows' dayOwner param. Forces a fresh
+              // parse so a stale, double-counted cache doesn't keep overriding the corrected math.
+              cacheSet("sevV7", {
                 fileNames: fileNames,
                 savedAt: Date.now(),
                 stores: stores,
@@ -10793,7 +10886,7 @@
         }
 
         function restoreSevFromCache() {
-          return cacheGet("sevV6")
+          return cacheGet("sevV7")
             .then(function (cached) {
               if (!cached || !cached.stores || !cached.stores.length) return;
               state.sev.loaded = true;
