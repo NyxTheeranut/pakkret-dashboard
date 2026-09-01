@@ -9739,6 +9739,19 @@
           // actually on screen.
           state.sev._insightsSnapshot = {
             periodLabel: periodLabel,
+            // Same convention as the store table's scopeLabel (renderSevTable) -- whichever
+            // filters are currently narrowing the page, joined in order, or "ภาพรวม" (overview)
+            // when nothing is selected.
+            scopeLabel:
+              [
+                state.sev.currentCM,
+                state.sev.currentKhet,
+                state.sev.currentFyai,
+                state.sev.currentGm,
+                state.sev.currentAe,
+              ]
+                .filter(Boolean)
+                .join(" / ") || "ภาพรวม",
             cards: [
               {
                 title: "ร้าน Top 10 ตามยอดขาย (" + periodLabel + ")",
@@ -10574,17 +10587,20 @@
 
           probe.font = "bold 20px Space Grotesk, sans-serif";
           var titleW = probe.measureText("สิ่งที่ควรลงมือทำ").width;
+          probe.font = "bold 14px Inter, sans-serif";
+          var scopeW = probe.measureText(snap.scopeLabel).width;
 
           var padPage = 22;
           var gutter = 30; // gap between the two columns
           var gapRow = 24; // gap between the two rows
           var numCols = tables.length > 1 ? 2 : 1;
           var gridW = colW * numCols + (numCols > 1 ? gutter : 0);
-          var W = Math.ceil(Math.max(titleW, gridW)) + padPage * 2;
+          var W = Math.ceil(Math.max(titleW, scopeW, gridW)) + padPage * 2;
           var H =
             padPage +
             34 + // title
-            18 + // subtitle
+            22 + // scope label (current filter, e.g. "ภาพรวม" / a CM name / "CM / AE")
+            18 + // subtitle (period)
             row0H +
             (row1H ? gapRow + row1H : 0) +
             padPage;
@@ -10601,6 +10617,10 @@
           ctx.font = "bold 20px Space Grotesk, sans-serif";
           ctx.fillText("สิ่งที่ควรลงมือทำ", padPage, y + 12);
           y += 26;
+          ctx.fillStyle = "#0F6E62";
+          ctx.font = "bold 14px Inter, sans-serif";
+          ctx.fillText(snap.scopeLabel, padPage, y + 12);
+          y += 22;
           ctx.fillStyle = "#6B7280";
           ctx.font = "12.5px Inter, sans-serif";
           ctx.fillText(snap.periodLabel, padPage, y + 12);
