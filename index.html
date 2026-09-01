@@ -2647,6 +2647,17 @@
           });
           return t;
         }
+        // Same as gaUpToDay but for any field a daily bucket carries (mass/migrant/tourist) --
+        // kept separate from gaUpToDay itself rather than adding an optional param there, so the
+        // widely-used GA path can't be affected by this.
+        function fieldUpToDay(daily, maxDay, field) {
+          var t = 0;
+          if (!daily) return 0;
+          Object.keys(daily).forEach(function (d) {
+            if (dayOfMonth(d) <= maxDay) t += daily[d][field] || 0;
+          });
+          return t;
+        }
 
         function inTargetCluster(v) {
           return (
@@ -3524,7 +3535,7 @@
                 rtrShow("dashboard");
                 $("rtrCacheBanner").innerHTML = ""; // fresh load, not from cache -- clear any stale banner
 
-                cacheSet("rtrV5", {
+                cacheSet("rtrV6", {
                   fileName: fileName,
                   savedAt: Date.now(),
                   months: rtrMonthsToCacheable(months),
@@ -4018,6 +4029,11 @@
 
             // cluster + CM level MOM, computed from summed GA (not an average of per-store %), against
             // the immediately preceding loaded month
+            // SEGMENT_MOM_FIELDS: same like-for-like (day-cutoff-matched) MOM as GA above, one per
+            // Mass/Migrant/Tourist segment -- feeds the "Overall Performance เทียบ Target" segment
+            // cards. Computed here (not ad hoc in renderPerformance) so it stays in sync with GA's
+            // own momPct and survives the CM-rollup fast path rtrCurrentScope() uses.
+            var SEGMENT_MOM_FIELDS = ["mass", "migrant", "tourist"];
             if (prevMonth) {
               // same day-of-month cutoff as the per-store MOM above
               var prevClusterGA = gaUpToDay(prevMonth.daily, m.momCutoffDay);
@@ -4025,6 +4041,11 @@
                 prevClusterGA > 0
                   ? (m.totals.ga - prevClusterGA) / prevClusterGA
                   : null;
+              SEGMENT_MOM_FIELDS.forEach(function (f) {
+                var prevSeg = fieldUpToDay(prevMonth.daily, m.momCutoffDay, f);
+                m.totals[f + "MomPct"] =
+                  prevSeg > 0 ? (m.totals[f] - prevSeg) / prevSeg : null;
+              });
               Object.keys(m.cmRollup).forEach(function (cmName) {
                 var cr = m.cmRollup[cmName];
                 var prevCr = prevMonth.cmRollup[cmName];
@@ -4032,11 +4053,24 @@
                   ? gaUpToDay(prevCr.daily, m.momCutoffDay)
                   : 0;
                 cr.momPct = prevCmGA > 0 ? (cr.ga - prevCmGA) / prevCmGA : null;
+                SEGMENT_MOM_FIELDS.forEach(function (f) {
+                  var prevSeg = prevCr
+                    ? fieldUpToDay(prevCr.daily, m.momCutoffDay, f)
+                    : 0;
+                  cr[f + "MomPct"] =
+                    prevSeg > 0 ? (cr[f] - prevSeg) / prevSeg : null;
+                });
               });
             } else {
               m.totals.momPct = null;
+              SEGMENT_MOM_FIELDS.forEach(function (f) {
+                m.totals[f + "MomPct"] = null;
+              });
               Object.keys(m.cmRollup).forEach(function (cmName) {
                 m.cmRollup[cmName].momPct = null;
+                SEGMENT_MOM_FIELDS.forEach(function (f) {
+                  m.cmRollup[cmName][f + "MomPct"] = null;
+                });
               });
             }
           });
@@ -4415,8 +4449,25 @@
               return a + (prevMaxDay ? gaUpToDay(s.daily, prevMaxDay) : s.ga);
             }, 0);
             t.momPct = prevGA > 0 ? (t.ga - prevGA) / prevGA : null;
+            // Same like-for-like MOM as GA above, per Mass/Migrant/Tourist segment -- see
+            // finalizeRtrMonths' SEGMENT_MOM_FIELDS block for the other two rtrCurrentScope()
+            // paths this has to stay consistent with.
+            ["mass", "migrant", "tourist"].forEach(function (f) {
+              var prevSeg = prevMonthStores.reduce(function (a, s) {
+                return (
+                  a +
+                  (prevMaxDay
+                    ? fieldUpToDay(s.daily, prevMaxDay, f)
+                    : s[f] || 0)
+                );
+              }, 0);
+              t[f + "MomPct"] = prevSeg > 0 ? (t[f] - prevSeg) / prevSeg : null;
+            });
           } else {
             t.momPct = null;
+            t.massMomPct = null;
+            t.migrantMomPct = null;
+            t.touristMomPct = null;
           }
           return t;
         }
@@ -5038,6 +5089,34 @@
             { label: "จังหวะเป้าหมาย", value: paceTxt, sub: paceSub },
             { label: "คาดว่าจะจบเดือนที่", value: landingTxt, sub: landingSub },
             { label: "ต้องได้อีกวันละ", value: needTxt, sub: needSub },
+          ];
+          // Mass/Migrant/Tourist breakdown, each with the same like-for-like (day-cutoff-matched)
+          // MOM arrow+%+color the 7-11 CM leaderboard's รายได้ column already uses (deltaArrow) --
+          // requested as cards here rather than 3 more columns on the CM leaderboard table, which
+          // was already at 11 columns and would have gotten cramped.
+          var segCutoffSub = rtrCurrentMonth().hasPrevMonth
+            ? "เทียบเดือนก่อน ช่วงวันที่ 1-" +
+              (rtrCurrentMonth().momCutoffDay || monthMaxDay(rtrCurrentMonth())) +
+              " เท่ากัน"
+            : "เทียบเดือนก่อนหน้า";
+          cards.push(
+            {
+              label: "Mass GA",
+              value: fmt(t.mass) + deltaArrow(t.massMomPct),
+              sub: segCutoffSub,
+            },
+            {
+              label: "Migrant GA",
+              value: fmt(t.migrant) + deltaArrow(t.migrantMomPct),
+              sub: segCutoffSub,
+            },
+            {
+              label: "Tourist GA",
+              value: fmt(t.tourist) + deltaArrow(t.touristMomPct),
+              sub: segCutoffSub,
+            },
+          );
+          cards.push(
             {
               label: "MOM",
               value: momTxt,
@@ -5060,7 +5139,7 @@
               value: arpu != null ? fmtBaht(arpu) : "—",
               sub: "เฉพาะร้านที่มีเป้า",
             },
-          ];
+          );
           $("perfKpiGrid").innerHTML = cards
             .map(function (c) {
               return (
@@ -11254,9 +11333,14 @@
           // so the old version silently overwrote every month's targets with whatever the
           // OLDEST block on the sheet held. A V4 cache has month objects computed with that
           // wrong logic baked in.
+          // Bumped V5 -> V6: added mass/migrant/tourist MOM to m.totals/cmRollup (for the Overall
+          // Performance section's 3 new segment cards) -- a V5 cache would restore month objects
+          // missing those fields, so the new cards would just show no arrow until the next real
+          // parse. Not a wrong-number risk (deltaArrow(undefined) degrades to blank), but bumping
+          // anyway so the new cards work immediately instead of silently waiting for a reload.
           // Bumping the key makes old caches simply miss and fall through to "no cache, please
-          // load a file," which forces one real parse that writes a fresh V5 cache.
-          return cacheGet("rtrV5")
+          // load a file," which forces one real parse that writes a fresh V6 cache.
+          return cacheGet("rtrV6")
             .then(function (cached) {
               if (!cached || !cached.months || !cached.months.length) return;
               var months = rtrMonthsFromCacheable(cached.months);
