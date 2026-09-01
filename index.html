@@ -9525,13 +9525,16 @@
               "</div>"
             );
           }
+          // Values first, name last -- the numbers are what you're scanning down the column
+          // for, so they sit at the row's natural reading position; the store name trails at
+          // the end for whoever needs to identify which store a number belongs to.
           function clickableRow(code, nameHtml, valueHtml) {
             return (
               '<li class="clickable" data-code="' +
               esc(code) +
               '">' +
-              nameHtml +
               valueHtml +
+              nameHtml +
               "</li>"
             );
           }
@@ -9574,7 +9577,12 @@
               return clickableRow(
                 x.s.code,
                 '<span class="n">' + esc(x.s.name) + "</span>",
-                '<span class="v">' + gaCol(x) + lmtdAndMom(x) + "</span>",
+                '<span class="v">' +
+                  gaCol(x) +
+                  " · " +
+                  aeCol(x.s.ae) +
+                  lmtdAndMom(x) +
+                  "</span>",
               );
             },
           );
