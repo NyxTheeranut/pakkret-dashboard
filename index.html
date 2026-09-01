@@ -10521,6 +10521,13 @@
             ];
           });
         }
+        // 2x2 grid (row-major: card1 top-left, card2 top-right, card3 bottom-left, card4
+        // bottom-right), matching the on-screen .insights-grid's own layout, rather than one
+        // long vertical stack -- reads like an actual screenshot of the dashboard instead of a
+        // scroll, which is the point given these get pasted straight into chat. Both columns
+        // share one width (the widest of all 4 tables) the same way the on-screen CSS grid's
+        // "1fr 1fr" gives both columns equal width; each row's height is only as tall as its
+        // own taller table needs, not stretched to match the other row.
         function sevInsightsExportPng() {
           var snap = state.sev._insightsSnapshot;
           if (!snap || !snap.cards.length) return;
@@ -10530,8 +10537,8 @@
           });
 
           var probe = document.createElement("canvas").getContext("2d");
-          var widest = 0;
-          function measureTable(rows) {
+          var colW = 0;
+          function measureTableWidth(rows) {
             var padX = 12;
             var w = cols.map(function (c) {
               probe.font = "bold 12px Inter, sans-serif";
@@ -10549,26 +10556,37 @@
             }, 0);
           }
           tables.forEach(function (t) {
-            widest = Math.max(widest, measureTable(t.rows));
+            colW = Math.max(colW, measureTableWidth(t.rows));
             probe.font = "bold 13px Inter, sans-serif";
-            widest = Math.max(widest, probe.measureText(t.title).width);
+            colW = Math.max(colW, probe.measureText(t.title).width);
           });
-          probe.font = "bold 20px Space Grotesk, sans-serif";
-          widest = Math.max(
-            widest,
-            probe.measureText("สิ่งที่ควรลงมือทำ").width,
+          colW = Math.ceil(colW);
+          function tableHeight(t) {
+            return 20 + (t.rows.length ? 30 + t.rows.length * 26 : 26);
+          }
+          var row0H = Math.max(
+            tableHeight(tables[0]),
+            tables[1] ? tableHeight(tables[1]) : 0,
           );
+          var row1H = tables[2]
+            ? Math.max(tableHeight(tables[2]), tables[3] ? tableHeight(tables[3]) : 0)
+            : 0;
+
+          probe.font = "bold 20px Space Grotesk, sans-serif";
+          var titleW = probe.measureText("สิ่งที่ควรลงมือทำ").width;
 
           var padPage = 22;
-          var W = Math.ceil(widest) + padPage * 2;
+          var gutter = 30; // gap between the two columns
+          var gapRow = 24; // gap between the two rows
+          var numCols = tables.length > 1 ? 2 : 1;
+          var gridW = colW * numCols + (numCols > 1 ? gutter : 0);
+          var W = Math.ceil(Math.max(titleW, gridW)) + padPage * 2;
           var H =
             padPage +
             34 + // title
             18 + // subtitle
-            tables.reduce(function (sum, t) {
-              var rowCount = t.rows.length || 1; // "ไม่พบร้าน..." still takes one line
-              return sum + 30 + 30 + rowCount * 26 + 20;
-            }, 0) +
+            row0H +
+            (row1H ? gapRow + row1H : 0) +
             padPage;
 
           var canvas = document.createElement("canvas");
@@ -10588,21 +10606,26 @@
           ctx.fillText(snap.periodLabel, padPage, y + 12);
           y += 34;
 
-          tables.forEach(function (t) {
+          function drawOne(t, x, yStart) {
+            var ty = yStart;
             ctx.fillStyle = "#121A2B";
             ctx.font = "bold 13px Inter, sans-serif";
-            ctx.fillText(t.title, padPage, y);
-            y += 20;
+            ctx.fillText(t.title, x, ty);
+            ty += 20;
             if (t.rows.length) {
-              y = drawCanvasTable(ctx, padPage, y, cols, t.rows);
+              drawCanvasTable(ctx, x, ty, cols, t.rows);
             } else {
               ctx.fillStyle = "#6B7280";
               ctx.font = "12.5px Inter, sans-serif";
-              ctx.fillText("ไม่พบร้านที่เข้าเงื่อนไขนี้", padPage, y + 8);
-              y += 26;
+              ctx.fillText("ไม่พบร้านที่เข้าเงื่อนไขนี้", x, ty + 8);
             }
-            y += 20;
-          });
+          }
+          var xLeft = padPage,
+            xRight = padPage + colW + gutter;
+          drawOne(tables[0], xLeft, y);
+          if (tables[1]) drawOne(tables[1], xRight, y);
+          if (tables[2]) drawOne(tables[2], xLeft, y + row0H + gapRow);
+          if (tables[3]) drawOne(tables[3], xRight, y + row0H + gapRow);
 
           canvas.toBlob(function (blob) {
             var url = URL.createObjectURL(blob);
