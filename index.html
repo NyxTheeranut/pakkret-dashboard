@@ -1817,7 +1817,7 @@
                 📄 สรุป 1 หน้า
               </button>
             </div>
-            <div class="kpi-grid" id="perfKpiGrid"></div>
+            <div id="perfKpiGrid"></div>
           </section>
 
           <section id="cmLeaderboardSection">
@@ -5074,82 +5074,111 @@
             }
           }
 
-          var cards = [
-            {
-              label: "Target GA",
-              value: fmt(t.target),
-              sub: "ร้านที่มีเป้าหมายเฉพาะ",
-            },
-            { label: "Actual GA (มีเป้า)", value: fmt(t.targetedGA), sub: "" },
-            {
-              label: "%Achieve",
-              value: pctBadge(t.achievePct, "achieve", "lg"),
-              sub: "ยอดที่ทำได้ ÷ เป้า (เฉพาะร้านที่มีเป้า)",
-            },
-            { label: "จังหวะเป้าหมาย", value: paceTxt, sub: paceSub },
-            { label: "คาดว่าจะจบเดือนที่", value: landingTxt, sub: landingSub },
-            { label: "ต้องได้อีกวันละ", value: needTxt, sub: needSub },
-          ];
-          // Mass/Migrant/Tourist breakdown, each with the same like-for-like (day-cutoff-matched)
-          // MOM arrow+%+color the 7-11 CM leaderboard's รายได้ column already uses (deltaArrow) --
-          // requested as cards here rather than 3 more columns on the CM leaderboard table, which
-          // was already at 11 columns and would have gotten cramped.
+          // Split into labeled sub-groups instead of one flat 12-card wall -- grown from 9 to 12
+          // cards this session (the 3 segment cards below) and started reading as visual noise,
+          // worse, the segment trio got scattered across row boundaries by the grid's own 4-column
+          // wrap, undermining the one thing they're for (comparing the 3 segments side by side).
+          // Nothing was cut, just regrouped: each group keeps its own 4-col grid so cards still
+          // wrap cleanly within their own group instead of spilling into the next one's row.
           var segCutoffSub = rtrCurrentMonth().hasPrevMonth
             ? "เทียบเดือนก่อน ช่วงวันที่ 1-" +
               (rtrCurrentMonth().momCutoffDay || monthMaxDay(rtrCurrentMonth())) +
               " เท่ากัน"
             : "เทียบเดือนก่อนหน้า";
-          cards.push(
+          var groups = [
             {
-              label: "Mass GA",
-              value: fmt(t.mass) + deltaArrow(t.massMomPct),
-              sub: segCutoffSub,
+              title: "เทียบเป้า",
+              cards: [
+                {
+                  label: "Target GA",
+                  value: fmt(t.target),
+                  sub: "ร้านที่มีเป้าหมายเฉพาะ",
+                },
+                {
+                  label: "Actual GA (มีเป้า)",
+                  value: fmt(t.targetedGA),
+                  sub: "",
+                },
+                {
+                  label: "%Achieve",
+                  value: pctBadge(t.achievePct, "achieve", "lg"),
+                  sub: "ยอดที่ทำได้ ÷ เป้า (เฉพาะร้านที่มีเป้า)",
+                },
+                { label: "จังหวะเป้าหมาย", value: paceTxt, sub: paceSub },
+                {
+                  label: "คาดว่าจะจบเดือนที่",
+                  value: landingTxt,
+                  sub: landingSub,
+                },
+                { label: "ต้องได้อีกวันละ", value: needTxt, sub: needSub },
+              ],
             },
             {
-              label: "Migrant GA",
-              value: fmt(t.migrant) + deltaArrow(t.migrantMomPct),
-              sub: segCutoffSub,
+              title: "แยกตามกลุ่มลูกค้า",
+              cards: [
+                {
+                  label: "Mass GA",
+                  value: fmt(t.mass) + deltaArrow(t.massMomPct),
+                  sub: segCutoffSub,
+                },
+                {
+                  label: "Migrant GA",
+                  value: fmt(t.migrant) + deltaArrow(t.migrantMomPct),
+                  sub: segCutoffSub,
+                },
+                {
+                  label: "Tourist GA",
+                  value: fmt(t.tourist) + deltaArrow(t.touristMomPct),
+                  sub: segCutoffSub,
+                },
+              ],
             },
             {
-              label: "Tourist GA",
-              value: fmt(t.tourist) + deltaArrow(t.touristMomPct),
-              sub: segCutoffSub,
+              title: "ภาพรวม",
+              cards: [
+                {
+                  label: "MOM",
+                  value: momTxt,
+                  // State the basis explicitly -- a like-for-like MOM reads very differently from a
+                  // full-month one, and nobody can tell which they're looking at without being told.
+                  sub: rtrCurrentMonth().hasPrevMonth
+                    ? "เทียบเดือนก่อน ช่วงวันที่ 1-" +
+                      (rtrCurrentMonth().momCutoffDay ||
+                        monthMaxDay(rtrCurrentMonth())) +
+                      " เท่ากัน (GA)"
+                    : "เทียบเดือนก่อนหน้า (GA)",
+                },
+                {
+                  label: "M1",
+                  value: fmtBaht(t.m1),
+                  sub: "รวมทุกร้าน (รวมร้านไม่มีเป้า)",
+                },
+                {
+                  label: "ARPU (M1/GA)",
+                  value: arpu != null ? fmtBaht(arpu) : "—",
+                  sub: "เฉพาะร้านที่มีเป้า",
+                },
+              ],
             },
-          );
-          cards.push(
-            {
-              label: "MOM",
-              value: momTxt,
-              // State the basis explicitly -- a like-for-like MOM reads very differently from a
-              // full-month one, and nobody can tell which they're looking at without being told.
-              sub: rtrCurrentMonth().hasPrevMonth
-                ? "เทียบเดือนก่อน ช่วงวันที่ 1-" +
-                  (rtrCurrentMonth().momCutoffDay ||
-                    monthMaxDay(rtrCurrentMonth())) +
-                  " เท่ากัน (GA)"
-                : "เทียบเดือนก่อนหน้า (GA)",
-            },
-            {
-              label: "M1",
-              value: fmtBaht(t.m1),
-              sub: "รวมทุกร้าน (รวมร้านไม่มีเป้า)",
-            },
-            {
-              label: "ARPU (M1/GA)",
-              value: arpu != null ? fmtBaht(arpu) : "—",
-              sub: "เฉพาะร้านที่มีเป้า",
-            },
-          );
-          $("perfKpiGrid").innerHTML = cards
-            .map(function (c) {
+          ];
+          function cardHtml(c) {
+            return (
+              '<div class="kpi-card"><div class="label">' +
+              esc(c.label) +
+              '</div><div class="value">' +
+              c.value +
+              '</div><div class="sub">' +
+              esc(c.sub) +
+              "</div></div>"
+            );
+          }
+          $("perfKpiGrid").innerHTML = groups
+            .map(function (g, i) {
               return (
-                '<div class="kpi-card"><div class="label">' +
-                esc(c.label) +
-                '</div><div class="value">' +
-                c.value +
-                '</div><div class="sub">' +
-                esc(c.sub) +
-                "</div></div>"
+                (i > 0 ? '<div class="sub-card-title">' + esc(g.title) + "</div>" : "") +
+                '<div class="kpi-grid">' +
+                g.cards.map(cardHtml).join("") +
+                "</div>"
               );
             })
             .join("");
