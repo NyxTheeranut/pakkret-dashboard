@@ -2411,6 +2411,8 @@
             fileNames: [],
             rosterLoaded: false,
             cmMatchCount: 0,
+            unmappedCount: 0,
+            unmappedGA: 0,
             selectedDay: null,
             fileHandles: [],
             expandedFilters: {
@@ -8221,16 +8223,30 @@
                 );
                 return;
               }
-              var stores = Array.from(storesMap.values());
+              var allStores = Array.from(storesMap.values());
               // Layer the roster's CM tag onto stores built from the sales files. The roster (if loaded)
               // wins when present; otherwise fall back to whatever CM Name the sales file itself carried
               // (some quarters have their own CM Name column -- Q2 does, Q1 didn't), then UNMAPPED_CM.
-              var cmMatchCount = 0;
-              stores.forEach(function (s) {
+              allStores.forEach(function (s) {
                 var rosterCm = codeToCm.get(s.code);
                 s.cm = rosterCm || s.cm || UNMAPPED_CM;
-                if (rosterCm || s.cm !== UNMAPPED_CM) cmMatchCount++;
               });
+              // A store whose CM never resolved is treated as belonging to some other area's
+              // roster and dropped entirely, same rule and reasoning as the RTR side (see
+              // aggregateRtrSheet): "ถ้ามันจับไม่เจอ CM ... ให้เข้าใจว่าเป็นของพื้นที่อื่นเลยไม่
+              // ต้องโชว์". Counted before dropping so renderSevHealth can still report how many
+              // (and how much GA) were excluded.
+              var unmappedCount = 0,
+                unmappedGA = 0;
+              var stores = allStores.filter(function (s) {
+                if (s.cm === UNMAPPED_CM) {
+                  unmappedCount++;
+                  unmappedGA += s.ga;
+                  return false;
+                }
+                return true;
+              });
+              var cmMatchCount = stores.length;
               var monthsSet = {};
               stores.forEach(function (s) {
                 Object.keys(s.byMonth).forEach(function (mk) {
@@ -8281,6 +8297,8 @@
               state.sev.truncWarnings = truncWarnings;
               state.sev.rosterLoaded = rosterStats.rows > 0;
               state.sev.cmMatchCount = cmMatchCount;
+              state.sev.unmappedCount = unmappedCount;
+              state.sev.unmappedGA = unmappedGA;
               state.sev.cmTargets = cmTargets;
               state.sev.cmTargetMonthKey =
                 Object.keys(cmTargets).length > 0 ? targetMonthKey : null;
@@ -8300,9 +8318,11 @@
               // before a fresh file selection happens.
               // Bumped V6 -> V7: fixed a double-counting bug (two sheets covering the same
               // calendar days got summed instead of deduped) that would have corrupted any
-              // already-cached stores -- see aggregateSevRows' dayOwner param. Forces a fresh
-              // parse so a stale, double-counted cache doesn't keep overriding the corrected math.
-              cacheSet("sevV7", {
+              // already-cached stores -- see aggregateSevRows' dayOwner param.
+              // Bumped V7 -> V8: unmapped-CM stores are now excluded entirely at ingestion
+              // (same rule as RTR) instead of being kept and tagged "ไม่ระบุ CM" -- a stale
+              // cache would keep showing that tab/store forever otherwise.
+              cacheSet("sevV8", {
                 fileNames: fileNames,
                 savedAt: Date.now(),
                 stores: stores,
@@ -8311,6 +8331,8 @@
                 clusterRows: stats.clusterRows,
                 rosterLoaded: rosterStats.rows > 0,
                 cmMatchCount: cmMatchCount,
+                unmappedCount: unmappedCount,
+                unmappedGA: unmappedGA,
                 cmTargets: cmTargets,
                 cmTargetMonthKey: state.sev.cmTargetMonthKey,
               }).catch(function (err) {
@@ -8369,17 +8391,11 @@
 
           // GA whose SIM_TYPE carried no readable price -- excluded from AP Mix entirely
           var totGa = 0,
-            banded = 0,
-            noCm = 0,
-            noCmGA = 0;
+            banded = 0;
           stores.forEach(function (s) {
             var v = sevScopedValue(s, mk, state.sev.selectedDay);
             totGa += v.ga;
             banded += v.ap49 + v.ap99 + v.ap199 + v.apOver199;
-            if (!s.cm || s.cm === UNMAPPED_CM) {
-              noCm++;
-              noCmGA += v.ga;
-            }
           });
           var unbanded = Math.max(0, totGa - banded);
           if (unbanded > 0 && totGa > 0)
@@ -8392,15 +8408,19 @@
                 pct(unbanded / totGa) +
                 ") อ่านราคาจาก SIM_TYPE ไม่ได้ — ไม่ถูกนับใน AP Mix",
             });
-          if (noCm)
+          // Stores whose code never matched a CM are dropped entirely during ingestion (see
+          // handleSevFiles), same rule as the RTR side -- they never reach state.sev.stores, so
+          // this reports the count/GA handleSevFiles tracked on its way out instead of scanning
+          // stores for them (there's nothing left to find).
+          if (state.sev.unmappedCount)
             items.push({
               level: "warn",
               text:
                 "<b>" +
-                fmt(noCm) +
+                fmt(state.sev.unmappedCount) +
                 "</b> ร้าน (GA " +
-                fmt(noCmGA) +
-                ") ไม่มี CM กำกับ" +
+                fmt(state.sev.unmappedGA) +
+                ") ไม่มี CM กำกับ ถูกคัดออกจากแดชบอร์ดนี้ทั้งหมด (ถือว่าเป็นของพื้นที่อื่น)" +
                 (state.sev.rosterLoaded
                   ? ""
                   : " — ยังไม่ได้โหลดไฟล์ roster (7-Eleven Store Database)"),
@@ -8467,18 +8487,13 @@
             " ร้าน · " +
             sevDataAsOfText();
           if (state.sev.rosterLoaded) {
-            var unmatched = state.sev.stores.length - state.sev.cmMatchCount;
+            // Stores whose CM never resolved are excluded before ever reaching state.sev.stores
+            // (see handleSevFiles), so every store counted here already has one -- the excluded
+            // count/GA shows up as its own warning in the health panel instead.
             note +=
               " · เชื่อม CM จาก roster สำเร็จ " +
               fmt(state.sev.cmMatchCount) +
-              " ร้าน" +
-              (unmatched > 0
-                ? ", หา CM ไม่เจอ " +
-                  fmt(unmatched) +
-                  ' ร้าน (แสดงเป็น "' +
-                  UNMAPPED_CM +
-                  '")'
-                : "");
+              " ร้าน";
           } else {
             note +=
               " · ยังไม่ได้เชื่อมไฟล์ roster (7-Eleven_Store_Database.xlsx) — มุมมองแยกตาม CM จะยังใช้ไม่ได้";
@@ -11101,7 +11116,7 @@
         }
 
         function restoreSevFromCache() {
-          return cacheGet("sevV7")
+          return cacheGet("sevV8")
             .then(function (cached) {
               if (!cached || !cached.stores || !cached.stores.length) return;
               state.sev.loaded = true;
@@ -11119,6 +11134,8 @@
               state.sev.fileNames = cached.fileNames || [];
               state.sev.rosterLoaded = !!cached.rosterLoaded;
               state.sev.cmMatchCount = cached.cmMatchCount || 0;
+              state.sev.unmappedCount = cached.unmappedCount || 0;
+              state.sev.unmappedGA = cached.unmappedGA || 0;
               state.sev.cmTargets = cached.cmTargets || {};
               state.sev.cmTargetMonthKey = cached.cmTargetMonthKey || null;
 
