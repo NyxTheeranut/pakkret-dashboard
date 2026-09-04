@@ -1744,19 +1744,22 @@
         <div class="empty-panel" id="rtrCloud" style="display: none">
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
           <h2>ข้อมูล RTR</h2>
-          <p id="rtrCloudMsg">
-            กดปุ่มด้านล่างเพื่อโหลดข้อมูลล่าสุดจาก Google Sheets
-          </p>
-          <button class="file-btn" id="rtrCloudBtn" style="margin-top: 14px">
-            📥 โหลดข้อมูลจาก Google Sheets
-          </button>
+          <p id="rtrCloudMsg">เข้าสู่ระบบ Google เพื่อโหลดข้อมูลล่าสุด</p>
+          <div
+            id="rtrGsiButton"
+            style="
+              margin-top: 14px;
+              display: flex;
+              justify-content: center;
+            "
+          ></div>
           <button
             class="file-btn ghost-light"
             id="rtrCloudReset"
-            style="margin-top: 8px"
-            title="ถ้าเลือกไฟล์ผิด กดปุ่มนี้เพื่อเลือกใหม่"
+            style="margin-top: 8px; display: none"
+            title="ออกจากระบบและเข้าสู่ระบบใหม่"
           >
-            เลือกไฟล์ใหม่
+            ออกจากระบบ
           </button>
         </div>
         <div class="empty-panel" id="rtrEmpty">
@@ -2044,19 +2047,22 @@
         <div class="empty-panel" id="sevCloud" style="display: none">
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
           <h2>ข้อมูล 7-11</h2>
-          <p id="sevCloudMsg">
-            กดปุ่มด้านล่างเพื่อโหลดข้อมูลล่าสุดจาก Google Sheets
-          </p>
-          <button class="file-btn" id="sevCloudBtn" style="margin-top: 14px">
-            📥 โหลดข้อมูลจาก Google Sheets
-          </button>
+          <p id="sevCloudMsg">เข้าสู่ระบบ Google เพื่อโหลดข้อมูลล่าสุด</p>
+          <div
+            id="sevGsiButton"
+            style="
+              margin-top: 14px;
+              display: flex;
+              justify-content: center;
+            "
+          ></div>
           <button
             class="file-btn ghost-light"
             id="sevCloudReset"
-            style="margin-top: 8px"
-            title="ถ้าเลือกไฟล์ผิด กดปุ่มนี้เพื่อเลือกใหม่"
+            style="margin-top: 8px; display: none"
+            title="ออกจากระบบและเข้าสู่ระบบใหม่"
           >
-            เลือกไฟล์ใหม่
+            ออกจากระบบ
           </button>
         </div>
         <div class="empty-panel" id="sevEmpty">
@@ -5082,7 +5088,8 @@
           // wrap cleanly within their own group instead of spilling into the next one's row.
           var segCutoffSub = rtrCurrentMonth().hasPrevMonth
             ? "เทียบเดือนก่อน ช่วงวันที่ 1-" +
-              (rtrCurrentMonth().momCutoffDay || monthMaxDay(rtrCurrentMonth())) +
+              (rtrCurrentMonth().momCutoffDay ||
+                monthMaxDay(rtrCurrentMonth())) +
               " เท่ากัน"
             : "เทียบเดือนก่อนหน้า";
           var groups = [
@@ -5175,7 +5182,9 @@
           $("perfKpiGrid").innerHTML = groups
             .map(function (g, i) {
               return (
-                (i > 0 ? '<div class="sub-card-title">' + esc(g.title) + "</div>" : "") +
+                (i > 0
+                  ? '<div class="sub-card-title">' + esc(g.title) + "</div>"
+                  : "") +
                 '<div class="kpi-grid">' +
                 g.cards.map(cardHtml).join("") +
                 "</div>"
@@ -7806,7 +7815,13 @@
           }
           return counts;
         }
-        function aggregateSevRows(rows2D, storesMap, stats, dayOwner, sheetIdx) {
+        function aggregateSevRows(
+          rows2D,
+          storesMap,
+          stats,
+          dayOwner,
+          sheetIdx,
+        ) {
           if (!rows2D || rows2D.length < 2) return;
           var header = rows2D[0];
           var idx = {};
@@ -7845,11 +7860,7 @@
             if (code == null || code === "") continue;
             var codeStr = String(code).trim();
             var day = String(row[idx["TM_KEY_DAY"]]).trim();
-            if (
-              dayOwner &&
-              dayOwner[day] != null &&
-              dayOwner[day] !== sheetIdx
-            )
+            if (dayOwner && dayOwner[day] != null && dayOwner[day] !== sheetIdx)
               continue; // a different sheet has more complete data for this exact day
             var monthKey = day.length >= 6 ? day.slice(0, 6) : null;
             var ga = num(row[idx["Sum of GA"]]);
@@ -8273,7 +8284,10 @@
               salesSheets.forEach(function (sh, idx) {
                 Object.keys(sh.dayCounts).forEach(function (day) {
                   var cur = dayOwner[day];
-                  if (cur == null || sh.dayCounts[day] > salesSheets[cur].dayCounts[day])
+                  if (
+                    cur == null ||
+                    sh.dayCounts[day] > salesSheets[cur].dayCounts[day]
+                  )
                     dayOwner[day] = idx;
                 });
               });
@@ -8304,8 +8318,7 @@
                       codeToTarget,
                       targetStats,
                     );
-                  else
-                    aggregateRosterRows(sh.rows2D, codeToCm, rosterStats);
+                  else aggregateRosterRows(sh.rows2D, codeToCm, rosterStats);
                 } catch (err) {
                   sheetErrors.push(
                     sh.fileName +
@@ -9001,7 +9014,9 @@
             daysInMonth: daysInMonth,
             daysLeft: Math.max(0, daysInMonth - sevMomCutoffDay),
             expectedPct:
-              curve != null ? curve : Math.min(1, sevMomCutoffDay / daysInMonth),
+              curve != null
+                ? curve
+                : Math.min(1, sevMomCutoffDay / daysInMonth),
             method: curve != null ? "curve" : "linear",
           };
         }
@@ -9013,7 +9028,8 @@
           return {
             landing: landing,
             surplus: landing - totTarget, // negative = projected to miss
-            needPerDay: pacing.daysLeft > 0 ? remaining / pacing.daysLeft : null,
+            needPerDay:
+              pacing.daysLeft > 0 ? remaining / pacing.daysLeft : null,
             currentPerDay:
               pacing.daysElapsed > 0 ? totGa / pacing.daysElapsed : null,
             remaining: remaining,
@@ -9905,7 +9921,11 @@
               return clickableRow(
                 x.s.code,
                 '<span class="n">' + esc(x.s.name) + "</span>",
-                '<span class="v">' + lmtdAndMom(x) + " · " + aeCol(x.s.ae) + "</span>",
+                '<span class="v">' +
+                  lmtdAndMom(x) +
+                  " · " +
+                  aeCol(x.s.ae) +
+                  "</span>",
               );
             },
           );
@@ -10158,7 +10178,8 @@
               });
               var needTxt, needSub;
               if (fc.remaining <= 0) {
-                needTxt = '<span style="color:var(--accent);">ถึงเป้าแล้ว ✓</span>';
+                needTxt =
+                  '<span style="color:var(--accent);">ถึงเป้าแล้ว ✓</span>';
                 needSub =
                   "ทำได้ " +
                   fmt(totGa) +
@@ -10192,7 +10213,8 @@
                         "/วัน"
                     : "");
               } else {
-                needTxt = '<span style="color:var(--alert);">หมดเดือนแล้ว</span>';
+                needTxt =
+                  '<span style="color:var(--alert);">หมดเดือนแล้ว</span>';
                 needSub =
                   "ขาดอีก " + fmt(fc.remaining) + " GA แต่ไม่เหลือวันให้ทำแล้ว";
               }
@@ -10482,7 +10504,9 @@
           // summed GA a single-month target was never meant to be measured against, and not a
           // single day, which a whole-month commit can't be prorated against either).
           var targetActive =
-            s.hasTarget && !day && state.sev.currentMonthKey === s.targetMonthKey;
+            s.hasTarget &&
+            !day &&
+            state.sev.currentMonthKey === s.targetMonthKey;
           return {
             ga: v.ga,
             revAmt: v.revAmt,
@@ -10883,7 +10907,10 @@
             tables[1] ? tableHeight(tables[1]) : 0,
           );
           var row1H = tables[2]
-            ? Math.max(tableHeight(tables[2]), tables[3] ? tableHeight(tables[3]) : 0)
+            ? Math.max(
+                tableHeight(tables[2]),
+                tables[3] ? tableHeight(tables[3]) : 0,
+              )
             : 0;
 
           probe.font = "bold 20px Space Grotesk, sans-serif";
@@ -11518,6 +11545,69 @@
           projectNum: "901392336998", // required by the Picker for drive.file (setAppId)
         };
 
+        // =====================================================================
+        // GOOGLE SHEETS SYNC (viewer side) — Apps Script backend, not direct Sheets API.
+        //
+        // Why viewers don't use the same drive.file + Picker flow as the publisher below:
+        // that scope only grants access to a file once the Picker has been run against it
+        // (see the block comment above SYNC) — ordinary Drive "Share" access is NOT enough,
+        // so a viewer who'd never used the Picker got a 404 even on a shared file. This Apps
+        // Script instead runs AS the sheet's owner (bound script, "Execute as: Me"), so it
+        // already has permanent access — a viewer only proves who they are via a lightweight
+        // Google Identity sign-in (an ID token, not an OAuth API token), the script checks
+        // that email against a "Viewers" tab, and hands back the same {values:[[...]]} shape
+        // the Sheets REST API returns, so the existing row-parsing logic below is unchanged.
+        // See "Territory Explorer/Sheets Sync - Apps Script Code.gs" for the backend + setup.
+        // =====================================================================
+        var VIEWER_SCRIPT_URL =
+          "https://script.google.com/macros/s/AKfycbzjNSiIzcG2d0o1VcGX-kVoUtj3HBsnyDCMrO1qBimiIBUN5N3qLvQ4rkio30yVkxmv/exec";
+        var VIEWER_ID_TOKEN = null;
+
+        function scriptGetValues(tab) {
+          return fetch(VIEWER_SCRIPT_URL, {
+            method: "POST",
+            // text/plain avoids a CORS preflight that Apps Script web apps don't handle —
+            // Apps Script still reads the raw JSON body fine via e.postData.contents.
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "getValues",
+              idToken: VIEWER_ID_TOKEN,
+              tab: tab,
+            }),
+          })
+            .then(function (r) {
+              return r.json();
+            })
+            .then(function (data) {
+              if (!data.ok)
+                throw new Error(data.message || data.error || "load failed");
+              return data.values || [];
+            });
+        }
+
+        // Mirrors sheetsReadTab's shape (column-A JSON chunks rejoined) but reads via the
+        // Apps Script backend instead of the Sheets REST API — viewer-only.
+        function scriptReadTab(tab) {
+          return scriptGetValues(tab).then(function (values) {
+            var joined = values
+              .map(function (row) {
+                return row[0] || "";
+              })
+              .join(""); // rejoin the 40k-char chunks
+            if (!joined) throw new Error("แท็บ " + tab + " ว่างเปล่า");
+            return JSON.parse(joined);
+          });
+        }
+
+        // Mirrors readTable's shape ({headers, rows}) but reads via the Apps Script
+        // backend instead of the Sheets REST API — viewer-only.
+        function scriptReadTable(tab) {
+          return scriptGetValues(tab).then(function (values) {
+            if (!values.length) return { headers: [], rows: [] };
+            return { headers: values[0], rows: values.slice(1) };
+          });
+        }
+
         function syncCfg() {
           // localStorage wins, so you can point a browser at a different project without
           // editing the file; otherwise fall back to the published defaults.
@@ -12011,21 +12101,10 @@
           return chain;
         }
 
-        // Reads one tab back as {headers, rows} -- the inverse of writeTableTab.
-        function readTable(id, tab) {
-          return syncApi(
-            SYNC.SS +
-              "/" +
-              id +
-              "/values/" +
-              encodeURIComponent(tab) +
-              "!A1:ZZ200000",
-          ).then(function (r) {
-            var values = r.values || [];
-            if (!values.length) return { headers: [], rows: [] };
-            return { headers: values[0], rows: values.slice(1) };
-          });
-        }
+        // readTable (id, tab) used to live here -- the direct-Sheets-API inverse of
+        // writeTableTab. It's gone: its only callers (readRtrMonthGroup/readSevMonthGroup)
+        // are viewer-only, and viewers now read via scriptReadTable (Apps Script backend,
+        // see the block comment above VIEWER_SCRIPT_URL) instead of the Sheets REST API.
 
         // Groups sheet tabs by their "rtr-YYYY-MM"/"sev-YYYY-MM" month key (now several sub-tabs
         // per month, e.g. "-stores"/"-daily"/...) and deletes every sub-tab of the oldest groups
@@ -12066,9 +12145,7 @@
                       reqs.push({ deleteSheet: { sheetId: p.sheetId } });
                     });
                   });
-                survivors[prefix] = keys.slice(
-                  Math.max(0, keys.length - keep),
-                );
+                survivors[prefix] = keys.slice(Math.max(0, keys.length - keep));
               });
               var batch = reqs.length
                 ? syncApi(SYNC.SS + "/" + id + ":batchUpdate", "POST", {
@@ -12307,12 +12384,12 @@
               });
             })
             .then(function (res) {
-              return syncPrune(sheetId, SYNC.KEEP_MONTHS).then(function (
-                survivors,
-              ) {
-                res.survivors = survivors;
-                return res;
-              });
+              return syncPrune(sheetId, SYNC.KEEP_MONTHS).then(
+                function (survivors) {
+                  res.survivors = survivors;
+                  return res;
+                },
+              );
             })
             .then(function (res) {
               // meta is always rewritten — it carries updated_at and the fingerprints.
@@ -12449,13 +12526,13 @@
         // simTypes/daily attached, achievePct/momPct/cmRollup/totals NOT computed yet) plus that
         // month's resolved CM targets -- the inverse of buildRtrMonthTables. applyRtrFromCloud
         // runs the real aggregate+finalize pipeline over the result.
-        function readRtrMonthGroup(id, key) {
+        function readRtrMonthGroup(key) {
           return Promise.all([
-            readTable(id, key + "-meta"),
-            readTable(id, key + "-stores"),
-            readTable(id, key + "-daily"),
-            readTable(id, key + "-simtypes"),
-            readTable(id, key + "-cmtargets"),
+            scriptReadTable(key + "-meta"),
+            scriptReadTable(key + "-stores"),
+            scriptReadTable(key + "-daily"),
+            scriptReadTable(key + "-simtypes"),
+            scriptReadTable(key + "-cmtargets"),
           ]).then(function (parts) {
             var meta = {};
             parts[0].rows.forEach(function (r) {
@@ -12522,17 +12599,17 @@
 
         // Reads one 7-11 month group's sub-tabs into exactly the {monthKey, stores:[...]} shape
         // applySevFromCloud already expects -- the inverse of buildSevMonthTables.
-        function readSevMonthGroup(id, key) {
+        function readSevMonthGroup(key) {
           var monthKey = key.slice(4).replace("-", ""); // "sev-2026-08" -> "202608"
           // cmtargets is a newer sub-tab -- a spreadsheet last synced before this feature existed
           // won't have it yet (until the publisher syncs again), so a missing tab must not break
           // the whole month read. Same reasoning as the store/target columns below: absent data
           // degrades to "no target shown", never an error.
           return Promise.all([
-            readTable(id, key + "-stores"),
-            readTable(id, key + "-daily"),
-            readTable(id, key + "-simtypes"),
-            readTable(id, key + "-cmtargets").catch(function () {
+            scriptReadTable(key + "-stores"),
+            scriptReadTable(key + "-daily"),
+            scriptReadTable(key + "-simtypes"),
+            scriptReadTable(key + "-cmtargets").catch(function () {
               return { headers: [], rows: [] };
             }),
           ]).then(function (parts) {
@@ -12784,119 +12861,82 @@
           if (el) el.textContent = text;
         }
 
-        // The whole viewer flow: token → (pick file once) → meta → newest SYNC.KEEP_MONTHS of each feed.
+        // The whole viewer flow: sign in (ID token, no picking) → meta → newest
+        // SYNC.KEEP_MONTHS of each feed, all read through the Apps Script backend.
         function loadFromCloud() {
-          if (!syncCfgReady()) {
-            cloudMsg("rtr", "ยังไม่ได้ตั้งค่า Google — กด ⚙️ ด้านบน");
-            cloudMsg("sev", "ยังไม่ได้ตั้งค่า Google — กด ⚙️ ด้านบน");
+          if (!VIEWER_ID_TOKEN) {
+            cloudMsg("rtr", "กรุณาเข้าสู่ระบบ Google ด้านบน");
+            cloudMsg("sev", "กรุณาเข้าสู่ระบบ Google ด้านบน");
             return Promise.resolve();
           }
           ["rtr", "sev"].forEach(function (t) {
-            cloudMsg(t, "กำลังเข้าสู่ระบบ Google…");
+            cloudMsg(t, "กำลังโหลดข้อมูล…");
           });
-          var freshlyPicked = null;
-          return syncGetToken()
-            .then(function () {
-              var id = syncCfg().sheetId;
-              if (id) return id;
-              // first visit on this device: choose the spreadsheet once, then it is remembered
-              ["rtr", "sev"].forEach(function (t) {
-                cloudMsg(t, "เลือกไฟล์ข้อมูล (ทำครั้งเดียว)…");
-              });
-              return syncOpenPicker().then(function (picked) {
-                // NOT saved yet — a wrong pick used to be persisted immediately, and since
-                // viewers have no ⚙️ to clear it, they were permanently stuck on the wrong
-                // file with the Picker never reopening. Only remember it once it reads.
-                freshlyPicked = picked;
-                return picked;
-              });
-            })
-            .then(function (id) {
-              ["rtr", "sev"].forEach(function (t) {
-                cloudMsg(t, "กำลังโหลดข้อมูล…");
-              });
-              return sheetsReadTab(id, "meta").then(function (meta) {
-                if (freshlyPicked)
-                  localStorage.setItem("sync_sheetId", freshlyPicked);
-                // Load every month the sync retention keeps (SYNC.KEEP_MONTHS), not an
-                // independent smaller number -- previously hardcoded to 3, so only half of
-                // what was actually synced (and prune keeps) ever reached viewers.
-                var rtrTabs = (meta.rtr_months || []).slice(-SYNC.KEEP_MONTHS);
-                var sevTabs = (meta.sev_months || []).slice(-SYNC.KEEP_MONTHS);
-                var jobs = rtrTabs
-                  .map(function (t) {
-                    return readRtrMonthGroup(id, t);
-                  })
-                  .concat(
-                    sevTabs.map(function (t) {
-                      return readSevMonthGroup(id, t);
-                    }),
-                  );
-                return Promise.all(jobs).then(function (all) {
-                  var rtrObjs = all.slice(0, rtrTabs.length);
-                  var sevObjs = all.slice(rtrTabs.length);
-                  if (rtrObjs.length) {
-                    applyRtrFromCloud(rtrObjs);
-                    renderRtrSheetNote();
-                    renderRtrDashboard();
-                    rtrShow("dashboard");
-                  } else {
-                    cloudMsg("rtr", "ยังไม่มีข้อมูล RTR ในไฟล์นี้");
-                  }
-                  if (sevObjs.length) {
-                    applySevFromCloud(sevObjs);
-                    renderSevSheetNote();
-                    renderSevDashboard();
-                    sevShow("dashboard");
-                  } else {
-                    cloudMsg("sev", "ยังไม่มีข้อมูล 7-11 ในไฟล์นี้");
-                  }
-                  state.cloudUpdatedAt = meta.updated_at || null;
-                  var when = meta.updated_at
-                    ? new Date(meta.updated_at).toLocaleString("th-TH")
-                    : "-";
-                  // Two different facts, kept visibly separate: when this device last synced
-                  // from the sheet (when) vs. what day the latest month's own data actually
-                  // reaches (rtrDataAsOfText/sevDataAsOfText) -- syncing today doesn't mean the
-                  // source data itself is current through today.
-                  [
-                    { id: "rtrCacheBanner", dataAsOf: rtrDataAsOfText() },
-                    { id: "sevCacheBanner", dataAsOf: sevDataAsOfText() },
-                  ].forEach(function (b) {
-                    var el = $(b.id);
-                    if (el)
-                      el.innerHTML =
-                        '<div class="cache-banner"><span>โหลดจาก Google Sheets' +
-                        (b.dataAsOf
-                          ? " · <b>" + esc(b.dataAsOf) + "</b>"
-                          : "") +
-                        " · ซิงค์ล่าสุด " +
-                        esc(when) +
-                        "</span></div>";
-                  });
+          return scriptReadTab("meta")
+            .then(function (meta) {
+              // Load every month the sync retention keeps (SYNC.KEEP_MONTHS), not an
+              // independent smaller number -- previously hardcoded to 3, so only half of
+              // what was actually synced (and prune keeps) ever reached viewers.
+              var rtrTabs = (meta.rtr_months || []).slice(-SYNC.KEEP_MONTHS);
+              var sevTabs = (meta.sev_months || []).slice(-SYNC.KEEP_MONTHS);
+              var jobs = rtrTabs
+                .map(function (t) {
+                  return readRtrMonthGroup(t);
+                })
+                .concat(
+                  sevTabs.map(function (t) {
+                    return readSevMonthGroup(t);
+                  }),
+                );
+              return Promise.all(jobs).then(function (all) {
+                var rtrObjs = all.slice(0, rtrTabs.length);
+                var sevObjs = all.slice(rtrTabs.length);
+                if (rtrObjs.length) {
+                  applyRtrFromCloud(rtrObjs);
+                  renderRtrSheetNote();
+                  renderRtrDashboard();
+                  rtrShow("dashboard");
+                } else {
+                  cloudMsg("rtr", "ยังไม่มีข้อมูล RTR ในไฟล์นี้");
+                }
+                if (sevObjs.length) {
+                  applySevFromCloud(sevObjs);
+                  renderSevSheetNote();
+                  renderSevDashboard();
+                  sevShow("dashboard");
+                } else {
+                  cloudMsg("sev", "ยังไม่มีข้อมูล 7-11 ในไฟล์นี้");
+                }
+                state.cloudUpdatedAt = meta.updated_at || null;
+                var when = meta.updated_at
+                  ? new Date(meta.updated_at).toLocaleString("th-TH")
+                  : "-";
+                // Two different facts, kept visibly separate: when this device last synced
+                // from the sheet (when) vs. what day the latest month's own data actually
+                // reaches (rtrDataAsOfText/sevDataAsOfText) -- syncing today doesn't mean the
+                // source data itself is current through today.
+                [
+                  { id: "rtrCacheBanner", dataAsOf: rtrDataAsOfText() },
+                  { id: "sevCacheBanner", dataAsOf: sevDataAsOfText() },
+                ].forEach(function (b) {
+                  var el = $(b.id);
+                  if (el)
+                    el.innerHTML =
+                      '<div class="cache-banner"><span>โหลดจาก Google Sheets' +
+                      (b.dataAsOf
+                        ? " · <b>" + esc(b.dataAsOf) + "</b>"
+                        : "") +
+                      " · ซิงค์ล่าสุด " +
+                      esc(when) +
+                      "</span></div>";
                 });
               });
             })
             .catch(function (err) {
               console.error(err);
               var m = String(err.message || err);
-              // A spreadsheet that is not ours has no "meta" tab, so the range fails to parse
-              // and Sheets answers 400 — the single most likely mistake a viewer can make.
-              var wrongFile =
-                m.indexOf("400") !== -1 ||
-                m.indexOf("Unable to parse range") !== -1 ||
-                m.indexOf("ว่างเปล่า") !== -1;
-              var friendly = wrongFile
-                ? 'ไฟล์ที่เลือกไม่ใช่ไฟล์ข้อมูลของแดชบอร์ดนี้ — กด "เลือกไฟล์ใหม่" แล้วเลือกไฟล์ที่ผู้ดูแลแชร์ให้'
-                : m.indexOf("403") !== -1
-                  ? "ยังไม่ได้รับสิทธิ์ดูข้อมูลนี้ — แจ้งผู้ดูแลให้แชร์ไฟล์ให้"
-                  : m.indexOf("404") !== -1
-                    ? "หาไฟล์ข้อมูลไม่พบ — อาจยังไม่เคยซิงค์ หรือเลือกไฟล์ผิด"
-                    : m;
-              // a bad remembered id must not lock them out of ever choosing again
-              if (wrongFile) localStorage.removeItem("sync_sheetId");
               ["rtr", "sev"].forEach(function (t) {
-                cloudMsg(t, friendly);
+                cloudMsg(t, m);
               });
             });
         }
@@ -12967,19 +13007,34 @@
           });
         }
 
+        // Viewer sign-in: hide the Google button, reveal "sign out", and load data.
+        function onViewerSignIn(response) {
+          VIEWER_ID_TOKEN = response.credential;
+          ["rtr", "sev"].forEach(function (t) {
+            var g = $(t + "GsiButton");
+            var r = $(t + "CloudReset");
+            if (g) g.style.display = "none";
+            if (r) r.style.display = "";
+          });
+          loadFromCloud();
+        }
+
         ["rtr", "sev"].forEach(function (t) {
-          var b = $(t + "CloudBtn");
-          if (b) b.addEventListener("click", loadFromCloud);
-          // Escape hatch: viewers have no ⚙️, so without this a wrong file choice would be
-          // unrecoverable — the id is remembered and the Picker never reopens.
+          // "Sign out": clear the ID token and go back to showing the Google button —
+          // useful if the wrong Google account got signed in.
           var r = $(t + "CloudReset");
           if (r)
             r.addEventListener("click", function () {
-              localStorage.removeItem("sync_sheetId");
+              VIEWER_ID_TOKEN = null;
+              if (window.google && google.accounts && google.accounts.id)
+                google.accounts.id.disableAutoSelect();
               ["rtr", "sev"].forEach(function (x) {
-                cloudMsg(x, "ล้างไฟล์ที่จำไว้แล้ว — กำลังให้เลือกใหม่…");
+                var g = $(x + "GsiButton");
+                var rr = $(x + "CloudReset");
+                if (g) g.style.display = "flex";
+                if (rr) rr.style.display = "none";
+                cloudMsg(x, "เข้าสู่ระบบ Google เพื่อโหลดข้อมูลล่าสุด");
               });
-              loadFromCloud();
             });
         });
 
@@ -12995,8 +13050,34 @@
         } else {
           rtrShow("rtrCloud");
           sevShow("sevCloud");
-          // a remembered spreadsheet means we can load without any clicking
-          if (syncCfgReady() && syncCfg().sheetId) loadFromCloud();
+          if (VIEWER_SCRIPT_URL.indexOf("REPLACE_WITH") === 0) {
+            ["rtr", "sev"].forEach(function (t) {
+              cloudMsg(t, "แดชบอร์ดยังไม่ได้ตั้งค่า VIEWER_SCRIPT_URL");
+            });
+          } else {
+            // accounts.google.com/gsi/client loads async — window "load" fires after it
+            // (it's marked defer, which always runs before DOMContentLoaded/load).
+            window.addEventListener("load", function () {
+              if (!(window.google && google.accounts && google.accounts.id)) {
+                ["rtr", "sev"].forEach(function (t) {
+                  cloudMsg(t, "โหลด Google Sign-In ไม่สำเร็จ — ลองรีเฟรชหน้านี้");
+                });
+                return;
+              }
+              google.accounts.id.initialize({
+                client_id: SYNC_DEFAULTS.clientId,
+                callback: onViewerSignIn,
+              });
+              ["rtr", "sev"].forEach(function (t) {
+                var el = $(t + "GsiButton");
+                if (el)
+                  google.accounts.id.renderButton(el, {
+                    theme: "outline",
+                    size: "large",
+                  });
+              });
+            });
+          }
         }
       })();
     </script>
