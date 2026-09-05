@@ -922,6 +922,12 @@
         border-radius: 14px;
         padding: 16px 18px;
       }
+      .insight-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
       .insight-card .tag {
         font-size: 10.5px;
         font-weight: 700;
@@ -931,6 +937,13 @@
         border-radius: 5px;
         display: inline-block;
         margin-bottom: 10px;
+      }
+      .insight-card-badge {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        white-space: nowrap;
+        margin-top: 2px;
       }
       .tag-risk {
         background: var(--alert-soft);
@@ -9836,18 +9849,22 @@
 
           // every <li> below carries data-code so a delegated click listener (attached after innerHTML
           // is set) can open the same store drilldown the main table uses
-          function cardHtml(tagClass, tagText, title, items, renderRow) {
+          function cardHtml(tagClass, tagText, title, items, renderRow, badgeText) {
             var body = items.length
               ? '<ul class="insight-list">' +
                 items.map(renderRow).join("") +
                 "</ul>"
               : '<div class="insight-empty">ไม่พบร้านที่เข้าเงื่อนไขนี้</div>';
             return (
-              '<div class="insight-card"><span class="tag ' +
+              '<div class="insight-card"><div class="insight-card-head"><span class="tag ' +
               tagClass +
               '">' +
               esc(tagText) +
-              "</span><h4>" +
+              "</span>" +
+              (badgeText
+                ? '<span class="insight-card-badge">' + esc(badgeText) + "</span>"
+                : "") +
+              "</div><h4>" +
               esc(title) +
               "</h4>" +
               body +
@@ -9893,6 +9910,19 @@
             return '<span class="col-ae">' + esc(firstName(name)) + "</span>";
           }
 
+          // How concentrated sales are in the top 10 -- e.g. "top 10 stores are 42% of all
+          // GA" reads very differently depending on whether there are 20 stores or 200.
+          var totalGAAll = withSales.reduce(function (sum, x) {
+            return sum + x.sv.ga;
+          }, 0);
+          var top10GA = topGA.reduce(function (sum, x) {
+            return sum + x.sv.ga;
+          }, 0);
+          var top10Badge =
+            totalGAAll > 0
+              ? "รวม GA " + fmt(top10GA) + " · " + pct(top10GA / totalGAAll) + " ของทั้งหมด"
+              : null;
+
           var html = "";
           html += cardHtml(
             "tag-top",
@@ -9911,6 +9941,7 @@
                   "</span>",
               );
             },
+            top10Badge,
           );
           html += cardHtml(
             "tag-risk",
