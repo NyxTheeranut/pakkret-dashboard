@@ -4103,7 +4103,9 @@
                 ? m.totals.targetedGA / m.totals.target
                 : null;
             m.totals.noTargetGA = m.totals.ga - m.totals.targetedGA;
-            m.totals.noTargetCount = m.stores.length - targetedStores.length;
+            m.totals.noTargetCount = m.stores.filter(function (s) {
+              return !s.hasTarget;
+            }).length;
             m.hasPrevMonth = !!prevMonth;
 
             // cluster + CM level MOM, computed from summed GA (not an average of per-store %), against
