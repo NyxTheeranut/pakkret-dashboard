@@ -132,6 +132,16 @@
         border-radius: 9px;
         padding: 6px 8px 6px 12px;
       }
+      .file-slot.drag-over {
+        border: 1px dashed var(--accent);
+        background: rgba(255, 255, 255, 0.16);
+      }
+      .empty-panel.drag-over {
+        border: 2px dashed var(--accent);
+        background: var(--accent-soft);
+        border-radius: 14px;
+        padding: 16px;
+      }
       .file-slot .slot-label {
         font-size: 11px;
         color: rgba(255, 255, 255, 0.55);
@@ -1608,7 +1618,7 @@
         </div>
       </div>
       <div class="file-slots" id="fileSlots">
-        <div class="file-slot">
+        <div class="file-slot" id="rtrFileSlot">
           <span class="slot-label">RTR</span>
           <span class="slot-status" id="rtrStatus">ยังไม่ได้เลือกไฟล์</span>
           <button
@@ -1621,7 +1631,7 @@
           <button class="file-btn" id="rtrBtn">เลือกไฟล์</button>
           <input type="file" id="rtrInput" accept=".xlsx,.xls" />
         </div>
-        <div class="file-slot">
+        <div class="file-slot" id="sevFileSlot">
           <span class="slot-label">7-11</span>
           <span class="slot-status" id="sevStatus">ยังไม่ได้เลือกไฟล์</span>
           <button
@@ -1819,8 +1829,9 @@
             <div id="rtrCoverageNote"></div>
           </section>
 
-          <section><div class="kpi-grid" id="rtrKpiGrid"></div></section>
-
+          <!-- Target-vs-actual (which leads with Target GA) sits ABOVE the plain overview
+               row below -- "how are we doing against the number that matters" comes before
+               the raw totals it's measured against. -->
           <section>
             <div class="section-head">
               <h2>Overall Performance เทียบ Target</h2>
@@ -1835,6 +1846,8 @@
             </div>
             <div id="perfKpiGrid"></div>
           </section>
+
+          <section><div class="kpi-grid" id="rtrKpiGrid"></div></section>
 
           <section id="cmLeaderboardSection">
             <div class="section-head">
@@ -3215,6 +3228,47 @@
         $("rtrInput").addEventListener("change", function (e) {
           handleRtrFile(e.target.files[0]);
         });
+        // Lets a file be dragged straight onto the picker box (or the empty-state panel
+        // before anything's loaded) instead of always having to click "เลือกไฟล์" and
+        // browse manually. Dropping doesn't go through showOpenFilePicker, so no file
+        // handle is captured -- the 🔄 refresh-from-disk button stays tied to whichever
+        // way a file was most recently PICKED, same as before this existed.
+        function setupDropZone(el, onFiles) {
+          if (!el) return;
+          ["dragenter", "dragover"].forEach(function (evt) {
+            el.addEventListener(evt, function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              el.classList.add("drag-over");
+            });
+          });
+          ["dragleave", "dragend", "drop"].forEach(function (evt) {
+            el.addEventListener(evt, function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              el.classList.remove("drag-over");
+            });
+          });
+          el.addEventListener("drop", function (e) {
+            var files = e.dataTransfer && e.dataTransfer.files;
+            if (files && files.length)
+              onFiles(Array.prototype.slice.call(files));
+          });
+        }
+        setupDropZone($("rtrFileSlot"), function (files) {
+          handleRtrFile(files[0]);
+        });
+        setupDropZone($("rtrEmpty"), function (files) {
+          handleRtrFile(files[0]);
+        });
+        // Without this, missing one of the drop zones above by a few pixels makes the
+        // browser navigate away to display the raw file, silently losing everything
+        // loaded so far -- swallow drag/drop everywhere else on the page instead.
+        ["dragover", "drop"].forEach(function (evt) {
+          window.addEventListener(evt, function (e) {
+            e.preventDefault();
+          });
+        });
         $("rtrRefreshBtn").addEventListener("click", function () {
           if (!FS_ACCESS_SUPPORTED || !state.rtr.fileHandle) return; // disabled in this case, but guard anyway
           var btn = $("rtrRefreshBtn");
@@ -4026,14 +4080,20 @@
               var achieveActual = cr.targetOverridden ? cr.ga : cr.targetedGA;
               cr.achievePct = cr.target > 0 ? achieveActual / cr.target : null;
             });
-            var targetedStores = m.stores.filter(function (s) {
-              return s.hasTarget;
-            });
-            m.totals.target = targetedStores.reduce(function (a, s) {
-              return a + s.target;
+            // Sum from cmRollup (post-override), NOT independently from m.stores -- the KPI Set
+            // Up override just above replaces a CM's target/targetedGA with its committed,
+            // whole-territory figures, and this has to reflect that too. Summing per-store targets
+            // here instead used to skip the override entirely, so the overview (no CM selected)
+            // total silently disagreed with CM1's target + CM2's target added by hand.
+            m.totals.target = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+              return a + (m.cmRollup[cmName].target || 0);
             }, 0);
-            m.totals.targetedGA = targetedStores.reduce(function (a, s) {
-              return a + s.ga;
+            m.totals.targetedGA = Object.keys(m.cmRollup).reduce(function (
+              a,
+              cmName,
+            ) {
+              var cr = m.cmRollup[cmName];
+              return a + (cr.targetOverridden ? cr.ga : cr.targetedGA);
             }, 0);
             m.totals.m1 = m.stores.reduce(function (a, s) {
               return a + s.m1;
@@ -4114,8 +4174,10 @@
           var warns = items.filter(function (i) {
             return i.level === "warn";
           }).length;
-          var open =
-            healthOpen[tab] === undefined ? warns > 0 : healthOpen[tab];
+          // Used to auto-expand when warns > 0, popping this open over the top of the page on
+          // every load with a data quirk -- collapsed by default now regardless, still one click
+          // away via the existing toggle below for whoever actually wants to check it.
+          var open = healthOpen[tab] === undefined ? false : healthOpen[tab];
           var headIcon = warns ? "⚠️" : "✅";
           var headText = warns
             ? "ตรวจสอบข้อมูล — พบ " + warns + " จุดที่ควรดู"
@@ -6228,31 +6290,47 @@
             })
             .slice(0, 5);
 
-          var topRev = stores
-            .slice()
+          // Same "high volume, weak conversion" shape as riskStores above, but against AP1D
+          // instead of AP30D -- a store can convert fine over 30 days while still hiding a
+          // same-day (AP1D) problem, so this is a genuinely different risk, not a duplicate view.
+          var withConvAp1d = stores.map(function (s) {
+            return { s: s, conv: s.ga > 0 ? s.ap1d / s.ga : 0 };
+          });
+          var convAp1dSorted = withConvAp1d.slice().sort(function (a, b) {
+            return a.conv - b.conv;
+          });
+          var medianConvAp1d = convAp1dSorted[
+            Math.floor(convAp1dSorted.length / 2)
+          ]
+            ? convAp1dSorted[Math.floor(convAp1dSorted.length / 2)].conv
+            : 0;
+          var riskStoresAp1d = withConvAp1d
+            .filter(function (x) {
+              return (
+                x.s.ga >= topTertileCut &&
+                x.conv < medianConvAp1d &&
+                x.s.ga > 0
+              );
+            })
             .sort(function (a, b) {
-              return b.revAmt - a.revAmt;
+              return a.conv - b.conv;
+            })
+            .slice(0, 5);
+
+          // Stores with literally no GA this period -- the RTR-side equivalent of the 7-11
+          // tab's "ยังไม่มียอดขายเลย" card. AP30D-descending so a store that's close to
+          // converting (activity but no GA yet) surfaces before one with none at all.
+          var noGA = stores
+            .filter(function (s) {
+              return s.ga === 0;
+            })
+            .sort(function (a, b) {
+              return b.ap30d - a.ap30d;
             })
             .slice(0, 5)
             .map(function (s) {
               return { s: s };
             });
-
-          var migrantThresh = Math.max(10, topTertileCut * 0.15);
-          var topMigrant = stores
-            .filter(function (s) {
-              return s.ga >= migrantThresh;
-            })
-            .map(function (s) {
-              return { s: s, share: s.ga > 0 ? s.migrant / s.ga : 0 };
-            })
-            .filter(function (x) {
-              return x.share > 0;
-            })
-            .sort(function (a, b) {
-              return b.share - a.share;
-            })
-            .slice(0, 5);
 
           var lowStock = stores
             .map(function (s) {
@@ -6301,6 +6379,28 @@
             );
           }
 
+          // Shared row shape for every card below -- GA/AP1D/AP30D/conversion% -- same
+          // fixed-width .col-num/.col-pct columns as the 7-11 insight cards (see
+          // renderSevInsights), plus room for one card-specific trailing detail (e.g. the
+          // stock card's pack count) instead of dropping that context entirely.
+          function gaApRow(s, conv, extraHtml) {
+            return (
+              '<span class="n">' +
+              esc(s.name) +
+              '</span><span class="v"><span class="col-num">GA ' +
+              fmt(s.ga) +
+              '</span> · <span class="col-num">AP1D ' +
+              fmt(s.ap1d) +
+              '</span> · <span class="col-num">AP30D ' +
+              fmt(s.ap30d) +
+              '</span> · <span class="col-pct">' +
+              (s.ga > 0 ? pct(conv) : "—") +
+              "</span>" +
+              (extraHtml ? " · " + extraHtml : "") +
+              "</span>"
+            );
+          }
+
           var html = "";
           html += cardHtml(
             "tag-risk",
@@ -6308,53 +6408,25 @@
             "ยอดขายเยอะ แต่ AP30D conversion ต่ำ",
             riskStores,
             function (x) {
-              // Same fixed-width .col-num/.col-pct columns as the 7-11 insight cards (see
-              // renderSevInsights) -- this is the one RTR card with more than one number per
-              // row, so it's the one that actually benefits; the other three below show a
-              // single value each, which already right-aligns fine without it.
-              return (
-                '<span class="n">' +
-                esc(x.s.name) +
-                '</span><span class="v"><span class="col-num">GA ' +
-                fmt(x.s.ga) +
-                '</span> · <span class="col-num">AP1D ' +
-                fmt(x.s.ap1d) +
-                '</span> · <span class="col-num">AP30D ' +
-                fmt(x.s.ap30d) +
-                '</span> · <span class="col-pct">' +
-                pct(x.conv) +
-                "</span></span>"
-              );
+              return gaApRow(x.s, x.conv);
             },
           );
           html += cardHtml(
-            "tag-top",
-            "รายได้สูงสุด",
-            "ร้าน Top 5 ตามรายได้",
-            topRev,
+            "tag-risk",
+            "ความเสี่ยงคุณภาพ",
+            "ยอดขายเยอะ แต่ AP1D conversion ต่ำ",
+            riskStoresAp1d,
             function (x) {
-              return (
-                '<span class="n">' +
-                esc(x.s.name) +
-                '</span><span class="v">' +
-                fmtBaht(x.s.revAmt) +
-                "</span>"
-              );
+              return gaApRow(x.s, x.conv);
             },
           );
           html += cardHtml(
-            "tag-migrant",
-            "จุดแข็ง Migrant",
-            "สัดส่วนขาย Migrant สูงสุด (GA≥" + Math.round(migrantThresh) + ")",
-            topMigrant,
+            "tag-risk",
+            "ยังไม่มียอดขายเลย",
+            "ร้านที่ยังไม่มี GA ในช่วงนี้ (" + noGA.length + " ร้าน)",
+            noGA,
             function (x) {
-              return (
-                '<span class="n">' +
-                esc(x.s.name) +
-                '</span><span class="v">' +
-                pct(x.share) +
-                "</span>"
-              );
+              return gaApRow(x.s, 0);
             },
           );
           html += cardHtml(
@@ -6363,13 +6435,8 @@
             "ร้านที่ขายแพ็คได้รวมต่ำกว่า 5 ชิ้นในเดือนนี้",
             lowStock,
             function (x) {
-              return (
-                '<span class="n">' +
-                esc(x.s.name) +
-                '</span><span class="v">' +
-                x.sum +
-                " แพ็ค</span>"
-              );
+              var conv = x.s.ga > 0 ? x.s.ap30d / x.s.ga : 0;
+              return gaApRow(x.s, conv, x.sum + " แพ็ค");
             },
           );
           grid.innerHTML = html;
@@ -7579,6 +7646,11 @@
         $("sevInput").addEventListener("change", function (e) {
           handleSevFiles(Array.prototype.slice.call(e.target.files));
         });
+        // Same drag-and-drop convenience as the RTR box (see setupDropZone) -- multiple
+        // files (Q1/Q2/Q3 ...) can be dropped at once, same as picking multiple via the
+        // "เลือกไฟล์" button.
+        setupDropZone($("sevFileSlot"), handleSevFiles);
+        setupDropZone($("sevEmpty"), handleSevFiles);
         $("sevRefreshBtn").addEventListener("click", function () {
           if (
             !FS_ACCESS_SUPPORTED ||
