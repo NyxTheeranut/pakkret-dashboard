@@ -1943,7 +1943,16 @@
           </section>
 
           <section>
-            <div class="section-head"><h2>สิ่งที่ควรลงมือทำ</h2></div>
+            <div class="section-head">
+              <h2>สิ่งที่ควรลงมือทำ</h2>
+              <button
+                class="file-btn ghost-light"
+                id="rtrInsightsExportBtn"
+                style="margin-left: auto"
+              >
+                📤 Export
+              </button>
+            </div>
             <div class="insights-grid" id="rtrInsightsGrid"></div>
           </section>
 
@@ -6706,6 +6715,16 @@
               });
             },
           );
+
+          // Snapshot for the section-level "Export all 4 cards" button (rtrInsightsExportPng) --
+          // rtrExportRegistry already holds exactly {title, cols, rows} per card in render order,
+          // so this is just a copy, not a recompute -- the export can never drift from what's
+          // actually on screen, same guarantee renderSevInsights' own snapshot gives.
+          state.rtr._insightsSnapshot = {
+            scopeLabel: rtrCurrentScope().label,
+            periodLabel: rtrCurrentMonth().label,
+            cards: rtrExportRegistry,
+          };
         }
 
         // Column order reads as a narrative left-to-right: who → how much sold → how much of it
@@ -9636,7 +9655,7 @@
             // auto-size to their widest content. Full meaning lives in the title tooltip instead,
             // same as AP49/AP99/etc. already do for their own abbreviated headers.
             key: "productivity",
-            label: "Prod.",
+            label: "PDT",
             title:
               "Productivity = GA Runrate ÷ ร้านที่มียอดขาย (Active)\n" +
               "GA Runrate = ประมาณการ GA เต็มเดือนที่จังหวะปัจจุบัน (ไม่ใช่ยอดสะสม ณ ตอนนี้)\n" +
@@ -9647,6 +9666,11 @@
           { key: "ap99", label: "AP 99" },
           { key: "ap199", label: "AP 199" },
           { key: "apOver199", label: "AP > 199" },
+          {
+            key: "apUnder100",
+            label: "%AP<100",
+            title: "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA AE นี้ที่ราคาแพ็คต่ำกว่า 100",
+          },
           { key: "mom", label: "%MOM" },
           { key: "rev", label: "รายได้" },
           { key: "arpu", label: "ARPU" },
@@ -9661,6 +9685,8 @@
           if (key === "ap99") return row.ap99;
           if (key === "ap199") return row.ap199;
           if (key === "apOver199") return row.apOver199;
+          if (key === "apUnder100")
+            return row.apUnder100Pct == null ? -1 : row.apUnder100Pct;
           if (key === "mom") return row.momPct == null ? -2 : row.momPct;
           if (key === "rev") return row.revAmt;
           if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
@@ -9684,6 +9710,11 @@
           { key: "ap99", label: "AP 99" },
           { key: "ap199", label: "AP 199" },
           { key: "apOver199", label: "AP > 199" },
+          {
+            key: "apUnder100",
+            label: "%AP<100",
+            title: "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA CM นี้ที่ราคาแพ็คต่ำกว่า 100",
+          },
           { key: "mom", label: "%MOM" },
           { key: "rev", label: "รายได้" },
           { key: "arpu", label: "ARPU" },
@@ -9699,6 +9730,8 @@
           if (key === "ap99") return row.ap99;
           if (key === "ap199") return row.ap199;
           if (key === "apOver199") return row.apOver199;
+          if (key === "apUnder100")
+            return row.apUnder100Pct == null ? -1 : row.apUnder100Pct;
           if (key === "mom") return row.momPct == null ? -2 : row.momPct;
           if (key === "rev") return row.revAmt;
           if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
@@ -9781,6 +9814,7 @@
             r.target = targetActive ? state.sev.cmTargets[cm] || null : null;
             r.achievePct =
               targetActive && r.target > 0 ? r.ga / r.target : null;
+            r.apUnder100Pct = r.ga > 0 ? (r.ap49 + r.ap99) / r.ga : null;
             return r;
           });
 
@@ -9826,6 +9860,7 @@
               '" tabindex="0" role="button" aria-label="เรียงตาม ' +
               esc(col.label) +
               '"' +
+              (col.title ? ' title="' + esc(col.title) + '"' : "") +
               alignStyle +
               ">" +
               esc(col.label) +
@@ -9869,6 +9904,9 @@
                 "</td>" +
                 '<td class="num-cell">' +
                 fmt(r.apOver199) +
+                "</td>" +
+                '<td class="num-cell">' +
+                (r.apUnder100Pct != null ? pct(r.apUnder100Pct) : "—") +
                 "</td>" +
                 '<td class="num-cell">' +
                 pctBadge(r.momPct, "mom") +
@@ -10055,6 +10093,7 @@
               r.prevProductivity > 0
                 ? (r.productivity - r.prevProductivity) / r.prevProductivity
                 : null;
+            r.apUnder100Pct = r.ga > 0 ? (r.ap49 + r.ap99) / r.ga : null;
             return r;
           });
 
@@ -10167,6 +10206,9 @@
                 "</td>" +
                 '<td class="num-cell">' +
                 fmt(r.apOver199) +
+                "</td>" +
+                '<td class="num-cell">' +
+                (r.apUnder100Pct != null ? pct(r.apUnder100Pct) : "—") +
                 "</td>" +
                 '<td class="num-cell">' +
                 pctBadge(r.momPct, "mom") +
@@ -11629,6 +11671,131 @@
           });
         }
 
+        // Same 2x2 grid layout as sevInsightsExportPng below, adapted for the fact that RTR's 4
+        // cards do NOT all share one column set (the risk/no-GA cards are 6 columns, the stock
+        // card is 4) -- each table measures and draws with its OWN cols instead of one shared
+        // cols array, but the grid-cell width (colW) still takes the max across all 4 so the two
+        // columns line up the same way sevInsightsExportPng's grid does.
+        function rtrInsightsExportPng() {
+          var snap = state.rtr._insightsSnapshot;
+          if (!snap || !snap.cards.length) return;
+          var tables = snap.cards;
+
+          var probe = document.createElement("canvas").getContext("2d");
+          var colW = 0;
+          function measureTableWidth(cols, rows) {
+            var padX = 12;
+            var w = cols.map(function (c) {
+              probe.font = "bold 12px Inter, sans-serif";
+              return probe.measureText(c).width;
+            });
+            rows.forEach(function (r) {
+              r.forEach(function (cell, i) {
+                probe.font = cellFont(i);
+                var m2 = probe.measureText(String(cell)).width;
+                if (m2 > w[i]) w[i] = m2;
+              });
+            });
+            return w.reduce(function (a, b) {
+              return a + b + padX * 2;
+            }, 0);
+          }
+          tables.forEach(function (t) {
+            colW = Math.max(colW, measureTableWidth(t.cols, t.rows));
+            probe.font = "bold 13px Inter, sans-serif";
+            colW = Math.max(colW, probe.measureText(t.title).width);
+          });
+          colW = Math.ceil(colW);
+          function tableHeight(t) {
+            return 20 + (t.rows.length ? 30 + t.rows.length * 26 : 26);
+          }
+          var row0H = Math.max(
+            tableHeight(tables[0]),
+            tables[1] ? tableHeight(tables[1]) : 0,
+          );
+          var row1H = tables[2]
+            ? Math.max(
+                tableHeight(tables[2]),
+                tables[3] ? tableHeight(tables[3]) : 0,
+              )
+            : 0;
+
+          probe.font = "bold 20px Space Grotesk, sans-serif";
+          var titleW = probe.measureText("สิ่งที่ควรลงมือทำ").width;
+          probe.font = "bold 14px Inter, sans-serif";
+          var scopeW = probe.measureText(snap.scopeLabel).width;
+
+          var padPage = 22;
+          var gutter = 30;
+          var gapRow = 24;
+          var numCols = tables.length > 1 ? 2 : 1;
+          var gridW = colW * numCols + (numCols > 1 ? gutter : 0);
+          var W = Math.ceil(Math.max(titleW, scopeW, gridW)) + padPage * 2;
+          var H =
+            padPage +
+            34 +
+            22 +
+            18 +
+            row0H +
+            (row1H ? gapRow + row1H : 0) +
+            padPage;
+
+          var canvas = document.createElement("canvas");
+          canvas.width = W;
+          canvas.height = H;
+          var ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#EEF1F5";
+          ctx.fillRect(0, 0, W, H);
+
+          var y = padPage + 8;
+          ctx.fillStyle = "#121A2B";
+          ctx.font = "bold 20px Space Grotesk, sans-serif";
+          ctx.fillText("สิ่งที่ควรลงมือทำ", padPage, y + 12);
+          y += 26;
+          ctx.fillStyle = "#0F6E62";
+          ctx.font = "bold 14px Inter, sans-serif";
+          ctx.fillText(snap.scopeLabel, padPage, y + 12);
+          y += 22;
+          ctx.fillStyle = "#6B7280";
+          ctx.font = "12.5px Inter, sans-serif";
+          ctx.fillText(snap.periodLabel, padPage, y + 12);
+          y += 34;
+
+          function drawOne(t, x, yStart) {
+            var ty = yStart;
+            ctx.fillStyle = "#121A2B";
+            ctx.font = "bold 13px Inter, sans-serif";
+            ctx.fillText(t.title, x, ty);
+            ty += 20;
+            if (t.rows.length) {
+              drawCanvasTable(ctx, x, ty, t.cols, t.rows);
+            } else {
+              ctx.fillStyle = "#6B7280";
+              ctx.font = "12.5px Inter, sans-serif";
+              ctx.fillText("ไม่พบร้านที่เข้าเงื่อนไขนี้", x, ty + 8);
+            }
+          }
+          var xLeft = padPage,
+            xRight = padPage + colW + gutter;
+          drawOne(tables[0], xLeft, y);
+          if (tables[1]) drawOne(tables[1], xRight, y);
+          if (tables[2]) drawOne(tables[2], xLeft, y + row0H + gapRow);
+          if (tables[3]) drawOne(tables[3], xRight, y + row0H + gapRow);
+
+          canvas.toBlob(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = "pak-kret-rtr-actions-" + Date.now() + ".png";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () {
+              URL.revokeObjectURL(url);
+            }, 2000);
+          });
+        }
+
         // 2x2 grid (row-major: card1 top-left, card2 top-right, card3 bottom-left, card4
         // bottom-right), matching the on-screen .insights-grid's own layout, rather than one
         // long vertical stack -- reads like an actual screenshot of the dashboard instead of a
@@ -11914,6 +12081,10 @@
           }, 500);
         }
 
+        $("rtrInsightsExportBtn").addEventListener(
+          "click",
+          rtrInsightsExportPng,
+        );
         $("sevInsightsExportBtn").addEventListener(
           "click",
           sevInsightsExportPng,
