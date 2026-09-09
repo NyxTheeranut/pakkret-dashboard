@@ -780,6 +780,32 @@
          target column, a partial-month MOM, un-accrued revenue, an unclassified SIM type --
          all rendered as confident numbers. This panel exists to make the parser's assumptions
          and coverage gaps visible at a glance instead of surfacing months later by accident. */
+      /* Hidden inline in each tab by default -- surfaced instead via the small "Debug" toggle
+         button in the topbar, so the page doesn't lead with a data-quality box before anyone's
+         asked to see one. #rtrHealth/#sevHealth still live in their original spot in the DOM
+         (so each only ever shows its own tab's items), this just gates their visibility. */
+      #rtrHealth,
+      #sevHealth {
+        display: none;
+      }
+      body.debug-open #rtrHealth,
+      body.debug-open #sevHealth {
+        display: block;
+      }
+      .debug-toggle-btn {
+        position: relative;
+      }
+      .debug-toggle-btn.has-warn::after {
+        content: "";
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #f59e0b;
+        border: 1px solid var(--ink);
+      }
       .health-box {
         border: 1px solid var(--line);
         background: var(--panel);
@@ -1684,6 +1710,13 @@
           <button class="file-btn" id="syncBtn">☁️ ซิงค์ขึ้น Sheets</button>
         </div>
       </div>
+      <button
+        class="file-btn ghost debug-toggle-btn"
+        id="debugToggleBtn"
+        title="แสดง/ซ่อนแผงตรวจสอบข้อมูล"
+      >
+        🐞 Debug
+      </button>
     </div>
 
     <!-- ============ SYNC CONFIG / PROGRESS MODAL ============ -->
@@ -2268,6 +2301,13 @@
             </div>
             <div class="modal-body">
               <div class="modal-hint" id="sevExportScopeHint"></div>
+
+              <!-- Only เขต gets its own picker here, deliberately -- CM/ฝ่าย/GM/AE still follow
+                   whatever's set on the page (see the comment above sevOpenExportModal). This is
+                   the one dimension people actually want to re-slice right when exporting, without
+                   leaving the modal and losing their place on the page. -->
+              <label class="modal-label">เขต (เฉพาะ export นี้)</label>
+              <div class="pill-row" id="sevExportKhetRow"></div>
 
               <label class="modal-label">เรียงตาม</label>
               <select class="modal-select" id="sevExportSort"></select>
@@ -3210,12 +3250,16 @@
           $("tabBtnSev").classList.toggle("active", tab === "sev");
           $("panelRtr").style.display = tab === "rtr" ? "block" : "none";
           $("panelSev").style.display = tab === "sev" ? "block" : "none";
+          renderDebugToggleBtn();
         }
         $("tabBtnRtr").addEventListener("click", function () {
           switchTab("rtr");
         });
         $("tabBtnSev").addEventListener("click", function () {
           switchTab("sev");
+        });
+        $("debugToggleBtn").addEventListener("click", function () {
+          document.body.classList.toggle("debug-open");
         });
 
         // =====================================================================
@@ -4185,7 +4229,21 @@
         // undefined = "user hasn't chosen" -> auto-expand only when there's something to see.
         // Once toggled, the explicit choice sticks.
         var healthOpen = {};
+        // Tracked separately from the panel's own HTML so the topbar Debug button can show a
+        // dot for the CURRENTLY ACTIVE tab without the panel itself being visible (it's hidden
+        // by default now -- see #rtrHealth/#sevHealth in the CSS).
+        var healthWarnCount = { rtr: 0, sev: 0 };
+        function renderDebugToggleBtn() {
+          var btn = $("debugToggleBtn");
+          if (!btn) return;
+          var warn = (healthWarnCount[state.activeTab] || 0) > 0;
+          btn.classList.toggle("has-warn", warn);
+        }
         function renderHealth(tab, items) {
+          healthWarnCount[tab] = (items || []).filter(function (i) {
+            return i.level === "warn";
+          }).length;
+          renderDebugToggleBtn();
           var el = $(tab + "Health");
           if (!el) return;
           if (!items || !items.length) {
@@ -10913,12 +10971,21 @@
         // =====================================================================
         // EXPORT — lets the person pick sort column/direction, row count, and
         // format (PNG or PDF) independently of the live table's own sort state.
-        // Deliberately does NOT duplicate the CM/เขต/ฝ่าย/GM/AE filter UI inside
-        // the modal -- it just exports whatever's currently filtered on the page
+        // Deliberately does NOT duplicate the CM/ฝ่าย/GM/AE filter UI inside the
+        // modal -- it just exports whatever's currently filtered on the page
         // (shown as a read-only summary), so there's one source of truth for
-        // "what am I looking at" instead of two filter pickers that could drift
-        // out of sync with each other.
+        // "what am I looking at" instead of several filter pickers that could
+        // drift out of sync with each other.
+        //
+        // เขต is the one exception, by request: it gets its own picker inside
+        // the modal (sevExportKhet) so someone can pull "just Bang Bua Thong"
+        // without leaving the modal and losing their place on the page. It's
+        // modal-local state, reset to "follow the page" every time the modal
+        // opens, and layers on TOP of whatever CM/ฝ่าย/GM/AE/search is already
+        // active on the page -- picking a เขต here doesn't change the page's
+        // own เขต filter (state.sev.currentKhet) at all.
         // =====================================================================
+        var sevExportKhet = ""; // "" = follow the page's own เขต filter
         // Same as SEV_TABLE_COLS but with a รหัสร้าน (store code) column inserted right after the
         // name, since the live table already shows the code as a subtitle under the store name (no
         // extra column needed there) but a flat PNG/PDF export needs it as its own explicit column.
@@ -10927,9 +10994,12 @@
           .concat(SEV_TABLE_COLS.slice(1));
 
         function sevExportScopeLabel() {
+          // sevExportKhet, when set, describes what's ACTUALLY in this export better than the
+          // page's own currentKhet does -- used here too so the exported file's own title/header
+          // matches its rows instead of quietly saying something else.
           var parts = [
             state.sev.currentCM,
-            state.sev.currentKhet,
+            sevExportKhet || state.sev.currentKhet,
             state.sev.currentFyai,
             state.sev.currentGm,
             state.sev.currentAe,
@@ -10940,6 +11010,53 @@
             scope + " · " + sevPeriodLabel() + (q ? ' · ค้นหา "' + q + '"' : "")
           );
         }
+        // เขต picker for the export modal. Options come from sevFilteredStores("khet") --
+        // respecting whatever CM/ฝ่าย/GM/AE is active on the page (same cross-filtering
+        // convention as renderSevFilterRow) so it never lists a เขต that would export zero rows
+        // under the page's other filters.
+        function renderSevExportKhetRow() {
+          var wrap = $("sevExportKhetRow");
+          if (!wrap) return;
+          var scoped = sevFilteredStores("khet");
+          var counts = {};
+          scoped.forEach(function (s) {
+            counts[s.khet] = (counts[s.khet] || 0) + 1;
+          });
+          var names = Object.keys(counts).sort(function (a, b) {
+            return counts[b] - counts[a];
+          });
+          var followLabel = state.sev.currentKhet
+            ? "ตามตัวกรองหน้าเว็บ (" + esc(state.sev.currentKhet) + ")"
+            : "ตามตัวกรองหน้าเว็บ (ทุกเขต)";
+          var html =
+            '<button class="pill small' +
+            (sevExportKhet === "" ? " active" : "") +
+            '" data-val="">' +
+            followLabel +
+            "</button>";
+          names.forEach(function (name) {
+            html +=
+              '<button class="pill small' +
+              (sevExportKhet === name ? " active" : "") +
+              '" data-val="' +
+              esc(name) +
+              '">' +
+              esc(name) +
+              " (" +
+              counts[name] +
+              ")</button>";
+          });
+          wrap.innerHTML = html;
+          Array.prototype.forEach.call(
+            wrap.querySelectorAll("button[data-val]"),
+            function (btn) {
+              btn.addEventListener("click", function () {
+                sevExportKhet = btn.getAttribute("data-val") || "";
+                renderSevExportKhetRow();
+              });
+            },
+          );
+        }
         function sevOpenExportModal() {
           var sortSel = $("sevExportSort");
           sortSel.innerHTML = SEV_TABLE_COLS.map(function (c) {
@@ -10948,10 +11065,13 @@
             );
           }).join("");
           sortSel.value = state.sev.sortKey || "rev";
+          sevExportKhet = ""; // reset to "follow the page" on every open, so a forgotten
+          // override from last time can't silently change a later, unrelated export
+          renderSevExportKhetRow();
           $("sevExportScopeHint").textContent =
             "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
             sevExportScopeLabel() +
-            " — ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วปรับตัวกรองบนหน้าเว็บก่อน";
+            " — เลือกเขตด้านล่างเพื่อ override เฉพาะมิตินี้ ส่วนตัวกรองอื่นให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
           $("sevExportOverlay").style.display = "flex";
         }
         function sevCloseExportModal() {
@@ -10960,8 +11080,15 @@
 
         // Same filter+search as the live table (sevCurrentStores + search), but sort/limit come from
         // the export modal's own controls, independent of whatever the on-page table is sorted by.
+        // เขต is the one dimension that can additionally be overridden by the modal's own picker
+        // (sevExportKhet) -- everything else still comes straight from sevCurrentStores(), i.e.
+        // whatever's active on the page.
         function sevGatherExportRows() {
-          var stores = sevCurrentStores();
+          var stores = sevExportKhet
+            ? sevFilteredStores("khet").filter(function (s) {
+                return s.khet === sevExportKhet;
+              })
+            : sevCurrentStores();
           var q = state.sev.search.trim().toLowerCase();
           if (q)
             stores = stores.filter(function (s) {
