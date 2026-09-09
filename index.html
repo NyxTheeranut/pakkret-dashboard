@@ -9970,6 +9970,7 @@
               var idx = exportRegistry.length;
               exportRegistry.push({
                 key: exportKey || "insight",
+                title: title,
                 items: exportItems,
               });
               exportBtn =
@@ -9977,7 +9978,7 @@
                 idx +
                 '" title="Export รายชื่อร้านทั้งหมด (' +
                 exportItems.length +
-                ' ร้าน) เป็น CSV">📤</button>';
+                ' ร้าน) เป็นรูปภาพ">📤</button>';
             }
             return (
               '<div class="insight-card"><div class="insight-card-head"><span class="insight-card-head-left"><span class="tag ' +
@@ -10138,11 +10139,7 @@
               btn.addEventListener("click", function () {
                 var entry = exportRegistry[Number(btn.getAttribute("data-export-idx"))];
                 if (!entry) return;
-                downloadCsv(
-                  "pak-kret-sev-" + entry.key + "-" + Date.now() + ".csv",
-                  ["ร้าน", "GA", "LMTD", "%MOM", "AE"],
-                  sevInsightsExportRows(entry.items),
-                );
+                sevExportCardPng(entry.title, entry.items, entry.key);
               });
             },
           );
@@ -11042,6 +11039,81 @@
             ];
           });
         }
+
+        // Same painter (cellFont/drawCanvasTable/summaryValueColor) as the whole-section
+        // sevInsightsExportPng below, but for exactly ONE card's FULL list -- the per-card
+        // export button next to each tag/title. Requested as an image instead of the CSV
+        // this used to produce, so it pastes straight into chat the same way the section-level
+        // export already does, just scoped to one card and not capped at 10 rows.
+        function sevExportCardPng(title, items, key) {
+          var cols = ["ร้าน", "GA", "LMTD", "%MOM", "AE"];
+          var rows = sevInsightsExportRows(items);
+
+          var probe = document.createElement("canvas").getContext("2d");
+          var padX = 12;
+          var colW = cols.map(function (c) {
+            probe.font = "bold 12px Inter, sans-serif";
+            return probe.measureText(c).width;
+          });
+          rows.forEach(function (r) {
+            r.forEach(function (cell, i) {
+              probe.font = cellFont(i);
+              var w = probe.measureText(String(cell)).width;
+              if (w > colW[i]) colW[i] = w;
+            });
+          });
+          var tableW = colW.reduce(function (a, b) {
+            return a + b + padX * 2;
+          }, 0);
+
+          probe.font = "bold 16px Space Grotesk, sans-serif";
+          var titleW = probe.measureText(title).width;
+
+          var padPage = 22;
+          var W = Math.ceil(Math.max(tableW, titleW)) + padPage * 2;
+          var headH = 30,
+            rowH = 26;
+          var H =
+            padPage +
+            26 +
+            (rows.length ? headH + rows.length * rowH : 40) +
+            padPage;
+
+          var canvas = document.createElement("canvas");
+          canvas.width = W;
+          canvas.height = H;
+          var ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#EEF1F5";
+          ctx.fillRect(0, 0, W, H);
+
+          var y = padPage;
+          ctx.fillStyle = "#121A2B";
+          ctx.font = "bold 16px Space Grotesk, sans-serif";
+          ctx.fillText(title, padPage, y + 14);
+          y += 26;
+
+          if (rows.length) {
+            drawCanvasTable(ctx, padPage, y, cols, rows);
+          } else {
+            ctx.fillStyle = "#6B7280";
+            ctx.font = "12.5px Inter, sans-serif";
+            ctx.fillText("ไม่พบร้านที่เข้าเงื่อนไขนี้", padPage, y + 20);
+          }
+
+          canvas.toBlob(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = "pak-kret-sev-" + (key || "insight") + "-" + Date.now() + ".png";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () {
+              URL.revokeObjectURL(url);
+            }, 2000);
+          });
+        }
+
         // 2x2 grid (row-major: card1 top-left, card2 top-right, card3 bottom-left, card4
         // bottom-right), matching the on-screen .insights-grid's own layout, rather than one
         // long vertical stack -- reads like an actual screenshot of the dashboard instead of a
