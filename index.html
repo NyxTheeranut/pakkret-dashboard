@@ -935,8 +935,28 @@
       .insight-card-head {
         display: flex;
         align-items: flex-start;
-        justify-content: space-between;
         gap: 8px;
+      }
+      .insight-card-head-left {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .insight-export-btn {
+        margin-left: auto;
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 2px 7px;
+        font-size: 12px;
+        line-height: 1.6;
+        color: var(--muted);
+        flex-shrink: 0;
+      }
+      .insight-export-btn:hover {
+        background: var(--paper);
+        color: var(--ink);
       }
       .insight-card .tag {
         font-size: 10.5px;
@@ -9923,14 +9943,44 @@
 
           // every <li> below carries data-code so a delegated click listener (attached after innerHTML
           // is set) can open the same store drilldown the main table uses
-          function cardHtml(tagClass, tagText, title, items, renderRow, badgeText) {
+          //
+          // exportItems (full, unsliced) is separate from items (the on-screen slice(0,10)) --
+          // "GA < 5 (43 ร้าน)" only ever showed 10 of them, and Export had no way to get the
+          // other 33 short of scrolling the whole store table and re-filtering by hand. Each
+          // card's export button downloads exportItems in full, keyed by index into
+          // exportRegistry (rebuilt fresh every render, wired up once below after innerHTML is set).
+          var exportRegistry = [];
+          function cardHtml(
+            tagClass,
+            tagText,
+            title,
+            items,
+            renderRow,
+            badgeText,
+            exportItems,
+            exportKey,
+          ) {
             var body = items.length
               ? '<ul class="insight-list">' +
                 items.map(renderRow).join("") +
                 "</ul>"
               : '<div class="insight-empty">ไม่พบร้านที่เข้าเงื่อนไขนี้</div>';
+            var exportBtn = "";
+            if (exportItems && exportItems.length) {
+              var idx = exportRegistry.length;
+              exportRegistry.push({
+                key: exportKey || "insight",
+                items: exportItems,
+              });
+              exportBtn =
+                '<button class="insight-export-btn" data-export-idx="' +
+                idx +
+                '" title="Export รายชื่อร้านทั้งหมด (' +
+                exportItems.length +
+                ' ร้าน) เป็น CSV">📤</button>';
+            }
             return (
-              '<div class="insight-card"><div class="insight-card-head"><span class="tag ' +
+              '<div class="insight-card"><div class="insight-card-head"><span class="insight-card-head-left"><span class="tag ' +
               tagClass +
               '">' +
               esc(tagText) +
@@ -9938,6 +9988,8 @@
               (badgeText
                 ? '<span class="insight-card-badge">' + esc(badgeText) + "</span>"
                 : "") +
+              "</span>" +
+              exportBtn +
               "</div><h4>" +
               esc(title) +
               "</h4>" +
@@ -10016,6 +10068,8 @@
               );
             },
             top10Badge,
+            topGA,
+            "top-ga",
           );
           html += cardHtml(
             "tag-risk",
@@ -10033,6 +10087,9 @@
                   "</span>",
               );
             },
+            null,
+            zeroGA,
+            "ga-0",
           );
           html += cardHtml(
             "tag-migrant",
@@ -10051,6 +10108,9 @@
                   "</span>",
               );
             },
+            null,
+            lowGA,
+            "ga-lt-5",
           );
           if (mk && !day) {
             html += cardHtml(
@@ -10065,9 +10125,27 @@
                   '<span class="v">' + gaCol(x) + lmtdAndMom(x) + "</span>",
                 );
               },
+              null,
+              declining,
+              "declining",
             );
           }
           $("sevInsightsGrid").innerHTML = html;
+
+          Array.prototype.forEach.call(
+            $("sevInsightsGrid").querySelectorAll("[data-export-idx]"),
+            function (btn) {
+              btn.addEventListener("click", function () {
+                var entry = exportRegistry[Number(btn.getAttribute("data-export-idx"))];
+                if (!entry) return;
+                downloadCsv(
+                  "pak-kret-sev-" + entry.key + "-" + Date.now() + ".csv",
+                  ["ร้าน", "GA", "LMTD", "%MOM", "AE"],
+                  sevInsightsExportRows(entry.items),
+                );
+              });
+            },
+          );
 
           // Snapshot of exactly what was just rendered (same slice(0,10) per card), so the export
           // button paints the identical rows without re-deriving topGA/zeroGA/lowGA/declining --
