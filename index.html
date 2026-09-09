@@ -2302,15 +2302,17 @@
             <div class="modal-body">
               <div class="modal-hint" id="sevExportScopeHint"></div>
 
-              <!-- Only เขต gets its own picker here, deliberately -- CM/ฝ่าย/GM/AE still follow
-                   whatever's set on the page (see the comment above sevOpenExportModal). This is
-                   the one dimension people actually want to re-slice right when exporting, without
-                   leaving the modal and losing their place on the page. -->
-              <label class="modal-label">เขต (เฉพาะ export นี้)</label>
-              <div class="pill-row" id="sevExportKhetRow"></div>
-
               <label class="modal-label">เรียงตาม</label>
               <select class="modal-select" id="sevExportSort"></select>
+
+              <!-- Shown only when "เรียงตาม" = เขต -- picking a specific เขต here narrows the
+                   export to just that one, instead of only sorting by it. Options are whatever
+                   เขต values exist under the CM/AE (etc.) filter already active on the page --
+                   see the comment above sevOpenExportModal for why those aren't duplicated here. -->
+              <div id="sevExportKhetPickerWrap" style="display: none">
+                <label class="modal-label">เขต (จะ export เฉพาะเขตนี้)</label>
+                <select class="modal-select" id="sevExportKhetPicker"></select>
+              </div>
 
               <label class="modal-label">ทิศทาง</label>
               <div class="modal-radio-row">
@@ -10977,15 +10979,15 @@
         // "what am I looking at" instead of several filter pickers that could
         // drift out of sync with each other.
         //
-        // เขต is the one exception, by request: it gets its own picker inside
-        // the modal (sevExportKhet) so someone can pull "just Bang Bua Thong"
-        // without leaving the modal and losing their place on the page. It's
-        // modal-local state, reset to "follow the page" every time the modal
-        // opens, and layers on TOP of whatever CM/ฝ่าย/GM/AE/search is already
-        // active on the page -- picking a เขต here doesn't change the page's
-        // own เขต filter (state.sev.currentKhet) at all.
+        // เขต is the one exception, by request: it's already one of the "เรียงตาม" sort options
+        // (SEV_TABLE_COLS' khet entry), and choosing it there reveals a second dropdown
+        // (sevExportKhetPicker) letting you narrow the export to just one เขต, not only sort by
+        // it. That picker's own options are whatever เขต values exist under the CM/ฝ่าย/GM/AE/
+        // search filters already active on the page -- picking one here doesn't touch the page's
+        // own เขต filter (state.sev.currentKhet) at all, and it's re-derived (and hidden again)
+        // every time the modal opens or "เรียงตาม" changes to something else.
         // =====================================================================
-        var sevExportKhet = ""; // "" = follow the page's own เขต filter
+        var sevExportKhet = ""; // "" = no narrowing -- every เขต under the page's other filters
         // Same as SEV_TABLE_COLS but with a รหัสร้าน (store code) column inserted right after the
         // name, since the live table already shows the code as a subtitle under the store name (no
         // extra column needed there) but a flat PNG/PDF export needs it as its own explicit column.
@@ -11010,13 +11012,13 @@
             scope + " · " + sevPeriodLabel() + (q ? ' · ค้นหา "' + q + '"' : "")
           );
         }
-        // เขต picker for the export modal. Options come from sevFilteredStores("khet") --
-        // respecting whatever CM/ฝ่าย/GM/AE is active on the page (same cross-filtering
-        // convention as renderSevFilterRow) so it never lists a เขต that would export zero rows
-        // under the page's other filters.
-        function renderSevExportKhetRow() {
-          var wrap = $("sevExportKhetRow");
-          if (!wrap) return;
+        // Populates the เขต dropdown that appears when "เรียงตาม" = เขต. Options come from
+        // sevFilteredStores("khet") -- respecting whatever CM/ฝ่าย/GM/AE is active on the page
+        // (same cross-filtering convention as renderSevFilterRow) so it never lists a เขต that
+        // would export zero rows under the page's other filters.
+        function renderSevExportKhetPicker() {
+          var sel = $("sevExportKhetPicker");
+          if (!sel) return;
           var scoped = sevFilteredStores("khet");
           var counts = {};
           scoped.forEach(function (s) {
@@ -11025,37 +11027,36 @@
           var names = Object.keys(counts).sort(function (a, b) {
             return counts[b] - counts[a];
           });
-          var followLabel = state.sev.currentKhet
-            ? "ตามตัวกรองหน้าเว็บ (" + esc(state.sev.currentKhet) + ")"
-            : "ตามตัวกรองหน้าเว็บ (ทุกเขต)";
-          var html =
-            '<button class="pill small' +
-            (sevExportKhet === "" ? " active" : "") +
-            '" data-val="">' +
-            followLabel +
-            "</button>";
-          names.forEach(function (name) {
-            html +=
-              '<button class="pill small' +
-              (sevExportKhet === name ? " active" : "") +
-              '" data-val="' +
-              esc(name) +
-              '">' +
-              esc(name) +
-              " (" +
-              counts[name] +
-              ")</button>";
-          });
-          wrap.innerHTML = html;
-          Array.prototype.forEach.call(
-            wrap.querySelectorAll("button[data-val]"),
-            function (btn) {
-              btn.addEventListener("click", function () {
-                sevExportKhet = btn.getAttribute("data-val") || "";
-                renderSevExportKhetRow();
-              });
-            },
-          );
+          var keep = names.indexOf(sevExportKhet) !== -1 ? sevExportKhet : "";
+          sel.innerHTML =
+            '<option value="">ทั้งหมด (ทุกเขต)</option>' +
+            names
+              .map(function (name) {
+                return (
+                  '<option value="' +
+                  esc(name) +
+                  '">' +
+                  esc(name) +
+                  " (" +
+                  counts[name] +
+                  ")</option>"
+                );
+              })
+              .join("");
+          sel.value = keep;
+          sevExportKhet = keep;
+        }
+        // Shows/hides the เขต dropdown to match whether "เรียงตาม" is currently set to เขต --
+        // narrowing to one เขต only makes sense once you're sorting/grouping by it.
+        function updateSevExportKhetVisibility() {
+          var show = $("sevExportSort").value === "khet";
+          $("sevExportKhetPickerWrap").style.display = show ? "block" : "none";
+          if (show) {
+            renderSevExportKhetPicker();
+          } else {
+            sevExportKhet = ""; // switching away from เขต drops any narrowing, so it can't
+            // silently keep applying to an export sorted by something else
+          }
         }
         function sevOpenExportModal() {
           var sortSel = $("sevExportSort");
@@ -11065,17 +11066,24 @@
             );
           }).join("");
           sortSel.value = state.sev.sortKey || "rev";
-          sevExportKhet = ""; // reset to "follow the page" on every open, so a forgotten
-          // override from last time can't silently change a later, unrelated export
-          renderSevExportKhetRow();
+          sevExportKhet = ""; // reset on every open, so a forgotten narrowing from last time
+          // can't silently apply to a later, unrelated export
+          updateSevExportKhetVisibility();
           $("sevExportScopeHint").textContent =
             "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
             sevExportScopeLabel() +
-            " — เลือกเขตด้านล่างเพื่อ override เฉพาะมิตินี้ ส่วนตัวกรองอื่นให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
+            " — ถ้าอยากเปลี่ยนตัวกรองอื่น ให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
           $("sevExportOverlay").style.display = "flex";
         }
         function sevCloseExportModal() {
           $("sevExportOverlay").style.display = "none";
+        }
+        function sevExportKhetPickerChanged() {
+          sevExportKhet = $("sevExportKhetPicker").value;
+          $("sevExportScopeHint").textContent =
+            "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
+            sevExportScopeLabel() +
+            " — ถ้าอยากเปลี่ยนตัวกรองอื่น ให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
         }
 
         // Same filter+search as the live table (sevCurrentStores + search), but sort/limit come from
@@ -11535,6 +11543,14 @@
         );
         $("sevExportBtn").addEventListener("click", sevOpenExportModal);
         $("sevExportClose").addEventListener("click", sevCloseExportModal);
+        $("sevExportSort").addEventListener(
+          "change",
+          updateSevExportKhetVisibility,
+        );
+        $("sevExportKhetPicker").addEventListener(
+          "change",
+          sevExportKhetPickerChanged,
+        );
         $("sevExportOverlay").addEventListener("click", function (e) {
           if (e.target.id === "sevExportOverlay") sevCloseExportModal();
         });
