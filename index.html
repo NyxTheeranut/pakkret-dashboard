@@ -6440,7 +6440,7 @@
           var medianConv = convSorted[Math.floor(convSorted.length / 2)]
             ? convSorted[Math.floor(convSorted.length / 2)].conv
             : 0;
-          var riskStores = withConv
+          var riskStoresAll = withConv
             .filter(function (x) {
               return (
                 x.s.ga >= topTertileCut && x.conv < medianConv && x.s.ga > 0
@@ -6448,8 +6448,8 @@
             })
             .sort(function (a, b) {
               return a.conv - b.conv;
-            })
-            .slice(0, 5);
+            });
+          var riskStores = riskStoresAll.slice(0, 10);
 
           // Same "high volume, weak conversion" shape as riskStores above, but against AP1D
           // instead of AP30D -- a store can convert fine over 30 days while still hiding a
@@ -6465,7 +6465,7 @@
           ]
             ? convAp1dSorted[Math.floor(convAp1dSorted.length / 2)].conv
             : 0;
-          var riskStoresAp1d = withConvAp1d
+          var riskStoresAp1dAll = withConvAp1d
             .filter(function (x) {
               return (
                 x.s.ga >= topTertileCut &&
@@ -6475,23 +6475,23 @@
             })
             .sort(function (a, b) {
               return a.conv - b.conv;
-            })
-            .slice(0, 5);
+            });
+          var riskStoresAp1d = riskStoresAp1dAll.slice(0, 10);
 
           // Stores with literally no GA this period -- the RTR-side equivalent of the 7-11
           // tab's "ยังไม่มียอดขายเลย" card. AP30D-descending so a store that's close to
           // converting (activity but no GA yet) surfaces before one with none at all.
-          var noGA = stores
+          var noGAAll = stores
             .filter(function (s) {
               return s.ga === 0;
             })
             .sort(function (a, b) {
               return b.ap30d - a.ap30d;
             })
-            .slice(0, 5)
             .map(function (s) {
               return { s: s };
             });
+          var noGA = noGAAll.slice(0, 10);
 
           // Real SIM stock (T Stock/D Stock/Cover Mth from the RTR mapping sheet), not a sales
           // proxy -- this card used to measure packs SOLD (s.tiers summed < 5), which is a sell-
@@ -6511,15 +6511,17 @@
             .map(function (s) {
               return { s: s };
             });
-          var lowStock = lowStockAll.slice(0, 5);
+          var lowStock = lowStockAll.slice(0, 10);
 
           // every <li> carries data-code so a delegated click listener (attached after innerHTML is
           // set, below) can open the same store drilldown the main table uses -- same pattern as the
           // 7-11 tab's insight cards
           //
-          // exportItems/exportKey are optional (only the สต็อกต่ำ card passes them, by request) --
-          // when given, the button downloads the FULL matching list as a PNG, same "export items is
-          // the full list, items is just the on-screen slice" split the 7-11 insight cards already use.
+          // exportCols/exportRows are optional -- when given, the button downloads the FULL matching
+          // list (not just the on-screen slice(0,10)) as a PNG, same split the 7-11 insight cards
+          // already use. Each card supplies its own column set since risk/no-GA/low-stock cards show
+          // different fields (conversion% doesn't apply to the stock card, sold-stock doesn't apply
+          // to the others), so this takes ready-built cols/rows rather than a shared row shape.
           var rtrExportRegistry = [];
           function cardHtml(
             tagClass,
@@ -6527,7 +6529,8 @@
             title,
             items,
             renderRow,
-            exportItems,
+            exportCols,
+            exportRows,
             exportKey,
           ) {
             var body = items.length
@@ -6546,18 +6549,19 @@
                 "</ul>"
               : '<div class="insight-empty">ไม่พบร้านที่เข้าเงื่อนไขนี้</div>';
             var exportBtn = "";
-            if (exportItems && exportItems.length) {
+            if (exportRows && exportRows.length) {
               var idx = rtrExportRegistry.length;
               rtrExportRegistry.push({
                 key: exportKey || "insight",
                 title: title,
-                items: exportItems,
+                cols: exportCols,
+                rows: exportRows,
               });
               exportBtn =
                 '<button class="insight-export-btn" data-rtr-export-idx="' +
                 idx +
                 '" title="Export รายชื่อร้านทั้งหมด (' +
-                exportItems.length +
+                exportRows.length +
                 ' ร้าน) เป็นรูปภาพ">📤</button>';
             }
             return (
@@ -6596,6 +6600,26 @@
               "</span>"
             );
           }
+          var RISK_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "AP1D", "AP30D", "Conversion%"];
+          function riskExportRow(x) {
+            return [
+              x.s.name,
+              x.s.code,
+              fmt(x.s.ga),
+              fmt(x.s.ap1d),
+              fmt(x.s.ap30d),
+              x.s.ga > 0 ? pct(x.conv) : "—",
+            ];
+          }
+          var LOW_STOCK_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "สต็อก"];
+          function lowStockExportRow(x) {
+            return [
+              x.s.name,
+              x.s.code,
+              fmt(x.s.ga),
+              x.s.hasStock ? fmt(x.s.stock) : "—",
+            ];
+          }
 
           var html = "";
           html += cardHtml(
@@ -6606,6 +6630,9 @@
             function (x) {
               return gaApRow(x.s, x.conv);
             },
+            RISK_EXPORT_COLS,
+            riskStoresAll.map(riskExportRow),
+            "risk-ap30d",
           );
           html += cardHtml(
             "tag-risk",
@@ -6615,15 +6642,23 @@
             function (x) {
               return gaApRow(x.s, x.conv);
             },
+            RISK_EXPORT_COLS,
+            riskStoresAp1dAll.map(riskExportRow),
+            "risk-ap1d",
           );
           html += cardHtml(
             "tag-risk",
             "ยังไม่มียอดขายเลย",
-            "ร้านที่ยังไม่มี GA ในช่วงนี้ (" + noGA.length + " ร้าน)",
+            "ร้านที่ยังไม่มี GA ในช่วงนี้ (" + noGAAll.length + " ร้าน)",
             noGA,
             function (x) {
               return gaApRow(x.s, 0);
             },
+            RISK_EXPORT_COLS,
+            noGAAll.map(function (x) {
+              return riskExportRow({ s: x.s, conv: 0 });
+            }),
+            "no-ga",
           );
           html += cardHtml(
             "tag-value",
@@ -6645,7 +6680,8 @@
                 "</span></span>"
               );
             },
-            lowStockAll,
+            LOW_STOCK_EXPORT_COLS,
+            lowStockAll.map(lowStockExportRow),
             "low-stock",
           );
           grid.innerHTML = html;
@@ -6657,7 +6693,7 @@
                 var entry =
                   rtrExportRegistry[Number(btn.getAttribute("data-rtr-export-idx"))];
                 if (!entry) return;
-                rtrExportCardPng(entry.title, entry.items, entry.key);
+                rtrExportCardPng(entry.title, entry.cols, entry.rows, entry.key);
               });
             },
           );
@@ -11523,20 +11559,11 @@
         }
 
         // Same painter, same "full list, not just the on-screen slice" convention as
-        // sevExportCardPng above -- only the RTR สต็อกต่ำ card wires this up (see
-        // renderRtrInsights' cardHtml call), since that's the only RTR insight card the
-        // export button was requested for.
-        function rtrExportCardPng(title, items, key) {
-          var cols = ["ร้าน", "รหัสร้าน", "GA", "สต็อก"];
-          var rows = items.map(function (x) {
-            return [
-              x.s.name,
-              x.s.code,
-              fmt(x.s.ga),
-              x.s.hasStock ? fmt(x.s.stock) : "—",
-            ];
-          });
-
+        // sevExportCardPng above -- every RTR insight card wires this up (see
+        // renderRtrInsights' cardHtml calls). cols/rows are already built by the caller
+        // (each card has different fields -- conversion% doesn't apply to the stock card,
+        // stock doesn't apply to the others), so this only measures and paints them.
+        function rtrExportCardPng(title, cols, rows, key) {
           var probe = document.createElement("canvas").getContext("2d");
           var padX = 12;
           var colW = cols.map(function (c) {
