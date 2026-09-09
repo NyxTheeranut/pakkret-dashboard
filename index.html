@@ -11030,6 +11030,7 @@
           return items.map(function (x) {
             return [
               x.s.name,
+              x.s.code,
               fmt(x.sv.ga),
               x.lmtdGa != null ? fmt(x.lmtdGa) : "—",
               x.momPct == null
@@ -11046,7 +11047,7 @@
         // this used to produce, so it pastes straight into chat the same way the section-level
         // export already does, just scoped to one card and not capped at 10 rows.
         function sevExportCardPng(title, items, key) {
-          var cols = ["ร้าน", "GA", "LMTD", "%MOM", "AE"];
+          var cols = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "%MOM", "AE"];
           var rows = sevInsightsExportRows(items);
 
           var probe = document.createElement("canvas").getContext("2d");
@@ -11124,7 +11125,7 @@
         function sevInsightsExportPng() {
           var snap = state.sev._insightsSnapshot;
           if (!snap || !snap.cards.length) return;
-          var cols = ["ร้าน", "GA", "LMTD", "%MOM", "AE"];
+          var cols = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "%MOM", "AE"];
           var tables = snap.cards.map(function (c) {
             return { title: c.title, rows: sevInsightsExportRows(c.items) };
           });
