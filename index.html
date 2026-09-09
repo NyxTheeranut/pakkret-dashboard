@@ -9442,6 +9442,11 @@
           { key: "name", label: "AE", align: "left" },
           { key: "stores", label: "ร้าน" },
           { key: "ga", label: "GA" },
+          {
+            key: "productivity",
+            label: "Productivity",
+            title: "GA ÷ ร้านที่มียอดขาย (Active) — GA เฉลี่ยต่อร้านที่กำลังขายได้จริง",
+          },
           { key: "ap49", label: "AP 49" },
           { key: "ap99", label: "AP 99" },
           { key: "ap199", label: "AP 199" },
@@ -9454,6 +9459,8 @@
           if (key === "name") return row.ae;
           if (key === "stores") return row.storeCount;
           if (key === "ga") return row.ga;
+          if (key === "productivity")
+            return row.productivity == null ? -1 : row.productivity;
           if (key === "ap49") return row.ap49;
           if (key === "ap99") return row.ap99;
           if (key === "ap199") return row.ap199;
@@ -9751,6 +9758,7 @@
               (byAe[s.ae] = {
                 ae: s.ae,
                 storeCount: 0,
+                activeStoreCount: 0,
                 ga: 0,
                 revAmt: 0,
                 ap49: 0,
@@ -9764,6 +9772,10 @@
                 hasPrevRev: false,
               });
             row.storeCount++;
+            // Same "active" definition as the overview cards (sevScopedValue(s,mk,day).ga > 0)
+            // -- GA per TOTAL assigned stores would understate an AE whose book is mostly
+            // wholesale/dormant accounts; this is GA per store that's actually selling.
+            if (v.ga > 0) row.activeStoreCount++;
             row.ga += v.ga;
             row.revAmt += v.revAmt;
             row.ap49 += v.ap49;
@@ -9803,6 +9815,8 @@
                 ? (r.curRevMature - r.prevRev) / r.prevRev
                 : null;
             r.arpu = r.ga > 0 ? r.revAmt / r.ga : null;
+            r.productivity =
+              r.activeStoreCount > 0 ? r.ga / r.activeStoreCount : null;
             return r;
           });
 
@@ -9850,6 +9864,7 @@
               '" tabindex="0" role="button" aria-label="เรียงตาม ' +
               esc(col.label) +
               '"' +
+              (col.title ? ' title="' + esc(col.title) + '"' : "") +
               alignStyle +
               ">" +
               esc(col.label) +
@@ -9875,6 +9890,18 @@
                 "</td>" +
                 '<td class="num-cell">' +
                 fmt(r.ga) +
+                "</td>" +
+                '<td class="num-cell" title="' +
+                esc(
+                  fmt(r.ga) +
+                    " GA ÷ " +
+                    fmt(r.activeStoreCount) +
+                    " ร้าน Active",
+                ) +
+                '">' +
+                (r.productivity != null
+                  ? r.productivity.toFixed(1)
+                  : "—") +
                 "</td>" +
                 '<td class="num-cell">' +
                 fmt(r.ap49) +
