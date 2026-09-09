@@ -9443,9 +9443,16 @@
           { key: "stores", label: "ร้าน" },
           { key: "ga", label: "GA" },
           {
+            // Short on purpose -- "Productivity" as a header made this one column much wider
+            // than every neighbour (all short: "GA", "ร้าน", "AP 49", ...) since table columns
+            // auto-size to their widest content. Full meaning lives in the title tooltip instead,
+            // same as AP49/AP99/etc. already do for their own abbreviated headers.
             key: "productivity",
-            label: "Productivity",
-            title: "GA ÷ ร้านที่มียอดขาย (Active) — GA เฉลี่ยต่อร้านที่กำลังขายได้จริง",
+            label: "Prod.",
+            title:
+              "Productivity = GA Runrate ÷ ร้านที่มียอดขาย (Active)\n" +
+              "GA Runrate = ประมาณการ GA เต็มเดือนที่จังหวะปัจจุบัน (ไม่ใช่ยอดสะสม ณ ตอนนี้)\n" +
+              "แสดงเฉพาะตอนเลือกดูเดือนใดเดือนหนึ่ง (ไม่ใช่ภาพรวมทุกเดือน หรือดูรายวัน)",
           },
           { key: "ap49", label: "AP 49" },
           { key: "ap99", label: "AP 99" },
@@ -9803,8 +9810,20 @@
             return;
           }
           section.style.display = "block";
+          // Productivity's numerator is a RUN-RATE projection (sevMonthPacing/sevForecast's
+          // "landing" math -- projected full-month GA at the current pace, using last month's
+          // day-of-month shape when available, linear otherwise), not the raw actual-so-far GA.
+          // Computed ONCE from the whole scoped `stores` list, then applied per AE below -- a
+          // per-AE curve fitted from just that AE's own history would be noisy for anyone with a
+          // small book; the expected-progress-through-the-month shape is a property of the
+          // calendar/business, not of an individual AE. Only defined for a single, still-running
+          // month (mk && !day) -- projecting a "full month" total from an all-months rollup or a
+          // single day isn't a coherent question, so productivity reads "—" in those views.
+          var pacing = mk && !day ? sevMonthPacing(mk, stores) : null;
           var rows = aeNames.map(function (ae) {
             var r = byAe[ae];
+            r.runrateGA =
+              pacing && pacing.expectedPct > 0 ? r.ga / pacing.expectedPct : null;
             r.momPct =
               mk && !day && r.hasPrevGA && r.prevGA > 0
                 ? (r.ga - r.prevGA) / r.prevGA
@@ -9816,7 +9835,9 @@
                 : null;
             r.arpu = r.ga > 0 ? r.revAmt / r.ga : null;
             r.productivity =
-              r.activeStoreCount > 0 ? r.ga / r.activeStoreCount : null;
+              r.activeStoreCount > 0 && r.runrateGA != null
+                ? r.runrateGA / r.activeStoreCount
+                : null;
             return r;
           });
 
@@ -9893,10 +9914,15 @@
                 "</td>" +
                 '<td class="num-cell" title="' +
                 esc(
-                  fmt(r.ga) +
-                    " GA ÷ " +
-                    fmt(r.activeStoreCount) +
-                    " ร้าน Active",
+                  r.runrateGA != null
+                    ? "GA Runrate " +
+                        fmt(r.runrateGA) +
+                        " (จริง " +
+                        fmt(r.ga) +
+                        ") ÷ " +
+                        fmt(r.activeStoreCount) +
+                        " ร้าน Active"
+                    : "แสดงเฉพาะตอนเลือกดูเดือนใดเดือนหนึ่ง",
                 ) +
                 '">' +
                 (r.productivity != null
