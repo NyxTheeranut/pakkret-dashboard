@@ -9248,6 +9248,30 @@
             "%</span>"
           );
         }
+        // Same colors/meaning as deltaArrow, but stacked on its own line under the value instead
+        // of appended inline after it. deltaArrow works fine next to รายได้ (already a wide baht
+        // figure, e.g. "฿8,488"), but appending it inline after a short 1-decimal number like
+        // Productivity's "12.1" made that one cell's combined text much wider than its narrow
+        // single-number neighbors (GA, AP 49, ...), stretching the whole column out of proportion
+        // with the rest of the table (table-layout:auto sizes each column to its widest cell).
+        // Wrapping to a second line caps the column's required width at whichever of the two
+        // lines is wider on its own, instead of their sum.
+        function deltaSubLine(p) {
+          if (p == null) return "";
+          var r = Math.round(p * 100);
+          var color =
+            r === 0 ? "var(--muted)" : r > 0 ? "var(--accent)" : "var(--alert)";
+          var arrow = r === 0 ? "▬" : r > 0 ? "▲" : "▼";
+          return (
+            '<div style="color:' +
+            color +
+            ";font-size:10.5px;font-weight:700;line-height:1.3;\">" +
+            arrow +
+            " " +
+            Math.abs(r) +
+            "%</div>"
+          );
+        }
         // Like-for-like: only count the previous month's days up to the same day-of-month the
         // selected month reaches. Comparing a part-month against a full month made every store
         // look like it was collapsing -- see the RTR-side note on momCutoffDay. `metric` is
@@ -9966,7 +9990,7 @@
                 (r.productivity != null
                   ? r.productivity.toFixed(1)
                   : "—") +
-                deltaArrow(r.productivityDeltaPct) +
+                deltaSubLine(r.productivityDeltaPct) +
                 "</td>" +
                 '<td class="num-cell">' +
                 fmt(r.ap49) +
