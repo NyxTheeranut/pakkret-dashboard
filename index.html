@@ -10897,21 +10897,22 @@
           { key: "name", label: "ร้านค้า", align: "left" },
           { key: "ga", label: "GA" },
           { key: "target", label: "Target" },
+          { key: "achieve", label: "%Achieve" },
           { key: "ap49", label: "AP 49" },
           { key: "ap99", label: "AP 99" },
           { key: "ap199", label: "AP 199" },
           { key: "apOver199", label: "AP > 199" },
-          {
-            key: "apUnder100",
-            label: "%AP<100",
-            title: "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA ร้านนี้ที่ราคาแพ็คต่ำกว่า 100",
-          },
-          { key: "mtd", label: "%MTD" },
-          { key: "achieve", label: "%Achieve" },
+          { key: "mtd", label: "MTD%" },
           { key: "rev", label: "รายได้" },
           { key: "m1ga", label: "ARPU" },
           { key: "khet", label: "เขต", align: "left" },
         ];
+        // On-screen table hides เขต (by request -- it stays available for sorting via
+        // "เรียงตาม" and for the export, both of which read SEV_TABLE_COLS directly),
+        // so the live table renders this filtered list instead of SEV_TABLE_COLS itself.
+        var SEV_DISPLAY_COLS = SEV_TABLE_COLS.filter(function (c) {
+          return c.key !== "khet";
+        });
         function sevSortValue(s, key, sv) {
           if (key === "name") return s.name || "";
           if (key === "khet") return s.khet || "";
@@ -10924,8 +10925,6 @@
           if (key === "ap99") return sv.ap99;
           if (key === "ap199") return sv.ap199;
           if (key === "apOver199") return sv.apOver199;
-          if (key === "apUnder100")
-            return sv.apUnder100Pct == null ? -1 : sv.apUnder100Pct;
           if (key === "mtd") return sv.momPct == null ? -2 : sv.momPct;
           if (key === "m1ga") return sv.m1ga == null ? -1 : sv.m1ga;
           return 0;
@@ -10965,11 +10964,6 @@
             m1ga: v.ga > 0 ? v.revAmt / v.ga : null,
             target: targetActive ? s.target : null,
             achievePct: targetActive && s.target > 0 ? v.ga / s.target : null,
-            // Share of this store's GA priced under 100 -- ap49 (<=49) + ap99 (50-99) are the
-            // two bands below that threshold, same bands the AP Mix "unbanded" check above
-            // already sums against total GA (banded = ap49+ap99+ap199+apOver199).
-            apUnder100Pct:
-              v.ga > 0 ? (v.ap49 + v.ap99) / v.ga : null,
           };
         }
 
@@ -11030,7 +11024,7 @@
           }
 
           var cols = hasData
-            ? SEV_TABLE_COLS
+            ? SEV_DISPLAY_COLS
             : [{ key: "name", label: "ร้านค้า", align: "left" }];
           var headerHtml = cols
             .map(function (col) {
@@ -11054,7 +11048,6 @@
               return (
                 "<th" +
                 sortAttrs +
-                (col.title ? ' title="' + esc(col.title) + '"' : "") +
                 alignStyle +
                 ">" +
                 esc(col.label) +
@@ -11085,12 +11078,6 @@
               return (
                 '<td class="num-cell">' + pctBadge(d.momPct, "mom") + "</td>"
               );
-            if (col.key === "apUnder100")
-              return (
-                '<td class="num-cell">' +
-                (d.apUnder100Pct != null ? pct(d.apUnder100Pct) : "—") +
-                "</td>"
-              );
             if (col.key === "m1ga")
               return (
                 '<td class="num-cell">' +
@@ -11118,7 +11105,7 @@
                 esc(s.code) +
                 "</div></td>";
               if (hasData) {
-                SEV_TABLE_COLS.slice(1).forEach(function (col) {
+                SEV_DISPLAY_COLS.slice(1).forEach(function (col) {
                   cells += sevTableCellHtml(col, s, d);
                 });
               }
@@ -11359,8 +11346,6 @@
           if (col.key === "ap99") return fmt(d.ap99);
           if (col.key === "ap199") return fmt(d.ap199);
           if (col.key === "apOver199") return fmt(d.apOver199);
-          if (col.key === "apUnder100")
-            return d.apUnder100Pct == null ? "—" : pct(d.apUnder100Pct);
           if (col.key === "mtd") return d.momPct == null ? "—" : pct(d.momPct);
           if (col.key === "m1ga") return d.m1ga == null ? "—" : fmtBaht(d.m1ga);
           return "";
