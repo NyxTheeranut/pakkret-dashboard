@@ -9452,6 +9452,7 @@
             title:
               "Productivity = GA Runrate ÷ ร้านที่มียอดขาย (Active)\n" +
               "GA Runrate = ประมาณการ GA เต็มเดือนที่จังหวะปัจจุบัน (ไม่ใช่ยอดสะสม ณ ตอนนี้)\n" +
+              "▲▼ = เทียบ Productivity ของเดือนก่อน (เดือนก่อนจบแล้ว ใช้ GA จริงทั้งเดือน ไม่ใช่ runrate)\n" +
               "แสดงเฉพาะตอนเลือกดูเดือนใดเดือนหนึ่ง (ไม่ใช่ภาพรวมทุกเดือน หรือดูรายวัน)",
           },
           { key: "ap49", label: "AP 49" },
@@ -9757,6 +9758,13 @@
           var stores = sevFilteredStores("ae");
           var mk = state.sev.currentMonthKey,
             day = state.sev.selectedDay;
+          // For Productivity's own MOM (vs last month's PRODUCTIVITY, not last month's GA) --
+          // deliberately separate from prevGA/hasPrevGA above, which is the LIKE-FOR-LIKE (same
+          // cutoff day) comparison the %MOM column uses. Last month is complete, so its
+          // productivity is just actual GA ÷ actual active stores for the WHOLE month, no cutoff
+          // truncation and no run-rate projection needed -- read straight from s.byMonth[prevMk].
+          var avail = state.sev.monthsAvailable || [];
+          var prevMk = mk ? avail[avail.indexOf(mk) - 1] : null;
           var byAe = {};
           stores.forEach(function (s) {
             var v = sevScopedValue(s, mk, day);
@@ -9777,6 +9785,8 @@
                 prevRev: 0,
                 curRevMature: 0,
                 hasPrevRev: false,
+                prevFullGA: 0,
+                prevActiveStoreCount: 0,
               });
             row.storeCount++;
             // Same "active" definition as the overview cards (sevScopedValue(s,mk,day).ga > 0)
@@ -9801,6 +9811,11 @@
                 row.curRevMature += rc.cur;
                 row.prevRev += rc.prev;
                 row.hasPrevRev = true;
+              }
+              if (prevMk && s.byMonth[prevMk]) {
+                var prevGaFull = s.byMonth[prevMk].ga || 0;
+                row.prevFullGA += prevGaFull;
+                if (prevGaFull > 0) row.prevActiveStoreCount++;
               }
             }
           });
@@ -9837,6 +9852,20 @@
             r.productivity =
               r.activeStoreCount > 0 && r.runrateGA != null
                 ? r.runrateGA / r.activeStoreCount
+                : null;
+            // Last month is already over, so ITS productivity is just actual GA over actual
+            // active stores -- no run-rate needed, that month's own "run rate" ended up equal to
+            // what actually happened. Comparing this month's projected landing against last
+            // month's real outcome is the fair apples-to-apples (full-month vs full-month) read.
+            r.prevProductivity =
+              r.prevActiveStoreCount > 0
+                ? r.prevFullGA / r.prevActiveStoreCount
+                : null;
+            r.productivityDeltaPct =
+              r.productivity != null &&
+              r.prevProductivity != null &&
+              r.prevProductivity > 0
+                ? (r.productivity - r.prevProductivity) / r.prevProductivity
                 : null;
             return r;
           });
@@ -9914,20 +9943,30 @@
                 "</td>" +
                 '<td class="num-cell" title="' +
                 esc(
-                  r.runrateGA != null
+                  (r.runrateGA != null
                     ? "GA Runrate " +
-                        fmt(r.runrateGA) +
-                        " (จริง " +
-                        fmt(r.ga) +
-                        ") ÷ " +
-                        fmt(r.activeStoreCount) +
-                        " ร้าน Active"
-                    : "แสดงเฉพาะตอนเลือกดูเดือนใดเดือนหนึ่ง",
+                      fmt(r.runrateGA) +
+                      " (จริง " +
+                      fmt(r.ga) +
+                      ") ÷ " +
+                      fmt(r.activeStoreCount) +
+                      " ร้าน Active"
+                    : "แสดงเฉพาะตอนเลือกดูเดือนใดเดือนหนึ่ง") +
+                    (r.prevProductivity != null
+                      ? "\nเดือนก่อน " +
+                        r.prevProductivity.toFixed(1) +
+                        " (GA " +
+                        fmt(r.prevFullGA) +
+                        " ÷ " +
+                        fmt(r.prevActiveStoreCount) +
+                        " ร้าน Active)"
+                      : ""),
                 ) +
                 '">' +
                 (r.productivity != null
                   ? r.productivity.toFixed(1)
                   : "—") +
+                deltaArrow(r.productivityDeltaPct) +
                 "</td>" +
                 '<td class="num-cell">' +
                 fmt(r.ap49) +
