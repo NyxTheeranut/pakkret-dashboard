@@ -4056,8 +4056,9 @@
               s.momPct =
                 prevGA != null && prevGA > 0 ? (s.ga - prevGA) / prevGA : null;
             });
-            // roll target/m1/achieve up to CM level — %Achieve only counts stores that actually have
-            // an individual target, so a handful of untargeted wholesale accounts can't distort it
+            // roll target/m1 up to CM level. noTargetGA/noTargetCount are purely informational
+            // (feeds the "X ร้านไม่มีเป้าหมายเฉพาะบุคคล" note) -- they no longer feed the target/
+            // %Achieve math at all, see the CM-ONLY TARGET block below.
             Object.keys(m.cmRollup).forEach(function (cmName) {
               var cr = m.cmRollup[cmName];
               cr.target = 0;
@@ -4071,40 +4072,34 @@
               var cr = m.cmRollup[s.cm];
               if (!cr) return;
               cr.m1 += s.m1;
-              if (s.hasTarget) {
-                cr.target += s.target;
-                cr.targetedGA += s.ga;
-              } else {
+              if (!s.hasTarget) {
                 cr.noTargetGA += s.ga;
                 cr.noTargetCount++;
               }
             });
-            // Override with a committed target when the caller has one for this month (e.g. the
-            // KPI Set Up sheet). That committed figure covers the CM's WHOLE territory, not just
-            // the stores that happen to carry an individual target on the per-store mapping sheet
-            // -- pairing it with targetedGA (a handful of stores' GA, sometimes a small fraction
-            // of the CM's real total) produced a nonsense %Achieve, e.g. a CM visibly around
-            // target reading 14%. cr.targetOverridden marks this so achievePct and rtrForecast
-            // below switch to the CM's full GA instead.
+            // CM-ONLY TARGET (by request): "Overall Performance เทียบ Target" compares against
+            // ONLY the CM's own committed target (KPI Set Up / cmTargets) -- individual store
+            // targets on the per-store mapping sheet are no longer summed into this at all. A
+            // committed target covers the CM's WHOLE territory, not just the handful of stores
+            // that happen to carry an individual target -- pairing "sum of a few stores' targets"
+            // with "GA from those same few stores" produced a nonsense %Achieve, e.g. a CM
+            // visibly around target reading 14%. So Actual is now the CM's FULL GA (cr.ga) too,
+            // not just GA from the previously-targeted subset. If no committed target has been
+            // published for this CM this month, target/targetedGA stay 0 and achievePct stays
+            // null -- same "no data yet" state as before, just from one source instead of two.
             var overrideMap = moKey ? resolveOverrideMap(moKey) : null;
-            if (overrideMap) {
-              Object.keys(m.cmRollup).forEach(function (cmName) {
-                if (overrideMap.has(cmName)) {
-                  m.cmRollup[cmName].target = overrideMap.get(cmName);
-                  m.cmRollup[cmName].targetOverridden = true;
-                }
-              });
-            }
             Object.keys(m.cmRollup).forEach(function (cmName) {
               var cr = m.cmRollup[cmName];
-              var achieveActual = cr.targetOverridden ? cr.ga : cr.targetedGA;
-              cr.achievePct = cr.target > 0 ? achieveActual / cr.target : null;
+              if (overrideMap && overrideMap.has(cmName)) {
+                cr.target = overrideMap.get(cmName);
+                cr.targetedGA = cr.ga;
+                cr.targetOverridden = true;
+              }
             });
-            // Sum from cmRollup (post-override), NOT independently from m.stores -- the KPI Set
-            // Up override just above replaces a CM's target/targetedGA with its committed,
-            // whole-territory figures, and this has to reflect that too. Summing per-store targets
-            // here instead used to skip the override entirely, so the overview (no CM selected)
-            // total silently disagreed with CM1's target + CM2's target added by hand.
+            Object.keys(m.cmRollup).forEach(function (cmName) {
+              var cr = m.cmRollup[cmName];
+              cr.achievePct = cr.target > 0 ? cr.targetedGA / cr.target : null;
+            });
             m.totals.target = Object.keys(m.cmRollup).reduce(function (a, cmName) {
               return a + (m.cmRollup[cmName].target || 0);
             }, 0);
@@ -4112,8 +4107,7 @@
               a,
               cmName,
             ) {
-              var cr = m.cmRollup[cmName];
-              return a + (cr.targetOverridden ? cr.ga : cr.targetedGA);
+              return a + (m.cmRollup[cmName].targetedGA || 0);
             }, 0);
             m.totals.m1 = m.stores.reduce(function (a, s) {
               return a + s.m1;
@@ -4122,7 +4116,12 @@
               m.totals.target > 0
                 ? m.totals.targetedGA / m.totals.target
                 : null;
-            m.totals.noTargetGA = m.totals.ga - m.totals.targetedGA;
+            // Summed from cmRollup's own tallies (NOT ga-minus-targetedGA) -- targetedGA no longer
+            // means "GA from stores with an individual target," so that subtraction would silently
+            // drift to a different number (GA from CMs with no committed target this month).
+            m.totals.noTargetGA = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+              return a + (m.cmRollup[cmName].noTargetGA || 0);
+            }, 0);
             m.totals.noTargetCount = m.stores.filter(function (s) {
               return !s.hasTarget;
             }).length;
@@ -5288,12 +5287,15 @@
               );
             })
             .join("");
+          // "ไม่นับใน %Achieve" would now be wrong to say: %Achieve compares against the CM's
+          // committed target using the CM's FULL GA (cr.ga), so these stores' GA IS counted in
+          // it -- there's just no separate per-store target number for them individually.
           $("perfHint").textContent =
             t.noTargetCount > 0
               ? t.noTargetCount +
-                " ร้านไม่มีเป้าหมายเฉพาะบุคคล (ส่วนใหญ่เป็นร้านขายส่ง) รวม GA " +
+                " ร้านไม่มีเป้าหมายเฉพาะบุคคล (ส่วนใหญ่เป็นร้านขายส่ง) — GA รวม " +
                 fmt(t.noTargetGA) +
-                " — ไม่นับใน %Achieve"
+                " นับรวมอยู่ใน %Achieve ผ่านเป้ารวมของ CM แล้ว"
               : "ทุกร้านมีเป้าหมายเฉพาะบุคคล";
         }
 
