@@ -2658,6 +2658,17 @@
           [0.08, "#8DBF4C"], // growing — green
           [0.3, "#0F6E62"], // strong growth — deep teal-green
         ];
+        // Months of SIM stock cover remaining at the current burn rate. Same red->green
+        // language as ACHIEVE_STOPS, anchored at 1 month (matches LOW_STOCK_COVER_MONTHS in
+        // renderRtrInsights) instead of 100% -- under a month is the "will run out soon, deep
+        // red" end, 3+ months is comfortably stocked.
+        var STOCK_STOPS = [
+          [0.0, "#B23B38"], // about to run out — deep red
+          [0.5, "#D9724F"], // orange
+          [1.0, "#E2A33D"], // amber — under a month left
+          [2.0, "#8DBF4C"], // green — healthy
+          [3.0, "#0F6E62"], // deep teal-green — well stocked
+        ];
         // size 'lg' renders the KPI-card sized variant; the colour scale is identical either way.
         function pctBadge(value, kind, size) {
           var sizeCls = size === "lg" ? " pct-badge-lg" : "";
@@ -2682,6 +2693,37 @@
             ';">' +
             pct(value) +
             "</span>"
+          );
+        }
+        // Same visual language as pctBadge, but for a raw "months of cover" number rather than
+        // a percentage -- and a dedicated "no data" state (hasStock false) distinct from "0
+        // months" (hasStock true, genuinely about to run out). Conflating those would show a
+        // store the mapping sheet just doesn't track as if it were in a stock-out emergency.
+        function coverMthBadge(months, hasStock, size) {
+          var sizeCls = size === "lg" ? " pct-badge-lg" : "";
+          if (!hasStock)
+            return (
+              '<span class="pct-badge pct-badge-muted' +
+              sizeCls +
+              '" title="ไม่มีข้อมูลสต็อกสำหรับร้านนี้ในชีต mapping">ไม่มีข้อมูล</span>'
+            );
+          var stops = STOCK_STOPS;
+          var clamped = Math.max(
+            stops[0][0],
+            Math.min(stops[stops.length - 1][0], months),
+          );
+          var bg = colorForStops(clamped, stops);
+          var fg = readableTextColor(bg);
+          return (
+            '<span class="pct-badge' +
+            sizeCls +
+            '" style="background:' +
+            bg +
+            ";color:" +
+            fg +
+            ';">' +
+            months.toFixed(1) +
+            " เดือน</span>"
           );
         }
         // ---- like-for-like MOM helpers -------------------------------------------------
@@ -3492,6 +3534,11 @@
                 // monthly transaction sheets), so it's captured here the same way CM is -- keyed
                 // by canonical store code, attached to each store later alongside CM.
                 var canonicalToMallType = new Map();
+                // Live snapshot at load time, not month-keyed like target -- T Stock/D Stock/
+                // Stock/Cover Mth appear once per mapping sheet, not once per month block, so
+                // this is a plain header lookup (like cluster/cm/mall type below), no
+                // parseTargetBlocks-style anchor scanning needed.
+                var canonicalToStock = new Map(); // canonicalCode -> {tStock,dStock,stock,coverMth}
                 var targetByMonth = {}; // { 'apr': Map(canonicalCode -> {target,m1,achievePct,theirActual}) }
                 var targetDiag = []; // which column each month's target actually came from
                 var mapRowsTotal = 0,
@@ -3512,7 +3559,11 @@
                   } // indexed loop -- see parseTargetBlocks comment on why .forEach() isn't safe here
                   var clusterCol = idx["cluster"],
                     cmCol = idx["cm"],
-                    mallCol = idx["in mall / out mall"];
+                    mallCol = idx["in mall / out mall"],
+                    tStockCol = idx["t stock"],
+                    dStockCol = idx["d stock"],
+                    stockCol = idx["stock"],
+                    coverCol = idx["cover mth"];
                   var blocks = parseTargetBlocks(header);
                   // one map + one "how many stores actually have a target here" score per block,
                   // so duplicate month blocks can be compared before anything is committed
@@ -3552,6 +3603,19 @@
                         ? String(row[mallCol]).trim()
                         : "";
                     if (mallType) canonicalToMallType.set(canonical, mallType);
+
+                    if (
+                      stockCol != null ||
+                      tStockCol != null ||
+                      dStockCol != null
+                    ) {
+                      canonicalToStock.set(canonical, {
+                        tStock: tStockCol != null ? num(row[tStockCol]) : 0,
+                        dStock: dStockCol != null ? num(row[dStockCol]) : 0,
+                        stock: stockCol != null ? num(row[stockCol]) : 0,
+                        coverMth: coverCol != null ? num(row[coverCol]) : 0,
+                      });
+                    }
 
                     blocks.forEach(function (b, bi) {
                       var rec = {
@@ -3619,6 +3683,7 @@
                     codeToCanonical,
                     canonicalToCM,
                     canonicalToMallType,
+                    canonicalToStock,
                   );
                   if (result.skipped) return;
                   months.push({
@@ -3707,6 +3772,7 @@
           codeToCanonical,
           canonicalToCM,
           canonicalToMallType,
+          canonicalToStock,
         ) {
           var rows2D = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
           if (!rows2D || rows2D.length < 2) return { skipped: true };
@@ -3893,6 +3959,12 @@
 
             var s = stores.get(canonicalCode);
             if (!s) {
+              // hasStock distinguishes "genuinely tracked at zero" from "not in the
+              // stock-mapping sheet at all" -- without it, a store absent from the stock
+              // columns would default to coverMth 0 and get flagged as critically low, when
+              // the honest answer is "no data" (same reasoning as hasTarget elsewhere).
+              var stockRec =
+                canonicalToStock && canonicalToStock.get(canonicalCode);
               s = {
                 code: canonicalCode,
                 name: pname || "Unknown",
@@ -3914,6 +3986,11 @@
                 tiers: [0, 0, 0, 0, 0, 0, 0, 0],
                 simTypes: {},
                 daily: {},
+                hasStock: !!stockRec,
+                tStock: stockRec ? stockRec.tStock : 0,
+                dStock: stockRec ? stockRec.dStock : 0,
+                stock: stockRec ? stockRec.stock : 0,
+                coverMth: stockRec ? stockRec.coverMth : 0,
               };
               stores.set(canonicalCode, s);
             }
@@ -6416,20 +6493,24 @@
               return { s: s };
             });
 
+          // Real SIM stock (T Stock/D Stock/Cover Mth from the RTR mapping sheet), not a sales
+          // proxy -- this card used to measure packs SOLD (s.tiers summed < 5), which is a sell-
+          // through signal, not inventory. "Low stock" now means what it says: under 1 month of
+          // cover at the current burn rate. Gated on hasStock so a store the mapping sheet simply
+          // doesn't carry stock data for (coverMth defaults to 0) doesn't get wrongly flagged as
+          // critically low -- same "no data" vs "genuinely zero" distinction as hasTarget.
+          var LOW_STOCK_COVER_MONTHS = 1;
           var lowStock = stores
-            .map(function (s) {
-              var sum = s.tiers.reduce(function (a, b) {
-                return a + b;
-              }, 0);
-              return { s: s, sum: sum };
-            })
-            .filter(function (x) {
-              return x.sum < 5;
+            .filter(function (s) {
+              return s.hasStock && s.coverMth < LOW_STOCK_COVER_MONTHS;
             })
             .sort(function (a, b) {
-              return a.sum - b.sum;
+              return a.coverMth - b.coverMth;
             })
-            .slice(0, 5);
+            .slice(0, 5)
+            .map(function (s) {
+              return { s: s };
+            });
 
           // every <li> carries data-code so a delegated click listener (attached after innerHTML is
           // set, below) can open the same store drilldown the main table uses -- same pattern as the
@@ -6516,11 +6597,19 @@
           html += cardHtml(
             "tag-value",
             "สต็อกต่ำ",
-            "ร้านที่ขายแพ็คได้รวมต่ำกว่า 5 ชิ้นในเดือนนี้",
+            "ร้านที่สต็อก SIM เหลือน้อยกว่า " +
+              LOW_STOCK_COVER_MONTHS +
+              " เดือน (" +
+              lowStock.length +
+              " ร้าน)",
             lowStock,
             function (x) {
               var conv = x.s.ga > 0 ? x.s.ap30d / x.s.ga : 0;
-              return gaApRow(x.s, conv, x.sum + " แพ็ค");
+              return gaApRow(
+                x.s,
+                conv,
+                "สต็อก " + fmt(x.s.stock) + " (" + x.s.coverMth.toFixed(1) + " ด.)",
+              );
             },
           );
           grid.innerHTML = html;
@@ -7656,6 +7745,20 @@
             "</div></div>" +
             '<div class="dd-kpi"><div class="l">%AP30D</div><div class="v">' +
             pct(conv) +
+            "</div></div>" +
+            "</div><h4>สต็อก SIM</h4>" +
+            '<div class="dd-kpis">' +
+            '<div class="dd-kpi"><div class="l">สต็อกรวม</div><div class="v">' +
+            (s.hasStock ? fmt(s.stock) : "—") +
+            "</div></div>" +
+            '<div class="dd-kpi"><div class="l">True</div><div class="v">' +
+            (s.hasStock ? fmt(s.tStock) : "—") +
+            "</div></div>" +
+            '<div class="dd-kpi"><div class="l">Dtac</div><div class="v">' +
+            (s.hasStock ? fmt(s.dStock) : "—") +
+            "</div></div>" +
+            '<div class="dd-kpi"><div class="l">Cover</div><div class="v">' +
+            coverMthBadge(s.coverMth, s.hasStock) +
             "</div></div>" +
             "</div><h4>สัดส่วนกลุ่มลูกค้า</h4>" +
             rtrSegMixHtml(s.mass, s.migrant, s.tourist) +
@@ -12228,7 +12331,15 @@
               s.tourist,
               s.target,
               s.m1,
-            ].concat(s.tiers);
+            ].concat(s.tiers, [
+              // Appended after tiers, not inserted earlier -- readRtrMonthGroup parses this row
+              // by FIXED COLUMN INDEX, so existing columns must never move.
+              s.hasStock ? 1 : 0,
+              s.tStock,
+              s.dStock,
+              s.stock,
+              s.coverMth,
+            ]);
           });
           var dailyRows = [];
           m.stores.forEach(function (s) {
@@ -13054,6 +13165,15 @@
                 tiers: r.slice(15, 23).map(function (v) {
                   return Number(v) || 0;
                 }),
+                // r[23..26] added later than the columns above -- a Sheet last synced before
+                // this feature existed simply won't have them, so this must degrade to
+                // "no stock data" (hasStock false), never throw. Same pattern as cmtargets'
+                // missing-tab .catch() elsewhere in this file.
+                hasStock: Number(r[23]) === 1,
+                tStock: Number(r[24]) || 0,
+                dStock: Number(r[25]) || 0,
+                stock: Number(r[26]) || 0,
+                coverMth: Number(r[27]) || 0,
                 simTypes: {},
                 daily: {},
               };
