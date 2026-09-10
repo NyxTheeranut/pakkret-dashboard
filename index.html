@@ -12519,35 +12519,77 @@
           "https://script.google.com/macros/s/AKfycbzjNSiIzcG2d0o1VcGX-kVoUtj3HBsnyDCMrO1qBimiIBUN5N3qLvQ4rkio30yVkxmv/exec";
         var VIEWER_ID_TOKEN = null;
 
+        // loadFromCloud fires readRtrMonthGroup (5 tab reads) and readSevMonthGroup (4 tab
+        // reads) for EVERY kept month, all via nested Promise.all -- a full 6-month load
+        // fires roughly 54 individual requests essentially all at once. That's comfortably
+        // over Apps Script's own simultaneous-execution quota (documented around 30 for a
+        // personal Google account, not a Workspace one). Past that ceiling Apps Script
+        // starts returning degraded/error responses that often carry no CORS header at all,
+        // which the browser reports as a misleading "blocked by CORS policy" instead of the
+        // real cause (retrying alone doesn't fix this -- it doesn't reduce how many requests
+        // are in flight at once, only how many total get sent). Every scriptGetValues call
+        // funnels through this shared gate so no matter how many logical callers are
+        // "waiting", only SCRIPT_FETCH_CONCURRENCY requests are ever actually in flight,
+        // comfortably under that ceiling, with the rest queued and released as slots free up.
+        var SCRIPT_FETCH_CONCURRENCY = 6;
+        var scriptFetchActive = 0;
+        var scriptFetchQueue = [];
+        function scriptFetchGate(run) {
+          return new Promise(function (resolve, reject) {
+            function attempt() {
+              if (scriptFetchActive >= SCRIPT_FETCH_CONCURRENCY) {
+                scriptFetchQueue.push(attempt);
+                return;
+              }
+              scriptFetchActive++;
+              run().then(
+                function (v) {
+                  scriptFetchActive--;
+                  var next = scriptFetchQueue.shift();
+                  if (next) next();
+                  resolve(v);
+                },
+                function (e) {
+                  scriptFetchActive--;
+                  var next = scriptFetchQueue.shift();
+                  if (next) next();
+                  reject(e);
+                },
+              );
+            }
+            attempt();
+          });
+        }
+
         function scriptGetValuesOnce(tab) {
-          return fetch(VIEWER_SCRIPT_URL, {
-            method: "POST",
-            // text/plain avoids a CORS preflight that Apps Script web apps don't handle —
-            // Apps Script still reads the raw JSON body fine via e.postData.contents.
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-              action: "getValues",
-              idToken: VIEWER_ID_TOKEN,
-              tab: tab,
-            }),
-          }).then(function (r) {
-            return r.json();
+          return scriptFetchGate(function () {
+            return fetch(VIEWER_SCRIPT_URL, {
+              method: "POST",
+              // text/plain avoids a CORS preflight that Apps Script web apps don't handle —
+              // Apps Script still reads the raw JSON body fine via e.postData.contents.
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({
+                action: "getValues",
+                idToken: VIEWER_ID_TOKEN,
+                tab: tab,
+              }),
+            }).then(function (r) {
+              return r.json();
+            });
           });
           // Deliberately doesn't check data.ok here -- that's scriptGetValues' job, so a
           // real answer (e.g. no_access) never gets confused with the network-level
           // failures retried below.
         }
 
-        // loadFromCloud fires one of these PER TAB -- ~40-50 all at once via Promise.all
-        // for a full SYNC.KEEP_MONTHS load. Apps Script occasionally cold-starts or gets
-        // throttled under that many concurrent requests, and the browser surfaces that as
-        // a bare "Failed to fetch" (a rejected fetch() promise, not an application error)
-        // -- confirmed the same transient failure happens even for a single sequential
-        // request from update_territory_sheet.py's own getSyncData call, and a same-request
-        // retry there succeeded immediately. So a network-level failure here gets retried
-        // with backoff a couple of times before giving up; a real application answer
-        // (data.ok === false, e.g. "no_access") is never retried -- that would just fail
-        // identically every time and delay a legitimate error reaching the viewer.
+        // Belt-and-suspenders on top of the concurrency gate above: even within the
+        // allowed concurrency, Apps Script can still cold-start or hiccup on an individual
+        // request (confirmed the same transient failure on a single, non-concurrent
+        // request from update_territory_sheet.py's own getSyncData call -- an immediate
+        // retry there succeeded). A network-level failure here gets retried with backoff a
+        // couple of times before giving up; a real application answer (data.ok === false,
+        // e.g. "no_access") is never retried -- that would just fail identically every
+        // time and delay a legitimate error reaching the viewer.
         // Retries the raw fetch+parse only -- resolves to the RAW response object every
         // time, whether from the first try or a later retry, so the one-time validation in
         // scriptGetValues below never runs more than once per call. (An earlier version of
