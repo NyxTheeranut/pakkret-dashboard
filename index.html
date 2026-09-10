@@ -12548,22 +12548,31 @@
         // with backoff a couple of times before giving up; a real application answer
         // (data.ok === false, e.g. "no_access") is never retried -- that would just fail
         // identically every time and delay a legitimate error reaching the viewer.
-        function scriptGetValues(tab, attempt) {
+        // Retries the raw fetch+parse only -- resolves to the RAW response object every
+        // time, whether from the first try or a later retry, so the one-time validation in
+        // scriptGetValues below never runs more than once per call. (An earlier version of
+        // this had scriptGetValues call itself recursively and re-validate on top of that --
+        // a successful retry returned the already-unwrapped values ARRAY, whose .ok is
+        // undefined, so scriptGetValues then threw the real data away as a fake "load
+        // failed" -- the exact bug this comment is here to stop from coming back.)
+        function scriptGetValuesRawWithRetry(tab, attempt) {
           attempt = attempt || 1;
-          return scriptGetValuesOnce(tab)
-            .catch(function (err) {
-              if (attempt >= 3) throw err;
-              return new Promise(function (resolve) {
-                setTimeout(resolve, attempt * 600);
-              }).then(function () {
-                return scriptGetValues(tab, attempt + 1);
-              });
-            })
-            .then(function (data) {
-              if (!data.ok)
-                throw new Error(data.message || data.error || "load failed");
-              return data.values || [];
+          return scriptGetValuesOnce(tab).catch(function (err) {
+            if (attempt >= 3) throw err;
+            return new Promise(function (resolve) {
+              setTimeout(resolve, attempt * 600);
+            }).then(function () {
+              return scriptGetValuesRawWithRetry(tab, attempt + 1);
             });
+          });
+        }
+
+        function scriptGetValues(tab) {
+          return scriptGetValuesRawWithRetry(tab).then(function (data) {
+            if (!data.ok)
+              throw new Error(data.message || data.error || "load failed");
+            return data.values || [];
+          });
         }
 
         // Mirrors sheetsReadTab's shape (column-A JSON chunks rejoined) but reads via the
