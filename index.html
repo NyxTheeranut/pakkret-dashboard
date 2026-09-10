@@ -1519,6 +1519,13 @@
           padding: 10px 12px;
           gap: 8px;
         }
+        /* Debug is a data-QA tool for whoever's publishing, not something a phone reader
+           needs -- and the topbar is already tight on a phone (every pixel here is stolen
+           from the content, per the comment above). Hidden here rather than removed so it
+           still works normally at desktop widths. */
+        .debug-toggle-btn {
+          display: none;
+        }
         .brand h1 {
           font-size: 15px;
         }
