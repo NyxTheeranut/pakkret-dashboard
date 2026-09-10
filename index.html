@@ -12519,7 +12519,7 @@
           "https://script.google.com/macros/s/AKfycbzjNSiIzcG2d0o1VcGX-kVoUtj3HBsnyDCMrO1qBimiIBUN5N3qLvQ4rkio30yVkxmv/exec";
         var VIEWER_ID_TOKEN = null;
 
-        function scriptGetValues(tab) {
+        function scriptGetValuesOnce(tab) {
           return fetch(VIEWER_SCRIPT_URL, {
             method: "POST",
             // text/plain avoids a CORS preflight that Apps Script web apps don't handle —
@@ -12530,9 +12530,34 @@
               idToken: VIEWER_ID_TOKEN,
               tab: tab,
             }),
-          })
-            .then(function (r) {
-              return r.json();
+          }).then(function (r) {
+            return r.json();
+          });
+          // Deliberately doesn't check data.ok here -- that's scriptGetValues' job, so a
+          // real answer (e.g. no_access) never gets confused with the network-level
+          // failures retried below.
+        }
+
+        // loadFromCloud fires one of these PER TAB -- ~40-50 all at once via Promise.all
+        // for a full SYNC.KEEP_MONTHS load. Apps Script occasionally cold-starts or gets
+        // throttled under that many concurrent requests, and the browser surfaces that as
+        // a bare "Failed to fetch" (a rejected fetch() promise, not an application error)
+        // -- confirmed the same transient failure happens even for a single sequential
+        // request from update_territory_sheet.py's own getSyncData call, and a same-request
+        // retry there succeeded immediately. So a network-level failure here gets retried
+        // with backoff a couple of times before giving up; a real application answer
+        // (data.ok === false, e.g. "no_access") is never retried -- that would just fail
+        // identically every time and delay a legitimate error reaching the viewer.
+        function scriptGetValues(tab, attempt) {
+          attempt = attempt || 1;
+          return scriptGetValuesOnce(tab)
+            .catch(function (err) {
+              if (attempt >= 3) throw err;
+              return new Promise(function (resolve) {
+                setTimeout(resolve, attempt * 600);
+              }).then(function () {
+                return scriptGetValues(tab, attempt + 1);
+              });
             })
             .then(function (data) {
               if (!data.ok)
