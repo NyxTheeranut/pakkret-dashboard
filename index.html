@@ -14057,38 +14057,79 @@
                 return;
               }
 
-              // Cache miss (first load, or something new was published) -- fetch every
-              // sub-tab this load needs in ONE request instead of one request per tab
-              // (~54 for a full 6-month load, see scriptPrefetchBatch/getValuesBatch).
-              var allTabs = [];
-              rtrTabs.forEach(function (t) {
-                ["meta", "stores", "daily", "simtypes", "cmtargets"].forEach(
-                  function (suffix) {
-                    allTabs.push(t + "-" + suffix);
-                  },
-                );
-              });
-              sevTabs.forEach(function (t) {
-                ["stores", "daily", "simtypes", "cmtargets"].forEach(function (
-                  suffix,
-                ) {
-                  allTabs.push(t + "-" + suffix);
+              // Cache miss (first load, or something new was published) -- split into TWO
+              // concurrent batches instead of one big sequential one: the newest month
+              // (small, ~9 tabs) renders as soon as it's ready, while the remaining months
+              // (~45 tabs) load in the background and fill in a moment later. Two concurrent
+              // Apps Script executions per viewer, not one -- still comfortably under the
+              // simultaneous-execution ceiling even with several viewers loading at once
+              // (see getValuesBatch's own comment for why that ceiling matters), while
+              // cutting the typical first-load wait roughly in half versus one sequential
+              // batch covering everything. rtrTabs/sevTabs are oldest-first (meta stores
+              // them that way), so the newest month is always the last element.
+              function tabsFor(rtrKeys, sevKeys) {
+                var out = [];
+                rtrKeys.forEach(function (t) {
+                  ["meta", "stores", "daily", "simtypes", "cmtargets"].forEach(
+                    function (suffix) {
+                      out.push(t + "-" + suffix);
+                    },
+                  );
                 });
-              });
-
-              return scriptPrefetchBatch(allTabs).then(function () {
-                var jobs = rtrTabs
+                sevKeys.forEach(function (t) {
+                  ["stores", "daily", "simtypes", "cmtargets"].forEach(
+                    function (suffix) {
+                      out.push(t + "-" + suffix);
+                    },
+                  );
+                });
+                return out;
+              }
+              function readGroups(rtrKeys, sevKeys) {
+                var jobs = rtrKeys
                   .map(function (t) {
                     return readRtrMonthGroup(t);
                   })
                   .concat(
-                    sevTabs.map(function (t) {
+                    sevKeys.map(function (t) {
                       return readSevMonthGroup(t);
                     }),
                   );
                 return Promise.all(jobs).then(function (all) {
-                  var rtrObjs = all.slice(0, rtrTabs.length);
-                  var sevObjs = all.slice(rtrTabs.length);
+                  return {
+                    rtrObjs: all.slice(0, rtrKeys.length),
+                    sevObjs: all.slice(rtrKeys.length),
+                  };
+                });
+              }
+
+              var newestRtr = rtrTabs.slice(-1);
+              var newestSev = sevTabs.slice(-1);
+              var restRtr = rtrTabs.slice(0, -1);
+              var restSev = sevTabs.slice(0, -1);
+
+              // Both batch requests are sent immediately, back-to-back -- .then() doesn't
+              // block, so secondBatch isn't waiting on firstBatch to finish before it starts.
+              var firstBatch = scriptPrefetchBatch(
+                tabsFor(newestRtr, newestSev),
+              ).then(function () {
+                return readGroups(newestRtr, newestSev);
+              });
+              var secondBatch = scriptPrefetchBatch(
+                tabsFor(restRtr, restSev),
+              ).then(function () {
+                return readGroups(restRtr, restSev);
+              });
+
+              return firstBatch.then(function (first) {
+                applyCloudResult(first.rtrObjs, first.sevObjs, meta);
+                return secondBatch.then(function (second) {
+                  // applyCloudResult/applyRtrFromCloud REPLACE state.rtr.months wholesale
+                  // (not merge), so this second call needs the full combined set, not just
+                  // the newly-arrived months -- otherwise it would overwrite the newest
+                  // month right back out of state.
+                  var rtrObjs = second.rtrObjs.concat(first.rtrObjs);
+                  var sevObjs = second.sevObjs.concat(first.sevObjs);
                   applyCloudResult(rtrObjs, sevObjs, meta);
                   if (meta.updated_at) {
                     saveCloudCache(meta.updated_at, rtrObjs, sevObjs);
