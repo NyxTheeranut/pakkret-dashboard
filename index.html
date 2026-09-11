@@ -5347,13 +5347,25 @@
               cards: [
                 {
                   label: "Target GA",
-                  value: fmt(t.target),
-                  sub: "ร้านที่มีเป้าหมายเฉพาะ",
+                  // t.target === 0 means no committed CM target has been published for THIS
+                  // month yet (see the CM-ONLY TARGET block above) -- a bare "0" reads as "the
+                  // target is zero", not "no target set", and the other 4 cards in this same
+                  // group already show "—" for exactly this state, so this matches them instead
+                  // of standing out as the one card that looks like real data when it isn't.
+                  value: t.target > 0 ? fmt(t.target) : "—",
+                  sub:
+                    t.target > 0
+                      ? "เป้ารวมของ CM ที่ตั้งไว้เดือนนี้"
+                      : "ยังไม่ได้ตั้งเป้าเดือนนี้",
                 },
                 {
                   label: "Actual GA (มีเป้า)",
-                  value: fmt(t.targetedGA),
-                  sub: "",
+                  // Scoped to "GA from CMs with a committed target" (targetedGA), not total GA --
+                  // with no target published, there's nothing in that scope to sum, so this
+                  // shows "—" (not applicable) rather than "0" (which reads as "no sales",
+                  // when the cluster's real GA is shown elsewhere on this same page).
+                  value: t.target > 0 ? fmt(t.targetedGA) : "—",
+                  sub: t.target > 0 ? "" : "ยังไม่มีเป้าให้เทียบเดือนนี้",
                 },
                 {
                   label: "%Achieve",
