@@ -12550,16 +12550,15 @@
           // failures retried below.
         }
 
-        // loadFromCloud fires one of these PER TAB -- ~40-50 all at once via Promise.all
-        // for a full SYNC.KEEP_MONTHS load. Apps Script occasionally cold-starts or gets
-        // throttled under that many concurrent requests, and the browser surfaces that as
-        // a bare "Failed to fetch" (a rejected fetch() promise, not an application error)
-        // -- confirmed the same transient failure happens even for a single sequential
-        // request from update_territory_sheet.py's own getSyncData call, and a same-request
-        // retry there succeeded immediately. So a network-level failure here gets retried
-        // with backoff a couple of times before giving up; a real application answer
-        // (data.ok === false, e.g. "no_access") is never retried -- that would just fail
-        // identically every time and delay a legitimate error reaching the viewer.
+        // Used for the standalone "meta" read in loadFromCloud (everything else now goes
+        // through the batched path below, scriptPrefetchBatch/getValuesBatch). Apps Script
+        // can still cold-start or hiccup on an individual request -- confirmed the same
+        // transient failure on a single, non-concurrent request from
+        // update_territory_sheet.py's own getSyncData call, where an immediate retry
+        // succeeded. So a network-level failure here gets retried with backoff a couple of
+        // times before giving up; a real application answer (data.ok === false, e.g.
+        // "no_access") is never retried -- that would just fail identically every time and
+        // delay a legitimate error reaching the viewer.
         // Retries the raw fetch+parse only -- resolves to the RAW response object every
         // time, whether from the first try or a later retry, so the one-time validation in
         // scriptGetValues below never runs more than once per call. (An earlier version of
@@ -12579,7 +12578,67 @@
           });
         }
 
+        // Populated by loadFromCloud's batch prefetch (scriptPrefetchBatch) before it calls
+        // readRtrMonthGroup/readSevMonthGroup -- scriptGetValues checks this FIRST, so those
+        // functions (and everything built on scriptReadTab/scriptReadTable) don't need to
+        // know batching exists at all: they still ask for one tab at a time, they just don't
+        // each trigger their own network round trip anymore. Reset to null at the start of
+        // every loadFromCloud() call so a later load can't accidentally reuse a previous
+        // load's leftover entries.
+        var scriptBatchCache = null; // {tabName: {ok, values} | {ok:false, error, message}}
+
+        function scriptGetValuesBatchOnce(tabs) {
+          return fetch(VIEWER_SCRIPT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "getValuesBatch",
+              idToken: VIEWER_ID_TOKEN,
+              tabs: tabs,
+            }),
+          }).then(function (r) {
+            return r.json();
+          });
+        }
+
+        function scriptGetValuesBatchWithRetry(tabs, attempt) {
+          attempt = attempt || 1;
+          return scriptGetValuesBatchOnce(tabs).catch(function (err) {
+            if (attempt >= 3) throw err;
+            return new Promise(function (resolve) {
+              setTimeout(resolve, attempt * 600);
+            }).then(function () {
+              return scriptGetValuesBatchWithRetry(tabs, attempt + 1);
+            });
+          });
+        }
+
+        // Fetches every tab in `tabs` in ONE request (see getValuesBatch on the Apps Script
+        // side) and populates scriptBatchCache with each one's raw {ok,...} result, so the
+        // NEXT scriptGetValues(tab) call for any of these tabs resolves from memory instead
+        // of making its own round trip. This is what turns loadFromCloud's ~54 individual
+        // requests into effectively 2 (this one, plus the earlier meta read).
+        function scriptPrefetchBatch(tabs) {
+          if (!tabs.length) return Promise.resolve();
+          return scriptGetValuesBatchWithRetry(tabs).then(function (data) {
+            if (!data.ok)
+              throw new Error(data.message || data.error || "load failed");
+            scriptBatchCache = scriptBatchCache || {};
+            Object.keys(data.tabs || {}).forEach(function (tab) {
+              scriptBatchCache[tab] = data.tabs[tab];
+            });
+          });
+        }
+
         function scriptGetValues(tab) {
+          if (scriptBatchCache && scriptBatchCache.hasOwnProperty(tab)) {
+            var cached = scriptBatchCache[tab];
+            return cached.ok
+              ? Promise.resolve(cached.values || [])
+              : Promise.reject(
+                  new Error(cached.message || cached.error || "load failed"),
+                );
+          }
           return scriptGetValuesRawWithRetry(tab).then(function (data) {
             if (!data.ok)
               throw new Error(data.message || data.error || "load failed");
@@ -13882,6 +13941,95 @@
 
         // The whole viewer flow: sign in (ID token, no picking) → meta → newest
         // SYNC.KEEP_MONTHS of each feed, all read through the Apps Script backend.
+        // Applies a fully-parsed rtrObjs/sevObjs pair (from either a live batch load or a
+        // localStorage cache hit) to the dashboard -- pulled out of loadFromCloud so both
+        // paths render identically instead of the cache path needing its own copy.
+        function applyCloudResult(rtrObjs, sevObjs, meta) {
+          if (rtrObjs.length) {
+            applyRtrFromCloud(rtrObjs);
+            renderRtrSheetNote();
+            renderRtrDashboard();
+            rtrShow("dashboard");
+          } else {
+            cloudMsg("rtr", "ยังไม่มีข้อมูล RTR ในไฟล์นี้");
+          }
+          if (sevObjs.length) {
+            applySevFromCloud(sevObjs);
+            renderSevSheetNote();
+            renderSevDashboard();
+            sevShow("dashboard");
+          } else {
+            cloudMsg("sev", "ยังไม่มีข้อมูล 7-11 ในไฟล์นี้");
+          }
+          state.cloudUpdatedAt = meta.updated_at || null;
+          var when = meta.updated_at
+            ? new Date(meta.updated_at).toLocaleString("th-TH")
+            : "-";
+          // Two different facts, kept visibly separate: when this device last synced
+          // from the sheet (when) vs. what day the latest month's own data actually
+          // reaches (rtrDataAsOfText/sevDataAsOfText) -- syncing today doesn't mean the
+          // source data itself is current through today.
+          [
+            { id: "rtrCacheBanner", dataAsOf: rtrDataAsOfText() },
+            { id: "sevCacheBanner", dataAsOf: sevDataAsOfText() },
+          ].forEach(function (b) {
+            var el = $(b.id);
+            if (el)
+              el.innerHTML =
+                '<div class="cache-banner"><span>โหลดจาก Google Sheets' +
+                (b.dataAsOf ? " · <b>" + esc(b.dataAsOf) + "</b>" : "") +
+                " · ซิงค์ล่าสุด " +
+                esc(when) +
+                "</span></div>";
+          });
+        }
+
+        // localStorage cache, keyed off meta.updated_at -- the underlying data only changes
+        // when someone runs the publish script (a few times a day at most), so most page
+        // loads can skip re-fetching everything and just confirm nothing changed (one cheap
+        // meta read) before rendering straight from what was already parsed last time. Private
+        // per browser, never shared between viewers or devices -- exactly the kind of
+        // convenience localStorage is for, not a substitute for the Sheet itself.
+        var CLOUD_CACHE_KEY = "pakkretCloudCache";
+        // rtrObjs carries a real Map (cmTargetMap) -- JSON.stringify silently turns a Map
+        // into "{}", so it's converted to a plain [k,v] array going in and rebuilt coming
+        // back out. sevObjs has no Map anywhere, so it round-trips through JSON as-is.
+        function saveCloudCache(updatedAt, rtrObjs, sevObjs) {
+          try {
+            var portableRtr = rtrObjs.map(function (m) {
+              return Object.assign({}, m, {
+                cmTargetMap: Array.from(m.cmTargetMap.entries()),
+              });
+            });
+            localStorage.setItem(
+              CLOUD_CACHE_KEY,
+              JSON.stringify({
+                updatedAt: updatedAt,
+                rtrObjs: portableRtr,
+                sevObjs: sevObjs,
+              }),
+            );
+          } catch (e) {
+            // Private browsing, storage disabled, or quota exceeded -- caching is a nice-to-
+            // have, not a requirement, so just skip it rather than fail the load over this.
+          }
+        }
+        function loadCloudCache() {
+          try {
+            var raw = localStorage.getItem(CLOUD_CACHE_KEY);
+            if (!raw) return null;
+            var saved = JSON.parse(raw);
+            saved.rtrObjs = (saved.rtrObjs || []).map(function (m) {
+              return Object.assign({}, m, {
+                cmTargetMap: new Map(m.cmTargetMap || []),
+              });
+            });
+            return saved;
+          } catch (e) {
+            return null;
+          }
+        }
+
         function loadFromCloud() {
           if (!VIEWER_ID_TOKEN) {
             cloudMsg("rtr", "กรุณาเข้าสู่ระบบ Google ด้านบน");
@@ -13891,6 +14039,7 @@
           ["rtr", "sev"].forEach(function (t) {
             cloudMsg(t, "กำลังโหลดข้อมูล…");
           });
+          scriptBatchCache = null; // fresh load -- discard any previous load's leftovers
           return scriptReadTab("meta")
             .then(function (meta) {
               // Load every month the sync retention keeps (SYNC.KEEP_MONTHS), not an
@@ -13898,56 +14047,52 @@
               // what was actually synced (and prune keeps) ever reached viewers.
               var rtrTabs = (meta.rtr_months || []).slice(-SYNC.KEEP_MONTHS);
               var sevTabs = (meta.sev_months || []).slice(-SYNC.KEEP_MONTHS);
-              var jobs = rtrTabs
-                .map(function (t) {
-                  return readRtrMonthGroup(t);
-                })
-                .concat(
-                  sevTabs.map(function (t) {
-                    return readSevMonthGroup(t);
-                  }),
+
+              // Nothing published since this browser's last successful load? Skip the
+              // network entirely (beyond the one cheap meta read just above) and render
+              // straight from what was already parsed last time.
+              var cached = loadCloudCache();
+              if (cached && cached.updatedAt && cached.updatedAt === meta.updated_at) {
+                applyCloudResult(cached.rtrObjs, cached.sevObjs, meta);
+                return;
+              }
+
+              // Cache miss (first load, or something new was published) -- fetch every
+              // sub-tab this load needs in ONE request instead of one request per tab
+              // (~54 for a full 6-month load, see scriptPrefetchBatch/getValuesBatch).
+              var allTabs = [];
+              rtrTabs.forEach(function (t) {
+                ["meta", "stores", "daily", "simtypes", "cmtargets"].forEach(
+                  function (suffix) {
+                    allTabs.push(t + "-" + suffix);
+                  },
                 );
-              return Promise.all(jobs).then(function (all) {
-                var rtrObjs = all.slice(0, rtrTabs.length);
-                var sevObjs = all.slice(rtrTabs.length);
-                if (rtrObjs.length) {
-                  applyRtrFromCloud(rtrObjs);
-                  renderRtrSheetNote();
-                  renderRtrDashboard();
-                  rtrShow("dashboard");
-                } else {
-                  cloudMsg("rtr", "ยังไม่มีข้อมูล RTR ในไฟล์นี้");
-                }
-                if (sevObjs.length) {
-                  applySevFromCloud(sevObjs);
-                  renderSevSheetNote();
-                  renderSevDashboard();
-                  sevShow("dashboard");
-                } else {
-                  cloudMsg("sev", "ยังไม่มีข้อมูล 7-11 ในไฟล์นี้");
-                }
-                state.cloudUpdatedAt = meta.updated_at || null;
-                var when = meta.updated_at
-                  ? new Date(meta.updated_at).toLocaleString("th-TH")
-                  : "-";
-                // Two different facts, kept visibly separate: when this device last synced
-                // from the sheet (when) vs. what day the latest month's own data actually
-                // reaches (rtrDataAsOfText/sevDataAsOfText) -- syncing today doesn't mean the
-                // source data itself is current through today.
-                [
-                  { id: "rtrCacheBanner", dataAsOf: rtrDataAsOfText() },
-                  { id: "sevCacheBanner", dataAsOf: sevDataAsOfText() },
-                ].forEach(function (b) {
-                  var el = $(b.id);
-                  if (el)
-                    el.innerHTML =
-                      '<div class="cache-banner"><span>โหลดจาก Google Sheets' +
-                      (b.dataAsOf
-                        ? " · <b>" + esc(b.dataAsOf) + "</b>"
-                        : "") +
-                      " · ซิงค์ล่าสุด " +
-                      esc(when) +
-                      "</span></div>";
+              });
+              sevTabs.forEach(function (t) {
+                ["stores", "daily", "simtypes", "cmtargets"].forEach(function (
+                  suffix,
+                ) {
+                  allTabs.push(t + "-" + suffix);
+                });
+              });
+
+              return scriptPrefetchBatch(allTabs).then(function () {
+                var jobs = rtrTabs
+                  .map(function (t) {
+                    return readRtrMonthGroup(t);
+                  })
+                  .concat(
+                    sevTabs.map(function (t) {
+                      return readSevMonthGroup(t);
+                    }),
+                  );
+                return Promise.all(jobs).then(function (all) {
+                  var rtrObjs = all.slice(0, rtrTabs.length);
+                  var sevObjs = all.slice(rtrTabs.length);
+                  applyCloudResult(rtrObjs, sevObjs, meta);
+                  if (meta.updated_at) {
+                    saveCloudCache(meta.updated_at, rtrObjs, sevObjs);
+                  }
                 });
               });
             })
