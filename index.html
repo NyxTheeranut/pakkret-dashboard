@@ -11539,6 +11539,9 @@
           if (col.key === "apUnder100")
             return d.apUnder100Pct == null ? "—" : pct(d.apUnder100Pct);
           if (col.key === "mtd") return d.momPct == null ? "—" : pct(d.momPct);
+          if (col.key === "target") return d.target == null ? "—" : fmt(d.target);
+          if (col.key === "achieve")
+            return d.achievePct == null ? "—" : pct(d.achievePct);
           if (col.key === "m1ga") return d.m1ga == null ? "—" : fmtBaht(d.m1ga);
           return "";
         }
