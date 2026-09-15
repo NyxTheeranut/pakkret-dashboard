@@ -6648,6 +6648,33 @@
               x.s.hasStock ? fmt(x.s.stock) : "—",
             ];
           }
+          // The no-GA card drops AP30D (GA is 0 for every row here, so a same-period
+          // activity metric isn't the useful signal) and shows LMTD right next to GA
+          // instead -- "was this normal for them" (last month's GA to the same cutoff
+          // day) is what actually tells you whether a zero this period is new or not.
+          var NO_GA_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "AP1D"];
+          function noGaRow(s) {
+            return (
+              '<span class="n">' +
+              esc(s.name) +
+              '</span><span class="v"><span class="col-num">GA ' +
+              fmt(s.ga) +
+              '</span> · <span class="col-num">LMTD ' +
+              (s.lmtdGa != null ? fmt(s.lmtdGa) : "—") +
+              '</span> · <span class="col-num">AP1D ' +
+              fmt(s.ap1d) +
+              "</span></span>"
+            );
+          }
+          function noGaExportRow(s) {
+            return [
+              s.name,
+              s.code,
+              fmt(s.ga),
+              s.lmtdGa != null ? fmt(s.lmtdGa) : "—",
+              fmt(s.ap1d),
+            ];
+          }
 
           var html = "";
           html += cardHtml(
@@ -6680,11 +6707,11 @@
             "ร้านที่ยังไม่มี GA ในช่วงนี้ (" + noGAAll.length + " ร้าน)",
             noGA,
             function (x) {
-              return gaApRow(x.s, 0);
+              return noGaRow(x.s);
             },
-            RISK_EXPORT_COLS,
+            NO_GA_EXPORT_COLS,
             noGAAll.map(function (x) {
-              return riskExportRow({ s: x.s, conv: 0 });
+              return noGaExportRow(x.s);
             }),
             "no-ga",
           );
