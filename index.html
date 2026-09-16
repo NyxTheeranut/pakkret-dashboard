@@ -6710,7 +6710,9 @@
           html += cardHtml(
             "tag-risk",
             "ความเสี่ยงคุณภาพ",
-            "ยอดขายเยอะ แต่ AP30D conversion ต่ำ",
+            "ยอดขายเยอะ แต่ AP30D conversion ต่ำ (ค่ามัธยฐาน " +
+              pct(medianConv) +
+              ")",
             riskStores,
             function (x) {
               return gaApRow(x.s, x.conv);
@@ -6722,7 +6724,9 @@
           html += cardHtml(
             "tag-risk",
             "ความเสี่ยงคุณภาพ",
-            "ยอดขายเยอะ แต่ AP1D conversion ต่ำ",
+            "ยอดขายเยอะ แต่ AP1D conversion ต่ำ (ค่ามัธยฐาน " +
+              pct(medianConvAp1d) +
+              ")",
             riskStoresAp1d,
             function (x) {
               return gaApRow(x.s, x.conv);
