@@ -2351,6 +2351,12 @@
               <label class="modal-label">เรียงตาม</label>
               <select class="modal-select" id="sevExportSort"></select>
 
+              <!-- Same pattern as the เขต picker below, shown only when "เรียงตาม" = ฝ่าย. -->
+              <div id="sevExportFyaiPickerWrap" style="display: none">
+                <label class="modal-label">ฝ่าย (จะ export เฉพาะฝ่ายนี้)</label>
+                <select class="modal-select" id="sevExportFyaiPicker"></select>
+              </div>
+
               <!-- Shown only when "เรียงตาม" = เขต -- picking a specific เขต here narrows the
                    export to just that one, instead of only sorting by it. Options are whatever
                    เขต values exist under the CM/AE (etc.) filter already active on the page --
@@ -11116,17 +11122,19 @@
           { key: "achieve", label: "%Achieve" },
           { key: "rev", label: "รายได้" },
           { key: "m1ga", label: "ARPU" },
+          { key: "fyai", label: "ฝ่าย", align: "left" },
           { key: "khet", label: "เขต", align: "left" },
         ];
-        // On-screen table hides เขต (by request -- it stays available for sorting via
+        // On-screen table hides ฝ่าย/เขต (by request -- they stay available for sorting via
         // "เรียงตาม" and for the export, both of which read SEV_TABLE_COLS directly),
         // so the live table renders this filtered list instead of SEV_TABLE_COLS itself.
         var SEV_DISPLAY_COLS = SEV_TABLE_COLS.filter(function (c) {
-          return c.key !== "khet";
+          return c.key !== "khet" && c.key !== "fyai";
         });
         function sevSortValue(s, key, sv) {
           if (key === "name") return s.name || "";
           if (key === "khet") return s.khet || "";
+          if (key === "fyai") return s.fyai || "";
           if (key === "ga") return sv.ga;
           if (key === "target") return sv.target == null ? -1 : sv.target;
           if (key === "achieve")
@@ -11206,7 +11214,11 @@
             rowsData.sort(function (a, b) {
               var av = sevSortValue(a.s, sortKey, a.d),
                 bv = sevSortValue(b.s, sortKey, b.d);
-              if (sortKey === "name" || sortKey === "khet")
+              if (
+                sortKey === "name" ||
+                sortKey === "khet" ||
+                sortKey === "fyai"
+              )
                 return mult * String(av).localeCompare(String(bv));
               return mult * (av - bv);
             });
@@ -11414,6 +11426,9 @@
         // every time the modal opens or "เรียงตาม" changes to something else.
         // =====================================================================
         var sevExportKhet = ""; // "" = no narrowing -- every เขต under the page's other filters
+        // Same narrowing behaviour as sevExportKhet, one dimension over -- see
+        // renderSevExportFyaiPicker/updateSevExportFyaiVisibility below.
+        var sevExportFyai = "";
         // Same as SEV_TABLE_COLS but with a รหัสร้าน (store code) column inserted right after the
         // name, since the live table already shows the code as a subtitle under the store name (no
         // extra column needed there) but a flat PNG/PDF export needs it as its own explicit column.
@@ -11428,7 +11443,7 @@
           var parts = [
             state.sev.currentCM,
             sevExportKhet || state.sev.currentKhet,
-            state.sev.currentFyai,
+            sevExportFyai || state.sev.currentFyai,
             state.sev.currentGm,
             state.sev.currentAe,
           ].filter(Boolean);
@@ -11484,6 +11499,47 @@
             // silently keep applying to an export sorted by something else
           }
         }
+        // Mirrors renderSevExportKhetPicker exactly, one dimension over.
+        function renderSevExportFyaiPicker() {
+          var sel = $("sevExportFyaiPicker");
+          if (!sel) return;
+          var scoped = sevFilteredStores("fyai");
+          var counts = {};
+          scoped.forEach(function (s) {
+            counts[s.fyai] = (counts[s.fyai] || 0) + 1;
+          });
+          var names = Object.keys(counts).sort(function (a, b) {
+            return counts[b] - counts[a];
+          });
+          var keep = names.indexOf(sevExportFyai) !== -1 ? sevExportFyai : "";
+          sel.innerHTML =
+            '<option value="">ทั้งหมด (ทุกฝ่าย)</option>' +
+            names
+              .map(function (name) {
+                return (
+                  '<option value="' +
+                  esc(name) +
+                  '">' +
+                  esc(name) +
+                  " (" +
+                  counts[name] +
+                  ")</option>"
+                );
+              })
+              .join("");
+          sel.value = keep;
+          sevExportFyai = keep;
+        }
+        // Mirrors updateSevExportKhetVisibility exactly, one dimension over.
+        function updateSevExportFyaiVisibility() {
+          var show = $("sevExportSort").value === "fyai";
+          $("sevExportFyaiPickerWrap").style.display = show ? "block" : "none";
+          if (show) {
+            renderSevExportFyaiPicker();
+          } else {
+            sevExportFyai = "";
+          }
+        }
         function sevOpenExportModal() {
           var sortSel = $("sevExportSort");
           sortSel.innerHTML = SEV_TABLE_COLS.map(function (c) {
@@ -11494,7 +11550,9 @@
           sortSel.value = state.sev.sortKey || "rev";
           sevExportKhet = ""; // reset on every open, so a forgotten narrowing from last time
           // can't silently apply to a later, unrelated export
+          sevExportFyai = "";
           updateSevExportKhetVisibility();
+          updateSevExportFyaiVisibility();
           $("sevExportScopeHint").textContent =
             "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
             sevExportScopeLabel() +
@@ -11511,18 +11569,30 @@
             sevExportScopeLabel() +
             " — ถ้าอยากเปลี่ยนตัวกรองอื่น ให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
         }
+        function sevExportFyaiPickerChanged() {
+          sevExportFyai = $("sevExportFyaiPicker").value;
+          $("sevExportScopeHint").textContent =
+            "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
+            sevExportScopeLabel() +
+            " — ถ้าอยากเปลี่ยนตัวกรองอื่น ให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
+        }
 
         // Same filter+search as the live table (sevCurrentStores + search), but sort/limit come from
         // the export modal's own controls, independent of whatever the on-page table is sorted by.
-        // เขต is the one dimension that can additionally be overridden by the modal's own picker
-        // (sevExportKhet) -- everything else still comes straight from sevCurrentStores(), i.e.
-        // whatever's active on the page.
+        // เขต/ฝ่าย are the two dimensions that can additionally be overridden by the modal's own
+        // picker (sevExportKhet/sevExportFyai) -- only one is ever active at a time (each only
+        // shows while "เรียงตาม" matches its own dimension) -- everything else still comes
+        // straight from sevCurrentStores(), i.e. whatever's active on the page.
         function sevGatherExportRows() {
           var stores = sevExportKhet
             ? sevFilteredStores("khet").filter(function (s) {
                 return s.khet === sevExportKhet;
               })
-            : sevCurrentStores();
+            : sevExportFyai
+              ? sevFilteredStores("fyai").filter(function (s) {
+                  return s.fyai === sevExportFyai;
+                })
+              : sevCurrentStores();
           var q = state.sev.search.trim().toLowerCase();
           if (q)
             stores = stores.filter(function (s) {
@@ -11543,7 +11613,7 @@
           rowsData.sort(function (a, b) {
             var av = sevSortValue(a.s, sortKey, a.d),
               bv = sevSortValue(b.s, sortKey, b.d);
-            if (sortKey === "name" || sortKey === "khet")
+            if (sortKey === "name" || sortKey === "khet" || sortKey === "fyai")
               return mult * String(av).localeCompare(String(bv));
             return mult * (av - bv);
           });
@@ -11564,6 +11634,7 @@
           if (col.key === "name") return s.name;
           if (col.key === "code") return s.code;
           if (col.key === "khet") return s.khet;
+          if (col.key === "fyai") return s.fyai;
           if (col.key === "ga") return fmt(d.ga);
           if (col.key === "rev") return fmtBaht(d.revAmt);
           if (col.key === "ap49") return fmt(d.ap49);
@@ -12232,13 +12303,17 @@
         );
         $("sevExportBtn").addEventListener("click", sevOpenExportModal);
         $("sevExportClose").addEventListener("click", sevCloseExportModal);
-        $("sevExportSort").addEventListener(
-          "change",
-          updateSevExportKhetVisibility,
-        );
+        $("sevExportSort").addEventListener("change", function () {
+          updateSevExportKhetVisibility();
+          updateSevExportFyaiVisibility();
+        });
         $("sevExportKhetPicker").addEventListener(
           "change",
           sevExportKhetPickerChanged,
+        );
+        $("sevExportFyaiPicker").addEventListener(
+          "change",
+          sevExportFyaiPickerChanged,
         );
         $("sevExportOverlay").addEventListener("click", function (e) {
           if (e.target.id === "sevExportOverlay") sevCloseExportModal();
