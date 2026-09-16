@@ -2082,6 +2082,36 @@
         </div>
       </div>
 
+      <div
+        class="modal-overlay"
+        id="rtrActionsExportOverlay"
+        style="display: none"
+      >
+        <div class="modal-box">
+          <div class="modal-head">
+            <b>Export สิ่งที่ควรลงมือทำ</b
+            ><button
+              class="dd-close-btn"
+              id="rtrActionsExportClose"
+              aria-label="ปิด"
+            >
+              &times;
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="modal-hint">เลือกการ์ดที่ต้องการรวมในภาพเดียวกัน</div>
+            <div class="modal-radio-row" id="rtrActionsExportChecks"></div>
+            <button
+              class="file-btn"
+              id="rtrActionsExportGo"
+              style="width: 100%; margin-top: 14px"
+            >
+              Export
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="modal-overlay" id="rtrSummaryOverlay" style="display: none">
         <div class="modal-box">
           <div class="modal-head">
@@ -11720,15 +11750,50 @@
           });
         }
 
+        // Lets the person exporting pick which of the 4 cards to include, rather than always
+        // getting all 4 -- opened by the "สิ่งที่ควรลงมือทำ" section's Export button instead of
+        // calling rtrInsightsExportPng directly. Checkboxes are built fresh from the current
+        // snapshot every time this opens (title text included), so a stale count from a
+        // previous filter/month can never show here.
+        function rtrOpenActionsExportModal() {
+          var snap = state.rtr._insightsSnapshot;
+          var wrap = $("rtrActionsExportChecks");
+          if (!snap || !snap.cards.length) {
+            wrap.innerHTML =
+              '<span style="color:var(--muted)">ไม่มีการ์ดให้ export ในมุมมองนี้</span>';
+            $("rtrActionsExportGo").disabled = true;
+          } else {
+            $("rtrActionsExportGo").disabled = false;
+            wrap.innerHTML = snap.cards
+              .map(function (t, i) {
+                return (
+                  '<label><input type="checkbox" class="rtr-actions-export-check" value="' +
+                  i +
+                  '" checked /> ' +
+                  esc(t.title) +
+                  "</label>"
+                );
+              })
+              .join("");
+          }
+          $("rtrActionsExportOverlay").style.display = "flex";
+        }
+        function rtrCloseActionsExportModal() {
+          $("rtrActionsExportOverlay").style.display = "none";
+        }
+
         // Same 2x2 grid layout as sevInsightsExportPng below, adapted for the fact that RTR's 4
         // cards do NOT all share one column set (the risk/no-GA cards are 6 columns, the stock
         // card is 4) -- each table measures and draws with its OWN cols instead of one shared
         // cols array, but the grid-cell width (colW) still takes the max across all 4 so the two
-        // columns line up the same way sevInsightsExportPng's grid does.
-        function rtrInsightsExportPng() {
+        // columns line up the same way sevInsightsExportPng's grid does. tables defaults to
+        // every card (unfiltered) so this still works as a plain "export everything" call if
+        // ever needed, but rtrActionsExportGo below always passes the person's own picks.
+        function rtrInsightsExportPng(tables) {
           var snap = state.rtr._insightsSnapshot;
           if (!snap || !snap.cards.length) return;
-          var tables = snap.cards;
+          tables = tables || snap.cards;
+          if (!tables.length) return;
 
           var probe = document.createElement("canvas").getContext("2d");
           var colW = 0;
@@ -12132,8 +12197,31 @@
 
         $("rtrInsightsExportBtn").addEventListener(
           "click",
-          rtrInsightsExportPng,
+          rtrOpenActionsExportModal,
         );
+        $("rtrActionsExportClose").addEventListener(
+          "click",
+          rtrCloseActionsExportModal,
+        );
+        $("rtrActionsExportOverlay").addEventListener("click", function (e) {
+          if (e.target.id === "rtrActionsExportOverlay")
+            rtrCloseActionsExportModal();
+        });
+        $("rtrActionsExportGo").addEventListener("click", function () {
+          var snap = state.rtr._insightsSnapshot;
+          if (!snap) return;
+          var picked = Array.prototype.map
+            .call(
+              document.querySelectorAll(".rtr-actions-export-check:checked"),
+              function (el) {
+                return snap.cards[Number(el.value)];
+              },
+            )
+            .filter(Boolean);
+          if (!picked.length) return;
+          rtrInsightsExportPng(picked);
+          rtrCloseActionsExportModal();
+        });
         $("sevInsightsExportBtn").addEventListener(
           "click",
           sevInsightsExportPng,
