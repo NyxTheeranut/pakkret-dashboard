@@ -327,6 +327,94 @@
         min-height: 16px;
       }
 
+      /* ── login gate ─────────────────────────────────────────────────────
+         One full-screen sign-in gate instead of the two separate embedded
+         Google buttons the RTR/7-11 tabs used to each show their own copy
+         of -- matching the single-gate pattern the other trackers (TOL
+         Install Tracker, L2 Discount Map) already use for viewer sign-in.
+         Publishers (the local-file upload flow, IS_PUBLISHER) never see
+         this at all -- see the gate's own show/hide call at the bottom of
+         the boot script. */
+      .login-gate {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--paper);
+      }
+      .login-card {
+        width: 320px;
+        max-width: calc(100% - 48px);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow:
+          0 1px 2px rgba(18, 26, 43, 0.04),
+          0 4px 12px rgba(18, 26, 43, 0.04);
+        padding: 34px 28px;
+        text-align: center;
+      }
+      .login-card .bars-icon {
+        justify-content: center;
+        margin: 0 auto 16px;
+        height: 28px;
+      }
+      .login-card .bars-icon i {
+        background: var(--accent);
+      }
+      .login-card h1 {
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 20px;
+        font-weight: 700;
+        margin: 0 0 6px;
+        color: var(--ink);
+      }
+      .login-card h1 span {
+        color: var(--accent);
+      }
+      .login-card p {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0 0 22px;
+        line-height: 1.5;
+      }
+      #gsiButton {
+        display: flex;
+        justify-content: center;
+        min-height: 40px;
+      }
+      .login-status {
+        margin-top: 14px;
+        font-size: 12.5px;
+        color: var(--muted);
+        line-height: 1.5;
+        display: none;
+      }
+      .login-status.error {
+        color: var(--alert);
+      }
+      .login-spinner {
+        width: 20px;
+        height: 20px;
+        margin: 0 auto;
+        border-radius: 50%;
+        border: 2.5px solid var(--line);
+        border-top-color: var(--accent);
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .login-spinner {
+          animation: none;
+        }
+      }
+
       .error-box {
         background: var(--alert-soft);
         border: 1px solid rgba(214, 69, 65, 0.25);
@@ -1217,15 +1305,39 @@
           background: #eee;
         }
       }
-      .search-input {
+      .search-input-wrap {
+        position: relative;
         flex: 1;
         min-width: 180px;
-        padding: 9px 13px;
+      }
+      .search-input {
+        width: 100%;
+        padding: 9px 30px 9px 13px;
         border-radius: 9px;
         border: 1px solid var(--line);
         font-size: 13px;
         background: var(--panel);
         font-family: "Inter", sans-serif;
+      }
+      .search-clear-btn {
+        display: none;
+        position: absolute;
+        right: 5px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 24px;
+        height: 24px;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .search-clear-btn:hover {
+        background: var(--line);
+        color: var(--ink);
       }
       .sort-select {
         padding: 9px 13px;
@@ -1662,6 +1774,16 @@
     </style>
   </head>
   <body>
+    <div class="login-gate" id="loginGate" style="display: none">
+      <div class="login-card">
+        <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
+        <h1>Pak Kret <span>Territory Explorer</span></h1>
+        <p>เข้าสู่ระบบด้วยบัญชี Google เพื่อดูแดชบอร์ด — ข้อมูลจะเริ่มโหลดหลังเข้าสู่ระบบเท่านั้น</p>
+        <div id="gsiButton"></div>
+        <div class="login-status" id="loginStatus"></div>
+      </div>
+    </div>
+
     <div class="topbar">
       <div class="brand">
         <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
@@ -1828,14 +1950,6 @@
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
           <h2>ข้อมูล RTR</h2>
           <p id="rtrCloudMsg">เข้าสู่ระบบ Google เพื่อโหลดข้อมูลล่าสุด</p>
-          <div
-            id="rtrGsiButton"
-            style="
-              margin-top: 14px;
-              display: flex;
-              justify-content: center;
-            "
-          ></div>
           <button
             class="file-btn ghost-light"
             id="rtrCloudReset"
@@ -1969,12 +2083,22 @@
               <span class="hint" id="rtrStoreCountHint"></span>
             </div>
             <div class="table-toolbar">
-              <input
-                type="text"
-                class="search-input"
-                id="rtrSearchInput"
-                placeholder="ค้นหาชื่อร้าน / รหัสร้าน..."
-              />
+              <div class="search-input-wrap">
+                <input
+                  type="text"
+                  class="search-input"
+                  id="rtrSearchInput"
+                  placeholder="ค้นหาชื่อร้าน / รหัสร้าน..."
+                />
+                <button
+                  class="search-clear-btn"
+                  id="rtrSearchClear"
+                  aria-label="ล้างคำค้นหา"
+                  type="button"
+                >
+                  &times;
+                </button>
+              </div>
               <select class="sort-select" id="rtrSortSelect">
                 <option value="m1">เรียงตาม M1</option>
                 <option value="ga">เรียงตามยอด GA</option>
@@ -2173,14 +2297,6 @@
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
           <h2>ข้อมูล 7-11</h2>
           <p id="sevCloudMsg">เข้าสู่ระบบ Google เพื่อโหลดข้อมูลล่าสุด</p>
-          <div
-            id="sevGsiButton"
-            style="
-              margin-top: 14px;
-              display: flex;
-              justify-content: center;
-            "
-          ></div>
           <button
             class="file-btn ghost-light"
             id="sevCloudReset"
@@ -2315,12 +2431,22 @@
               <span class="hint" id="sevStoreCountHint"></span>
             </div>
             <div class="table-toolbar">
-              <input
-                type="text"
-                class="search-input"
-                id="sevSearchInput"
-                placeholder="ค้นหาชื่อร้าน / รหัสร้าน..."
-              />
+              <div class="search-input-wrap">
+                <input
+                  type="text"
+                  class="search-input"
+                  id="sevSearchInput"
+                  placeholder="ค้นหาชื่อร้าน / รหัสร้าน..."
+                />
+                <button
+                  class="search-clear-btn"
+                  id="sevSearchClear"
+                  aria-label="ล้างคำค้นหา"
+                  type="button"
+                >
+                  &times;
+                </button>
+              </div>
               <button
                 class="file-btn ghost-light"
                 id="sevExportBtn"
@@ -2331,6 +2457,39 @@
             </div>
             <div id="sevTableWrap"></div>
           </section>
+        </div>
+
+        <div
+          class="modal-overlay"
+          id="sevActionsExportOverlay"
+          style="display: none"
+        >
+          <div class="modal-box">
+            <div class="modal-head">
+              <b>Export สิ่งที่ควรลงมือทำ</b
+              ><button
+                class="dd-close-btn"
+                id="sevActionsExportClose"
+                aria-label="ปิด"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="modal-body">
+              <div class="modal-hint">เลือกการ์ดที่ต้องการรวมในภาพเดียวกัน</div>
+              <div
+                class="modal-radio-row"
+                id="sevActionsExportChecks"
+              ></div>
+              <button
+                class="file-btn"
+                id="sevActionsExportGo"
+                style="width: 100%; margin-top: 14px"
+              >
+                Export
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="modal-overlay" id="sevExportOverlay" style="display: none">
@@ -2581,6 +2740,19 @@
         function $(id) {
           return document.getElementById(id);
         }
+        // Makes every .clickable row/insight-list item (drilldowns, CM/AE filter rows)
+        // keyboard-activatable, not just mouse/touch -- added once here as a delegated
+        // listener rather than a keydown handler at each of the ~8 places a .clickable
+        // element gets its own click listener attached. tabindex="0"+role="button" on the
+        // element itself (see its own HTML) is what makes it focusable and announced
+        // correctly to begin with.
+        document.addEventListener("keydown", function (e) {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          var el = e.target.closest && e.target.closest(".clickable");
+          if (!el) return;
+          e.preventDefault();
+          el.click();
+        });
         function num(v) {
           if (typeof v === "number") return v;
           if (v == null) return 0;
@@ -5670,7 +5842,7 @@
                   ? '<span class="pct-badge pct-badge-muted">—</span>'
                   : pctColored(r.paceDelta);
               return (
-                '<tr class="clickable" data-cm="' +
+                '<tr class="clickable" tabindex="0" role="button" data-cm="' +
                 esc(r.cm) +
                 '"' +
                 (isCurrent ? ' style="background:var(--paper);"' : "") +
@@ -6112,7 +6284,7 @@
             var rows = zoneStores
               .map(function (s) {
                 return (
-                  '<tr class="clickable" data-code="' +
+                  '<tr class="clickable" tabindex="0" role="button" data-code="' +
                   esc(s.code) +
                   '">' +
                   RTR_TABLE_COLS.map(function (col) {
@@ -6602,7 +6774,7 @@
                 items
                   .map(function (x) {
                     return (
-                      '<li class="clickable" data-code="' +
+                      '<li class="clickable" tabindex="0" role="button" data-code="' +
                       esc(x.s.code) +
                       '">' +
                       renderRow(x) +
@@ -6948,7 +7120,7 @@
           var rows = visible
             .map(function (s) {
               return (
-                '<tr class="clickable" data-code="' +
+                '<tr class="clickable" tabindex="0" role="button" data-code="' +
                 esc(s.code) +
                 '">' +
                 RTR_TABLE_COLS.map(function (col) {
@@ -7563,7 +7735,15 @@
               "%MOM",
             ],
             cmRows: cmRows,
-            riskCols: ["ร้านค้า", "รหัส", "CM", "GA", "Target", "%MTD", "%MOM"],
+            riskCols: [
+              "ร้านค้า",
+              "รหัส",
+              "CM",
+              "GA",
+              "Target",
+              "%Achieve",
+              "%MOM",
+            ],
             riskRows: riskStores,
           };
         }
@@ -7969,10 +8149,27 @@
         }
         $("overlay").addEventListener("click", closeDrilldown);
 
+        // Toggles a search box's own × button -- shared by RTR/SEV so both search inputs
+        // get the same "only show the clear button once there's something to clear" rule.
+        function updateSearchClearBtn(inputId, btnId) {
+          var input = $(inputId),
+            btn = $(btnId);
+          if (!input || !btn) return;
+          btn.style.display = input.value ? "block" : "none";
+        }
         $("rtrSearchInput").addEventListener("input", function (e) {
           state.rtr.search = e.target.value;
           state.rtr.visibleCount = 20;
+          updateSearchClearBtn("rtrSearchInput", "rtrSearchClear");
           renderRtrTable();
+        });
+        $("rtrSearchClear").addEventListener("click", function () {
+          $("rtrSearchInput").value = "";
+          state.rtr.search = "";
+          state.rtr.visibleCount = 20;
+          updateSearchClearBtn("rtrSearchInput", "rtrSearchClear");
+          renderRtrTable();
+          $("rtrSearchInput").focus();
         });
         $("rtrSortSelect").addEventListener("change", function (e) {
           state.rtr.sortKey = e.target.value;
@@ -9959,7 +10156,7 @@
             .map(function (r) {
               var isCurrent = state.sev.currentCM === r.cm;
               return (
-                '<tr class="clickable" data-cm="' +
+                '<tr class="clickable" tabindex="0" role="button" data-cm="' +
                 esc(r.cm) +
                 '"' +
                 (isCurrent ? ' style="background:var(--paper);"' : "") +
@@ -10240,7 +10437,7 @@
             .map(function (r) {
               var isCurrent = state.sev.currentAe === r.ae;
               return (
-                '<tr class="clickable" data-ae="' +
+                '<tr class="clickable" tabindex="0" role="button" data-ae="' +
                 esc(r.ae) +
                 '"' +
                 (isCurrent ? ' style="background:var(--paper);"' : "") +
@@ -10470,7 +10667,7 @@
           }
           function clickableRow(code, nameHtml, valueHtml) {
             return (
-              '<li class="clickable" data-code="' +
+              '<li class="clickable" tabindex="0" role="button" data-code="' +
               esc(code) +
               '">' +
               nameHtml +
@@ -11346,7 +11543,7 @@
                 });
               }
               return (
-                '<tr class="clickable" data-code="' +
+                '<tr class="clickable" tabindex="0" role="button" data-code="' +
                 esc(s.code) +
                 '">' +
                 cells +
@@ -11992,11 +12189,46 @@
         // share one width (the widest of all 4 tables) the same way the on-screen CSS grid's
         // "1fr 1fr" gives both columns equal width; each row's height is only as tall as its
         // own taller table needs, not stretched to match the other row.
-        function sevInsightsExportPng() {
+        // Mirrors rtrOpenActionsExportModal exactly -- lets the person exporting pick which
+        // of the (up to 4) "สิ่งที่ควรลงมือทำ" cards to bundle into one image, instead of
+        // always getting all of them.
+        function sevOpenActionsExportModal() {
+          var snap = state.sev._insightsSnapshot;
+          var wrap = $("sevActionsExportChecks");
+          if (!snap || !snap.cards.length) {
+            wrap.innerHTML =
+              '<span style="color:var(--muted)">ไม่มีการ์ดให้ export ในมุมมองนี้</span>';
+            $("sevActionsExportGo").disabled = true;
+          } else {
+            $("sevActionsExportGo").disabled = false;
+            wrap.innerHTML = snap.cards
+              .map(function (t, i) {
+                return (
+                  '<label><input type="checkbox" class="sev-actions-export-check" value="' +
+                  i +
+                  '" checked /> ' +
+                  esc(t.title) +
+                  "</label>"
+                );
+              })
+              .join("");
+          }
+          $("sevActionsExportOverlay").style.display = "flex";
+        }
+        function sevCloseActionsExportModal() {
+          $("sevActionsExportOverlay").style.display = "none";
+        }
+
+        // cards defaults to every card (unfiltered) so this still works as a plain
+        // "export everything" call if ever needed, but sevActionsExportGo below always
+        // passes the person's own picks.
+        function sevInsightsExportPng(cards) {
           var snap = state.sev._insightsSnapshot;
           if (!snap || !snap.cards.length) return;
+          cards = cards || snap.cards;
+          if (!cards.length) return;
           var cols = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "%MOM", "AE"];
-          var tables = snap.cards.map(function (c) {
+          var tables = cards.map(function (c) {
             return { title: c.title, rows: sevInsightsExportRows(c.items) };
           });
 
@@ -12299,8 +12531,31 @@
         });
         $("sevInsightsExportBtn").addEventListener(
           "click",
-          sevInsightsExportPng,
+          sevOpenActionsExportModal,
         );
+        $("sevActionsExportClose").addEventListener(
+          "click",
+          sevCloseActionsExportModal,
+        );
+        $("sevActionsExportOverlay").addEventListener("click", function (e) {
+          if (e.target.id === "sevActionsExportOverlay")
+            sevCloseActionsExportModal();
+        });
+        $("sevActionsExportGo").addEventListener("click", function () {
+          var snap = state.sev._insightsSnapshot;
+          if (!snap) return;
+          var picked = Array.prototype.map
+            .call(
+              document.querySelectorAll(".sev-actions-export-check:checked"),
+              function (el) {
+                return snap.cards[Number(el.value)];
+              },
+            )
+            .filter(Boolean);
+          if (!picked.length) return;
+          sevInsightsExportPng(picked);
+          sevCloseActionsExportModal();
+        });
         $("sevExportBtn").addEventListener("click", sevOpenExportModal);
         $("sevExportClose").addEventListener("click", sevCloseExportModal);
         $("sevExportSort").addEventListener("change", function () {
@@ -12519,7 +12774,16 @@
         $("sevSearchInput").addEventListener("input", function (e) {
           state.sev.search = e.target.value;
           state.sev.visibleCount = 20; // a new search is a new result set -- start from the top
+          updateSearchClearBtn("sevSearchInput", "sevSearchClear");
           renderSevTable();
+        });
+        $("sevSearchClear").addEventListener("click", function () {
+          $("sevSearchInput").value = "";
+          state.sev.search = "";
+          state.sev.visibleCount = 20;
+          updateSearchClearBtn("sevSearchInput", "sevSearchClear");
+          renderSevTable();
+          $("sevSearchInput").focus();
         });
 
         function formatCacheTime(ts) {
@@ -14141,7 +14405,7 @@
         // Applies a fully-parsed rtrObjs/sevObjs pair (from either a live batch load or a
         // localStorage cache hit) to the dashboard -- pulled out of loadFromCloud so both
         // paths render identically instead of the cache path needing its own copy.
-        function applyCloudResult(rtrObjs, sevObjs, meta) {
+        function applyCloudResult(rtrObjs, sevObjs, meta, partial) {
           if (rtrObjs.length) {
             applyRtrFromCloud(rtrObjs);
             renderRtrSheetNote();
@@ -14177,6 +14441,9 @@
                 (b.dataAsOf ? " · <b>" + esc(b.dataAsOf) + "</b>" : "") +
                 " · ซิงค์ล่าสุด " +
                 esc(when) +
+                (partial
+                  ? " · <b>กำลังโหลดเดือนก่อนหน้าเพิ่มเติม…</b>"
+                  : "") +
                 "</span></div>";
           });
         }
@@ -14233,9 +14500,14 @@
             cloudMsg("sev", "กรุณาเข้าสู่ระบบ Google ด้านบน");
             return Promise.resolve();
           }
-          ["rtr", "sev"].forEach(function (t) {
-            cloudMsg(t, "กำลังโหลดข้อมูล…");
-          });
+          // Reuses the same animated loading-panel the local-file upload flow already has
+          // (see rtrStep/sevStep) instead of a plain text message with no visual feedback --
+          // on a slow connection there was previously no way to tell "still working" from
+          // "stuck".
+          rtrShow("rtrLoading");
+          sevShow("sevLoading");
+          rtrStep("กำลังตรวจสอบข้อมูลล่าสุด...");
+          sevStep("กำลังตรวจสอบข้อมูลล่าสุด...");
           scriptBatchCache = null; // fresh load -- discard any previous load's leftovers
           return scriptReadTab("meta")
             .then(function (meta) {
@@ -14305,6 +14577,9 @@
               var restRtr = rtrTabs.slice(0, -1);
               var restSev = sevTabs.slice(0, -1);
 
+              rtrStep("กำลังโหลดข้อมูลเดือนล่าสุด...");
+              sevStep("กำลังโหลดข้อมูลเดือนล่าสุด...");
+
               // Both batch requests are sent immediately, back-to-back -- .then() doesn't
               // block, so secondBatch isn't waiting on firstBatch to finish before it starts.
               var firstBatch = scriptPrefetchBatch(
@@ -14319,7 +14594,12 @@
               });
 
               return firstBatch.then(function (first) {
-                applyCloudResult(first.rtrObjs, first.sevObjs, meta);
+                // partial=true: the dashboard is about to show (only the newest month, since
+                // that's all this batch carries) while the remaining months are still loading
+                // in the background -- the cache banner below says so instead of silently
+                // going quiet, so the numbers changing again a moment later doesn't look like
+                // a glitch.
+                applyCloudResult(first.rtrObjs, first.sevObjs, meta, true);
                 return secondBatch.then(function (second) {
                   // applyCloudResult/applyRtrFromCloud REPLACE state.rtr.months wholesale
                   // (not merge), so this second call needs the full combined set, not just
@@ -14337,6 +14617,8 @@
             .catch(function (err) {
               console.error(err);
               var m = String(err.message || err);
+              rtrShow("rtrCloud");
+              sevShow("sevCloud");
               ["rtr", "sev"].forEach(function (t) {
                 cloudMsg(t, m);
               });
@@ -14409,21 +14691,43 @@
           });
         }
 
-        // Viewer sign-in: hide the Google button, reveal "sign out", and load data.
+        // Same helper shape as the other trackers' login gates (TOL Install Tracker, L2
+        // Discount Map) -- one status line under the button for both the in-progress
+        // spinner and any error, instead of a separate element for each.
+        function showLoginStatus(html, isError) {
+          var el = $("loginStatus");
+          if (!el) return;
+          el.innerHTML = html;
+          el.style.display = "block";
+          el.classList.toggle("error", !!isError);
+        }
+        function hideLoginGate() {
+          var gate = $("loginGate");
+          if (gate) gate.style.display = "none";
+        }
+        function showLoginGate() {
+          var gate = $("loginGate");
+          if (gate) gate.style.display = "flex";
+          var btn = $("gsiButton");
+          if (btn) btn.style.display = "flex";
+          var status = $("loginStatus");
+          if (status) status.style.display = "none";
+        }
+
+        // Viewer sign-in: dismiss the gate, reveal each tab's "sign out", and load data.
         function onViewerSignIn(response) {
           VIEWER_ID_TOKEN = response.credential;
+          hideLoginGate();
           ["rtr", "sev"].forEach(function (t) {
-            var g = $(t + "GsiButton");
             var r = $(t + "CloudReset");
-            if (g) g.style.display = "none";
             if (r) r.style.display = "";
           });
           loadFromCloud();
         }
 
         ["rtr", "sev"].forEach(function (t) {
-          // "Sign out": clear the ID token and go back to showing the Google button —
-          // useful if the wrong Google account got signed in.
+          // "Sign out": clear the ID token and bring the gate back -- useful if the wrong
+          // Google account got signed in.
           var r = $(t + "CloudReset");
           if (r)
             r.addEventListener("click", function () {
@@ -14431,12 +14735,11 @@
               if (window.google && google.accounts && google.accounts.id)
                 google.accounts.id.disableAutoSelect();
               ["rtr", "sev"].forEach(function (x) {
-                var g = $(x + "GsiButton");
                 var rr = $(x + "CloudReset");
-                if (g) g.style.display = "flex";
                 if (rr) rr.style.display = "none";
                 cloudMsg(x, "เข้าสู่ระบบ Google เพื่อโหลดข้อมูลล่าสุด");
               });
+              showLoginGate();
             });
         });
 
@@ -14452,32 +14755,32 @@
         } else {
           rtrShow("rtrCloud");
           sevShow("sevCloud");
+          showLoginGate();
           if (VIEWER_SCRIPT_URL.indexOf("REPLACE_WITH") === 0) {
-            ["rtr", "sev"].forEach(function (t) {
-              cloudMsg(t, "แดชบอร์ดยังไม่ได้ตั้งค่า VIEWER_SCRIPT_URL");
-            });
+            showLoginStatus("แดชบอร์ดยังไม่ได้ตั้งค่า VIEWER_SCRIPT_URL", true);
+            var btn0 = $("gsiButton");
+            if (btn0) btn0.style.display = "none";
           } else {
             // accounts.google.com/gsi/client loads async — window "load" fires after it
             // (it's marked defer, which always runs before DOMContentLoaded/load).
             window.addEventListener("load", function () {
               if (!(window.google && google.accounts && google.accounts.id)) {
-                ["rtr", "sev"].forEach(function (t) {
-                  cloudMsg(t, "โหลด Google Sign-In ไม่สำเร็จ — ลองรีเฟรชหน้านี้");
-                });
+                showLoginStatus(
+                  "โหลด Google Sign-In ไม่สำเร็จ — ลองรีเฟรชหน้านี้",
+                  true,
+                );
                 return;
               }
               google.accounts.id.initialize({
                 client_id: SYNC_DEFAULTS.clientId,
                 callback: onViewerSignIn,
               });
-              ["rtr", "sev"].forEach(function (t) {
-                var el = $(t + "GsiButton");
-                if (el)
-                  google.accounts.id.renderButton(el, {
-                    theme: "outline",
-                    size: "large",
-                  });
-              });
+              var el = $("gsiButton");
+              if (el)
+                google.accounts.id.renderButton(el, {
+                  theme: "outline",
+                  size: "large",
+                });
             });
           }
         }
