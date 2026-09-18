@@ -2366,7 +2366,7 @@
               <div class="ae-row" id="sevAeRow"></div>
             </div>
           </section>
-          <section><div class="kpi-grid" id="sevKpiGrid"></div></section>
+          <section><div id="sevKpiGrid"></div></section>
 
           <!-- Same decision-loop ordering as the RTR tab. The daily chart stays high because it is
            also a scope control (clicking a bar re-scopes every number on the page), but the
@@ -10962,7 +10962,7 @@
           } else if (day) {
             momSub = "ดูรายวันอยู่ — MOM เทียบได้เฉพาะระดับเดือน";
           }
-          var cards = [
+          var overviewCards = [
             { label: "จำนวนร้านทั้งหมด", value: fmt(stores.length), sub: "" },
             {
               label: "ร้านที่มียอดขาย (" + periodLabel + ")",
@@ -10981,6 +10981,10 @@
               sub: "",
             },
           ];
+          // Kept separate from overviewCards -- see the groups array below, which puts this
+          // (when it exists) BEFORE the overview cards, same "target performance leads,
+          // general actuals follow" ordering as RTR's own KPI groups.
+          var targetCards = [];
 
           // Run-rate cards -- only meaningful once the target's own month is selected (the
           // Target 7-eleven file is scoped to a single month) and scoped to a whole month, not a
@@ -10995,12 +10999,12 @@
           }
           if (totTarget > 0) {
             var achievePct = totGa / totTarget;
-            cards.push({
+            targetCards.push({
               label: "Target GA (" + periodLabel + ")",
               value: fmt(totTarget),
               sub: "",
             });
-            cards.push({
+            targetCards.push({
               label: "%Achieve",
               value: pctBadge(achievePct, "achieve", "lg"),
               sub: "",
@@ -11008,7 +11012,7 @@
             var pacing = sevMonthPacing(mk, stores);
             var fc = sevForecast(totGa, totTarget, pacing);
             if (fc) {
-              cards.push({
+              targetCards.push({
                 label: "คาดว่าจะจบเดือนที่",
                 value:
                   fmt(fc.landing) +
@@ -11065,7 +11069,7 @@
                 needSub =
                   "ขาดอีก " + fmt(fc.remaining) + " GA แต่ไม่เหลือวันให้ทำแล้ว";
               }
-              cards.push({
+              targetCards.push({
                 label: "ต้องได้อีก/วัน",
                 value: needTxt,
                 sub: needSub,
@@ -11073,16 +11077,38 @@
             }
           }
 
-          $("sevKpiGrid").innerHTML = cards
-            .map(function (c) {
+          // Same grouped-mini-grids layout as RTR's renderPerformance (a .sub-card-title
+          // label above every group after the first, sharing the same .kpi-grid CSS per
+          // group) -- เทียบเป้า leads when a target exists for this month, ภาพรวม follows,
+          // same "target performance first, general actuals after" ordering RTR itself
+          // uses. When there's no target yet, ภาพรวม is the only group and (matching RTR's
+          // own convention of never labeling the first group) gets no title of its own.
+          var groups = targetCards.length
+            ? [
+                { title: "เทียบเป้า", cards: targetCards },
+                { title: "ภาพรวม", cards: overviewCards },
+              ]
+            : [{ title: "ภาพรวม", cards: overviewCards }];
+          function cardHtml(c) {
+            return (
+              '<div class="kpi-card"><div class="label">' +
+              esc(c.label) +
+              '</div><div class="value">' +
+              c.value +
+              '</div><div class="sub">' +
+              esc(c.sub) +
+              "</div></div>"
+            );
+          }
+          $("sevKpiGrid").innerHTML = groups
+            .map(function (g, i) {
               return (
-                '<div class="kpi-card"><div class="label">' +
-                esc(c.label) +
-                '</div><div class="value">' +
-                c.value +
-                '</div><div class="sub">' +
-                esc(c.sub) +
-                "</div></div>"
+                (i > 0
+                  ? '<div class="sub-card-title">' + esc(g.title) + "</div>"
+                  : "") +
+                '<div class="kpi-grid">' +
+                g.cards.map(cardHtml).join("") +
+                "</div>"
               );
             })
             .join("");
