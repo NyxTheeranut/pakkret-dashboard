@@ -2366,7 +2366,14 @@
               <div class="ae-row" id="sevAeRow"></div>
             </div>
           </section>
-          <section><div id="sevKpiGrid"></div></section>
+          <section>
+            <div
+              class="hint"
+              id="sevKpiHint"
+              style="display: block; margin-bottom: 10px"
+            ></div>
+            <div id="sevKpiGrid"></div>
+          </section>
 
           <!-- Same decision-loop ordering as the RTR tab. The daily chart stays high because it is
            also a scope control (clicking a bar re-scopes every number on the page), but the
@@ -10997,6 +11004,7 @@
               if (s.hasTarget && s.targetMonthKey === mk) totTarget += s.target;
             });
           }
+          var kpiHint = "";
           if (totTarget > 0) {
             var achievePct = totGa / totTarget;
             targetCards.push({
@@ -11004,6 +11012,39 @@
               value: fmt(totTarget),
               sub: "",
             });
+            // Sits right next to Target GA (same order as RTR's own เทียบเป้า group) --
+            // totGa itself, not some narrower subset, since %Achieve above already divides
+            // totGa (EVERY currently-scoped store's GA) by totTarget (only stores that HAVE
+            // an individual target this month) -- so this is exactly the number %Achieve is
+            // actually comparing, not a store-count-matched "GA from targeted stores only"
+            // that would silently be a smaller, different figure.
+            targetCards.push({
+              label: "Actual GA (" + periodLabel + ")",
+              value: fmt(totGa),
+              sub: "",
+            });
+            // Same reasoning as RTR's own perfHint -- a store with no individual target
+            // (mostly wholesale accounts, same population RTR sees) still has its GA folded
+            // into totGa above, so it's already inside %Achieve even without a personal
+            // target of its own. Phrased without RTR's "ผ่านเป้ารวมของ CM" line -- 7-11
+            // targets are committed PER STORE (targetByMonth), not as one CM-level rollup
+            // the way RTR's KPI Set Up override works, so that specific claim wouldn't be
+            // accurate here.
+            var noTargetCount = 0,
+              noTargetGA = 0;
+            stores.forEach(function (s) {
+              if (!(s.hasTarget && s.targetMonthKey === mk)) {
+                noTargetCount++;
+                noTargetGA += sevScopedValue(s, mk, day).ga;
+              }
+            });
+            kpiHint =
+              noTargetCount > 0
+                ? noTargetCount +
+                  " ร้านไม่มีเป้าหมายเฉพาะบุคคล (ส่วนใหญ่เป็นร้านขายส่ง) — GA รวม " +
+                  fmt(noTargetGA) +
+                  " ยังนับรวมอยู่ใน %Achieve ด้านบนด้วย"
+                : "ทุกร้านมีเป้าหมายเฉพาะบุคคล";
             targetCards.push({
               label: "%Achieve",
               value: pctBadge(achievePct, "achieve", "lg"),
@@ -11076,6 +11117,7 @@
               });
             }
           }
+          $("sevKpiHint").textContent = kpiHint;
 
           // Same grouped-mini-grids layout as RTR's renderPerformance (a .sub-card-title
           // label above every group after the first, sharing the same .kpi-grid CSS per
