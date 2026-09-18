@@ -2367,11 +2367,10 @@
             </div>
           </section>
           <section>
-            <div
-              class="hint"
-              id="sevKpiHint"
-              style="display: block; margin-bottom: 10px"
-            ></div>
+            <div class="section-head">
+              <h2>Overall Performance เทียบ Target</h2>
+              <span class="hint" id="sevKpiHint"></span>
+            </div>
             <div id="sevKpiGrid"></div>
           </section>
 
@@ -11023,13 +11022,14 @@
               value: fmt(totGa),
               sub: "",
             });
-            // Same reasoning as RTR's own perfHint -- a store with no individual target
-            // (mostly wholesale accounts, same population RTR sees) still has its GA folded
-            // into totGa above, so it's already inside %Achieve even without a personal
-            // target of its own. Phrased without RTR's "ผ่านเป้ารวมของ CM" line -- 7-11
-            // targets are committed PER STORE (targetByMonth), not as one CM-level rollup
-            // the way RTR's KPI Set Up override works, so that specific claim wouldn't be
-            // accurate here.
+            // Same reasoning AND same wording as RTR's own perfHint (by request, so both
+            // tabs read consistently) -- a store with no individual target (mostly
+            // wholesale accounts, same population RTR sees) still has its GA folded into
+            // totGa above, so it's already inside %Achieve even without a personal target
+            // of its own. Note: unlike RTR, 7-11 has no separate CM-level committed target
+            // to literally attribute this to -- totTarget here is a straight sum of PER-
+            // STORE targets (targetByMonth) -- so "ผ่านเป้ารวมของ CM" is kept only for
+            // wording parity with RTR, not because 7-11 has that exact mechanism.
             var noTargetCount = 0,
               noTargetGA = 0;
             stores.forEach(function (s) {
@@ -11043,7 +11043,7 @@
                 ? noTargetCount +
                   " ร้านไม่มีเป้าหมายเฉพาะบุคคล (ส่วนใหญ่เป็นร้านขายส่ง) — GA รวม " +
                   fmt(noTargetGA) +
-                  " ยังนับรวมอยู่ใน %Achieve ด้านบนด้วย"
+                  " นับรวมอยู่ใน %Achieve ผ่านเป้ารวมของ CM แล้ว"
                 : "ทุกร้านมีเป้าหมายเฉพาะบุคคล";
             targetCards.push({
               label: "%Achieve",
