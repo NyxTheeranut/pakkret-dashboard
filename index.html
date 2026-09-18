@@ -6797,25 +6797,23 @@
             });
           var noGA = noGAAll.slice(0, 10);
 
-          // Real SIM stock (T Stock/D Stock/Cover Mth from the RTR mapping sheet), not a sales
-          // proxy -- this card used to measure packs SOLD (s.tiers summed < 5), which is a sell-
-          // through signal, not inventory. "Low stock" means a raw SIM count under threshold,
-          // not months of cover (by request -- coverMth swings a lot for a low-volume store even
-          // with plenty of SIMs on hand). Gated on hasStock so a store the mapping sheet simply
-          // doesn't carry stock data for (stock defaults to 0) doesn't get wrongly flagged as
-          // critically low -- same "no data" vs "genuinely zero" distinction as hasTarget.
-          var LOW_STOCK_THRESHOLD = 10;
-          var lowStockAll = stores
+          // Stores whose GA fell the most vs last month (like-for-like, same momCutoffDay
+          // cutoff s.momPct is already computed against everywhere else on this page) --
+          // replaces the old stock-based card by request. Deliberately a simple
+          // threshold+sort, same shape the card it replaced had -- no GA-volume gate (that
+          // combined-condition shape belongs to the two AP30D/AP1D risk cards above this
+          // one is meant to stay simpler, direct: momPct < 0, worst first).
+          var badMomAll = stores
             .filter(function (s) {
-              return s.hasStock && s.stock < LOW_STOCK_THRESHOLD;
+              return s.momPct != null && s.momPct < 0;
             })
             .sort(function (a, b) {
-              return a.stock - b.stock;
+              return a.momPct - b.momPct;
             })
             .map(function (s) {
               return { s: s };
             });
-          var lowStock = lowStockAll.slice(0, 10);
+          var badMom = badMomAll.slice(0, 10);
 
           // every <li> carries data-code so a delegated click listener (attached after innerHTML is
           // set, below) can open the same store drilldown the main table uses -- same pattern as the
@@ -6823,9 +6821,8 @@
           //
           // exportCols/exportRows are optional -- when given, the button downloads the FULL matching
           // list (not just the on-screen slice(0,10)) as a PNG, same split the 7-11 insight cards
-          // already use. Each card supplies its own column set since risk/no-GA/low-stock cards show
-          // different fields (conversion% doesn't apply to the stock card, sold-stock doesn't apply
-          // to the others), so this takes ready-built cols/rows rather than a shared row shape.
+          // already use. Each card supplies its own column set since risk/no-GA/bad-MOM cards show
+          // different fields, so this takes ready-built cols/rows rather than a shared row shape.
           var rtrExportRegistry = [];
           function cardHtml(
             tagClass,
@@ -6915,13 +6912,14 @@
               x.s.ga > 0 ? pct(x.conv) : "—",
             ];
           }
-          var LOW_STOCK_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "สต็อก"];
-          function lowStockExportRow(x) {
+          var BAD_MOM_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "GA (LMTD)", "%MOM"];
+          function badMomExportRow(x) {
             return [
               x.s.name,
               x.s.code,
               fmt(x.s.ga),
-              x.s.hasStock ? fmt(x.s.stock) : "—",
+              x.s.lmtdGa != null ? fmt(x.s.lmtdGa) : "—",
+              pct(x.s.momPct),
             ];
           }
           // The no-GA card drops AP30D (GA is 0 for every row here, so a same-period
@@ -6996,28 +6994,26 @@
             "no-ga",
           );
           html += cardHtml(
-            "tag-value",
-            "สต็อกต่ำ",
-            "ร้านที่สต็อก SIM เหลือน้อยกว่า " +
-              LOW_STOCK_THRESHOLD +
-              " ชิ้น (" +
-              lowStockAll.length +
-              " ร้าน)",
-            lowStock,
+            "tag-risk",
+            "ความเสี่ยงคุณภาพ",
+            "ร้านที่ GA ลดลงจากเดือนก่อนมากที่สุด (" + badMomAll.length + " ร้าน)",
+            badMom,
             function (x) {
               return (
                 '<span class="n">' +
                 esc(x.s.name) +
                 '</span><span class="v"><span class="col-num">GA ' +
                 fmt(x.s.ga) +
-                '</span> · <span class="col-num">สต็อก ' +
-                fmt(x.s.stock) +
+                '</span> · <span class="col-num">GA (LMTD) ' +
+                (x.s.lmtdGa != null ? fmt(x.s.lmtdGa) : "—") +
+                '</span> · <span class="col-pct">' +
+                pctColored(x.s.momPct) +
                 "</span></span>"
               );
             },
-            LOW_STOCK_EXPORT_COLS,
-            lowStockAll.map(lowStockExportRow),
-            "low-stock",
+            BAD_MOM_EXPORT_COLS,
+            badMomAll.map(badMomExportRow),
+            "bad-mom",
           );
           grid.innerHTML = html;
 
@@ -7393,6 +7389,29 @@
           return "";
         }
 
+        // Same field set as rtrExportCellText, but for CSV specifically -- fmt()/fmtBaht()
+        // are meant for on-screen/PNG/PDF reading (comma thousand-separators, a ฿ prefix),
+        // both of which make Excel treat the cell as text instead of a real number even
+        // though csvCell already quotes it correctly (a quoted "1,234" is one valid CSV
+        // field, just not a number Excel can SUM without a manual cleanup pass first).
+        // Percent columns keep their % sign -- that's the value's actual unit, not
+        // cosmetic formatting, and Excel already parses "45%" as a real 0.45 numeric value.
+        function plainNum(n) {
+          return String(Math.round(n));
+        }
+        function rtrExportCsvCellText(col, s) {
+          if (col.key === "ga") return plainNum(s.ga);
+          if (col.key === "target") return s.hasTarget ? plainNum(s.target) : "—";
+          if (col.key === "lmtdGa")
+            return s.lmtdGa == null ? "—" : plainNum(s.lmtdGa);
+          if (col.key === "ap1dSubs") return plainNum(s.ap1d);
+          if (col.key === "ap30dSubs") return plainNum(s.ap30d);
+          if (col.key === "m1") return plainNum(s.m1);
+          if (col.key === "arpu")
+            return s.ga > 0 ? plainNum(s.m1 / s.ga) : "—";
+          return rtrExportCellText(col, s);
+        }
+
         function rtrExportPng(stores) {
           var cols = RTR_EXPORT_COLS;
           var canvas = document.createElement("canvas");
@@ -7528,7 +7547,7 @@
             }),
             stores.map(function (s) {
               return cols.map(function (c) {
-                return rtrExportCellText(c, s);
+                return rtrExportCsvCellText(c, s);
               });
             }),
           );
