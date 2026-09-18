@@ -6802,10 +6802,13 @@
           // replaces the old stock-based card by request. Deliberately a simple
           // threshold+sort, same shape the card it replaced had -- no GA-volume gate (that
           // combined-condition shape belongs to the two AP30D/AP1D risk cards above this
-          // one is meant to stay simpler, direct: momPct < 0, worst first).
+          // one is meant to stay simpler, direct: momPct < 0, worst first). Gated on
+          // ga > 0 -- a store that dropped ALL THE WAY to zero already belongs to the
+          // "ยังไม่มียอดขายเลย" card above, so this one is specifically "still selling,
+          // but less than last month," not a second copy of that same list.
           var badMomAll = stores
             .filter(function (s) {
-              return s.momPct != null && s.momPct < 0;
+              return s.ga > 0 && s.momPct != null && s.momPct < 0;
             })
             .sort(function (a, b) {
               return a.momPct - b.momPct;
