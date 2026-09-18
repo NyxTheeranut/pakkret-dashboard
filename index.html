@@ -2291,6 +2291,61 @@
         </div>
       </div>
 
+      <div class="modal-overlay" id="sevSummaryOverlay" style="display: none">
+        <div class="modal-box">
+          <div class="modal-head">
+            <b>สรุป 1 หน้า (7-11)</b
+            ><button class="dd-close-btn" id="sevSummaryClose" aria-label="ปิด">
+              &times;
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="modal-hint" id="sevSummaryScopeHint"></div>
+
+            <label class="modal-label">จำนวนร้านที่ต้องดูแลด่วน</label>
+            <div class="modal-radio-row">
+              <label
+                ><input type="radio" name="sevSummaryRisk" value="10" checked />
+                10 ร้าน</label
+              >
+              <label
+                ><input type="radio" name="sevSummaryRisk" value="20" /> 20
+                ร้าน</label
+              >
+              <label
+                ><input type="radio" name="sevSummaryRisk" value="0" />
+                ไม่ต้องใส่</label
+              >
+            </div>
+
+            <label class="modal-label">รูปแบบ</label>
+            <div class="modal-radio-row">
+              <label
+                ><input
+                  type="radio"
+                  name="sevSummaryFormat"
+                  value="png"
+                  checked
+                />
+                รูปภาพ (PNG) — ส่งไลน์ได้เลย</label
+              >
+              <label
+                ><input type="radio" name="sevSummaryFormat" value="pdf" /> PDF
+                / สั่งพิมพ์</label
+              >
+            </div>
+
+            <button
+              class="file-btn"
+              id="sevSummaryGo"
+              style="width: 100%; margin-top: 14px"
+            >
+              สร้างสรุป
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- ============ 7-11 PANEL ============ -->
       <div id="panelSev" style="display: none">
         <div class="empty-panel" id="sevCloud" style="display: none">
@@ -2370,6 +2425,13 @@
             <div class="section-head">
               <h2>Overall Performance เทียบ Target</h2>
               <span class="hint" id="sevKpiHint"></span>
+              <button
+                class="file-btn ghost-light"
+                id="sevSummaryBtn"
+                style="margin-left: auto; align-self: center"
+              >
+                📄 สรุป 1 หน้า
+              </button>
             </div>
             <div id="sevKpiGrid"></div>
           </section>
@@ -8033,6 +8095,38 @@
           $("rtrSummaryOverlay").style.display = "none";
         });
 
+        $("sevSummaryBtn").addEventListener("click", function () {
+          $("sevSummaryScopeHint").textContent =
+            "สรุปตามตัวกรองที่เลือกอยู่ตอนนี้: " + sevExportScopeLabel();
+          $("sevSummaryOverlay").style.display = "flex";
+        });
+        $("sevSummaryClose").addEventListener("click", function () {
+          $("sevSummaryOverlay").style.display = "none";
+        });
+        $("sevSummaryOverlay").addEventListener("click", function (e) {
+          if (e.target.id === "sevSummaryOverlay")
+            $("sevSummaryOverlay").style.display = "none";
+        });
+        $("sevSummaryGo").addEventListener("click", function () {
+          var riskLimit =
+            parseInt(
+              document.querySelector('input[name="sevSummaryRisk"]:checked')
+                .value,
+              10,
+            ) || 0;
+          var d = sevSummaryData(riskLimit);
+          if (!d.cmRows.length) {
+            alert("ไม่มีข้อมูลให้สรุปตามตัวกรองปัจจุบัน");
+            return;
+          }
+          var format = document.querySelector(
+            'input[name="sevSummaryFormat"]:checked',
+          ).value;
+          if (format === "png") sevSummaryPng(d);
+          else sevSummaryPdf(d);
+          $("sevSummaryOverlay").style.display = "none";
+        });
+
         function openRtrDrilldown(code) {
           var s = rtrCurrentMonth().stores.find(function (x) {
             return String(x.code) === String(code);
@@ -11007,9 +11101,9 @@
           if (totTarget > 0) {
             var achievePct = totGa / totTarget;
             targetCards.push({
-              label: "Target GA (" + periodLabel + ")",
+              label: "Target GA",
               value: fmt(totTarget),
-              sub: "",
+              sub: "เป้ารวมของ CM ที่ตั้งไว้เดือนนี้",
             });
             // Sits right next to Target GA (same order as RTR's own เทียบเป้า group) --
             // totGa itself, not some narrower subset, since %Achieve above already divides
@@ -11018,7 +11112,7 @@
             // actually comparing, not a store-count-matched "GA from targeted stores only"
             // that would silently be a smaller, different figure.
             targetCards.push({
-              label: "Actual GA (" + periodLabel + ")",
+              label: "Actual GA (มีเป้า)",
               value: fmt(totGa),
               sub: "",
             });
@@ -11048,9 +11142,45 @@
             targetCards.push({
               label: "%Achieve",
               value: pctBadge(achievePct, "achieve", "lg"),
-              sub: "",
+              sub: "ยอดที่ทำได้ ÷ เป้า (เฉพาะร้านที่มีเป้า)",
             });
+            // Same pacing badge as RTR's own จังหวะเป้าหมาย card -- reuses the exact pacing
+            // object already computed below for the forecast card, just read a step earlier
+            // so both cards can use it.
             var pacing = sevMonthPacing(mk, stores);
+            var paceTxt = '<span class="pct-badge pct-badge-muted">—</span>',
+              paceSub = "";
+            if (pacing) {
+              var paceDelta = achievePct - pacing.expectedPct;
+              var paceBasis =
+                pacing.method === "curve"
+                  ? "เทียบรูปแบบรายวันจริงของเดือนก่อน"
+                  : "เทียบแบบเฉลี่ยเท่ากันทุกวัน เพราะไม่มีเดือนก่อนให้อ้างอิง";
+              paceTxt =
+                pctColored(paceDelta) +
+                ' <span style="font-size:13px;color:var(--muted);">' +
+                (paceDelta >= 0 ? "เร็วกว่าแผน" : "ช้ากว่าแผน") +
+                "</span>";
+              paceSub =
+                "ผ่านมา " +
+                pacing.daysElapsed +
+                "/" +
+                pacing.daysInMonth +
+                " วัน — ถึงตอนนี้ควรได้ " +
+                pct(pacing.expectedPct) +
+                " ของเป้า แต่ได้จริง " +
+                pct(achievePct) +
+                " (" +
+                paceBasis +
+                ")";
+            } else {
+              paceSub = "ไม่มีข้อมูลรายวันให้ประเมินจังหวะ";
+            }
+            targetCards.push({
+              label: "จังหวะเป้าหมาย",
+              value: paceTxt,
+              sub: paceSub,
+            });
             var fc = sevForecast(totGa, totTarget, pacing);
             if (fc) {
               targetCards.push({
@@ -11154,6 +11284,393 @@
               );
             })
             .join("");
+        }
+
+        // Mirrors rtrSummaryData exactly, using SEV's own equivalents (sevCurrentStores,
+        // sevRowData, sevMonthPacing/sevForecast, the CM rollup renderSevCmLeaderboard
+        // builds inline) since RTR/SEV never share this kind of per-tab logic elsewhere in
+        // this file either -- keeping the two summaries independent, easy-to-follow copies
+        // instead of one shared function juggling both tabs' slightly different data shapes.
+        function sevSummaryData(riskLimit) {
+          var stores = sevCurrentStores();
+          var mk = state.sev.currentMonthKey,
+            day = state.sev.selectedDay;
+          var totGa = 0,
+            totTarget = 0;
+          stores.forEach(function (s) {
+            totGa += sevScopedValue(s, mk, day).ga;
+          });
+          if (mk && !day) {
+            stores.forEach(function (s) {
+              if (s.hasTarget && s.targetMonthKey === mk) totTarget += s.target;
+            });
+          }
+          var achievePct = totTarget > 0 ? totGa / totTarget : null;
+          var momPct = null;
+          if (mk && !day) {
+            var prevTot = 0,
+              hasPrev = false;
+            stores.forEach(function (s) {
+              var p = sevPrevMonthGA(s);
+              if (p != null) {
+                prevTot += p;
+                hasPrev = true;
+              }
+            });
+            if (hasPrev && prevTot > 0) momPct = (totGa - prevTot) / prevTot;
+          }
+          var pacing = mk && !day ? sevMonthPacing(mk, stores) : null;
+          var fc = sevForecast(totGa, totTarget, pacing);
+
+          var headline = [
+            { label: "GA (ทำได้)", value: fmt(totGa) },
+            { label: "Target", value: fmt(totTarget) },
+            {
+              label: "%Achieve",
+              value: achievePct != null ? pct(achievePct) : "—",
+            },
+            {
+              label: "MOM",
+              value:
+                momPct != null ? (momPct > 0 ? "+" : "") + pct(momPct) : "—",
+            },
+          ];
+          if (pacing && achievePct != null) {
+            var delta = achievePct - pacing.expectedPct;
+            headline.push({
+              label:
+                "จังหวะ (ผ่าน " +
+                pacing.daysElapsed +
+                "/" +
+                pacing.daysInMonth +
+                " วัน)",
+              value:
+                (delta >= 0 ? "+" : "") +
+                pct(delta) +
+                " " +
+                (delta >= 0 ? "เร็วกว่าแผน" : "ช้ากว่าแผน"),
+            });
+          }
+          if (fc) {
+            headline.push({
+              label: "คาดจบเดือน",
+              value:
+                fmt(fc.landing) +
+                " (" +
+                (fc.surplus >= 0 ? "+" : "") +
+                fmt(fc.surplus) +
+                " เทียบเป้า)",
+            });
+            headline.push({
+              label: "ต้องได้อีกวันละ",
+              value:
+                fc.remaining <= 0
+                  ? "ถึงเป้าแล้ว"
+                  : fc.needPerDay != null
+                    ? fmt(fc.needPerDay) +
+                      " (เหลือ " +
+                      pacing.daysLeft +
+                      " วัน)"
+                    : "หมดเดือนแล้ว",
+            });
+          }
+
+          // CM rows: same rollup renderSevCmLeaderboard builds, plus a per-row forecast for
+          // the "worst projected gap first" sort RTR's own summary uses.
+          var targetActive =
+            mk &&
+            !day &&
+            mk === state.sev.cmTargetMonthKey &&
+            Object.keys(state.sev.cmTargets).length > 0;
+          var byCm = {};
+          stores.forEach(function (s) {
+            var v = sevScopedValue(s, mk, day);
+            var row =
+              byCm[s.cm] ||
+              (byCm[s.cm] = { cm: s.cm, storeCount: 0, ga: 0, prevGA: 0, hasPrevGA: false });
+            row.storeCount++;
+            row.ga += v.ga;
+            if (mk && !day) {
+              var prev = sevPrevMonthGA(s);
+              if (prev != null) {
+                row.prevGA += prev;
+                row.hasPrevGA = true;
+              }
+            }
+          });
+          var cmRows = Object.keys(byCm)
+            .map(function (cm) {
+              var r = byCm[cm];
+              r.momPct =
+                mk && !day && r.hasPrevGA && r.prevGA > 0
+                  ? (r.ga - r.prevGA) / r.prevGA
+                  : null;
+              r.target = targetActive ? state.sev.cmTargets[cm] || null : null;
+              r.achievePct =
+                r.target > 0 ? r.ga / r.target : null;
+              var f = sevForecast(r.ga, r.target || 0, pacing);
+              return [
+                cm,
+                fmt(r.storeCount),
+                fmt(r.ga),
+                r.target != null ? fmt(r.target) : "—",
+                r.achievePct != null ? pct(r.achievePct) : "—",
+                f ? (f.surplus >= 0 ? "+" : "") + fmt(f.surplus) : "—",
+                f
+                  ? f.remaining <= 0
+                    ? "ถึงเป้าแล้ว"
+                    : f.needPerDay != null
+                      ? fmt(f.needPerDay)
+                      : "—"
+                  : "—",
+                r.momPct != null
+                  ? (r.momPct > 0 ? "+" : "") + pct(r.momPct)
+                  : "—",
+                f ? f.surplus : Number.MAX_SAFE_INTEGER,
+              ];
+            })
+            .sort(function (a, b) {
+              return a[8] - b[8];
+            })
+            .map(function (r) {
+              return r.slice(0, 8);
+            });
+
+          // Stores needing attention: has an individual target, below it, and shrinking --
+          // same "critical" definition RTR's own summary risk table uses.
+          var riskStores = [];
+          if (riskLimit > 0) {
+            riskStores = stores
+              .map(function (s) {
+                return { s: s, d: sevRowData(s) };
+              })
+              .filter(function (x) {
+                return (
+                  x.d.target != null &&
+                  x.d.achievePct != null &&
+                  x.d.achievePct < 1 &&
+                  x.d.momPct != null &&
+                  x.d.momPct < 0
+                );
+              })
+              .sort(function (a, b) {
+                return a.d.achievePct - b.d.achievePct;
+              })
+              .slice(0, riskLimit)
+              .map(function (x) {
+                return [
+                  x.s.name,
+                  String(x.s.code),
+                  x.s.cm || UNMAPPED_CM,
+                  fmt(x.d.ga),
+                  fmt(x.d.target),
+                  pct(x.d.achievePct),
+                  (x.d.momPct > 0 ? "+" : "") + pct(x.d.momPct),
+                ];
+              });
+          }
+
+          return {
+            title: "Pak Kret 7-11 — สรุปภาพรวม",
+            subtitle:
+              sevExportScopeLabel() +
+              " · ออกรายงาน " +
+              new Date().toLocaleDateString("th-TH"),
+            headline: headline,
+            cmCols: [
+              "CM",
+              "ร้าน",
+              "GA",
+              "Target",
+              "%Ach",
+              "ขาด/เกิน",
+              "ต้องได้/วัน",
+              "%MOM",
+            ],
+            cmRows: cmRows,
+            riskCols: [
+              "ร้านค้า",
+              "รหัส",
+              "CM",
+              "GA",
+              "Target",
+              "%Achieve",
+              "%MOM",
+            ],
+            riskRows: riskStores,
+          };
+        }
+
+        function sevSummaryPng(d) {
+          var probe = document.createElement("canvas").getContext("2d");
+          var widest = 0;
+          function measureTable(cols, rows) {
+            var padX = 12;
+            var w = cols.map(function (c) {
+              probe.font = "bold 12px Inter, sans-serif";
+              return probe.measureText(c).width;
+            });
+            rows.forEach(function (r) {
+              r.forEach(function (cell, i) {
+                probe.font = cellFont(i);
+                var m2 = probe.measureText(String(cell)).width;
+                if (m2 > w[i]) w[i] = m2;
+              });
+            });
+            return w.reduce(function (a, b) {
+              return a + b + padX * 2;
+            }, 0);
+          }
+          widest = Math.max(
+            measureTable(d.cmCols, d.cmRows),
+            d.riskRows.length ? measureTable(d.riskCols, d.riskRows) : 0,
+          );
+          probe.font = "13px Inter, sans-serif";
+          d.headline.forEach(function (h) {
+            widest = Math.max(
+              widest,
+              probe.measureText(h.label + "   " + h.value).width + 40,
+            );
+          });
+          probe.font = "bold 20px Space Grotesk, sans-serif";
+          widest = Math.max(widest, probe.measureText(d.title).width + 40);
+
+          var padPage = 22;
+          var W = Math.ceil(widest) + padPage * 2;
+          var headlineH = Math.ceil(d.headline.length / 2) * 30 + 16;
+          var H =
+            padPage +
+            62 +
+            headlineH +
+            34 +
+            (30 + d.cmRows.length * 26) +
+            34 +
+            (d.riskRows.length ? 30 + d.riskRows.length * 26 + 34 : 0) +
+            padPage;
+
+          var canvas = document.createElement("canvas");
+          canvas.width = W;
+          canvas.height = H;
+          var ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#EEF1F5";
+          ctx.fillRect(0, 0, W, H);
+
+          var y = padPage + 8;
+          ctx.fillStyle = "#121A2B";
+          ctx.font = "bold 20px Space Grotesk, sans-serif";
+          ctx.fillText(d.title, padPage, y + 12);
+          y += 26;
+          ctx.fillStyle = "#6B7280";
+          ctx.font = "12.5px Inter, sans-serif";
+          ctx.fillText(d.subtitle, padPage, y + 12);
+          y += 34;
+
+          var colGap = Math.floor((W - padPage * 2) / 2);
+          d.headline.forEach(function (h, i) {
+            var hx = padPage + (i % 2) * colGap;
+            var hy = y + Math.floor(i / 2) * 30;
+            ctx.fillStyle = "#6B7280";
+            ctx.font = "11.5px Inter, sans-serif";
+            ctx.fillText(h.label, hx, hy);
+            ctx.fillStyle = summaryValueColor(h.value);
+            ctx.font = "bold 15px IBM Plex Mono, monospace";
+            ctx.fillText(h.value, hx, hy + 17);
+          });
+          y += headlineH;
+
+          ctx.fillStyle = "#121A2B";
+          ctx.font = "bold 13px Inter, sans-serif";
+          ctx.fillText("เปรียบเทียบ CM (เรียงจากคาดขาดเป้ามากสุด)", padPage, y);
+          y += 12;
+          y = drawCanvasTable(ctx, padPage, y, d.cmCols, d.cmRows);
+
+          if (d.riskRows.length) {
+            y += 30;
+            ctx.fillStyle = "#121A2B";
+            ctx.font = "bold 13px Inter, sans-serif";
+            ctx.fillText(
+              "ร้านที่ต้องดูแลด่วน (ต่ำกว่าเป้า และยอดลดลง)",
+              padPage,
+              y,
+            );
+            y += 12;
+            y = drawCanvasTable(ctx, padPage, y, d.riskCols, d.riskRows);
+          }
+
+          canvas.toBlob(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = "pak-kret-sev-summary-" + Date.now() + ".png";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () {
+              URL.revokeObjectURL(url);
+            }, 2000);
+          });
+        }
+
+        function sevSummaryPdf(d) {
+          function tableHtml(cols, rows) {
+            return (
+              "<table><thead><tr>" +
+              cols
+                .map(function (c) {
+                  return "<th>" + esc(c) + "</th>";
+                })
+                .join("") +
+              "</tr></thead><tbody>" +
+              rows
+                .map(function (r) {
+                  return (
+                    "<tr>" +
+                    r
+                      .map(function (c) {
+                        return "<td>" + esc(String(c)) + "</td>";
+                      })
+                      .join("") +
+                    "</tr>"
+                  );
+                })
+                .join("") +
+              "</tbody></table>"
+            );
+          }
+          var statsHtml =
+            "<table><tbody>" +
+            d.headline
+              .map(function (h) {
+                return (
+                  '<tr><td style="border:none;color:#555;">' +
+                  esc(h.label) +
+                  '</td><td style="border:none;font-weight:700;">' +
+                  esc(h.value) +
+                  "</td></tr>"
+                );
+              })
+              .join("") +
+            "</tbody></table>";
+          var html =
+            "<h1>" +
+            esc(d.title) +
+            "</h1><p>" +
+            esc(d.subtitle) +
+            "</p>" +
+            statsHtml +
+            '<p style="margin-top:14px;"><b>เปรียบเทียบ CM (เรียงจากคาดขาดเป้ามากสุด)</b></p>' +
+            tableHtml(d.cmCols, d.cmRows) +
+            (d.riskRows.length
+              ? '<p style="margin-top:14px;"><b>ร้านที่ต้องดูแลด่วน (ต่ำกว่าเป้า และยอดลดลง)</b></p>' +
+                tableHtml(d.riskCols, d.riskRows)
+              : "");
+          $("printExportArea").innerHTML = html;
+          document.body.classList.add("printing-export");
+          window.print();
+          setTimeout(function () {
+            document.body.classList.remove("printing-export");
+            $("printExportArea").innerHTML = "";
+          }, 500);
         }
 
         function renderSevSalesPanel() {
