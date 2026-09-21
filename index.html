@@ -6799,19 +6799,26 @@
 
           // Stores whose GA fell the most vs last month (like-for-like, same momCutoffDay
           // cutoff s.momPct is already computed against everywhere else on this page) --
-          // replaces the old stock-based card by request. Deliberately a simple
-          // threshold+sort, same shape the card it replaced had -- no GA-volume gate (that
-          // combined-condition shape belongs to the two AP30D/AP1D risk cards above this
-          // one is meant to stay simpler, direct: momPct < 0, worst first). Gated on
-          // ga > 0 -- a store that dropped ALL THE WAY to zero already belongs to the
-          // "ยังไม่มียอดขายเลย" card above, so this one is specifically "still selling,
-          // but less than last month," not a second copy of that same list.
+          // replaces the old stock-based card by request. Gated on ga > 0 -- a store that
+          // dropped ALL THE WAY to zero already belongs to the "ยังไม่มียอดขายเลย" card
+          // above, so this one is specifically "still selling, but less than last month,"
+          // not a second copy of that same list.
+          //
+          // Sorted by GA UNITS lost (lmtdGa - ga), not %MOM -- a raw percentage is
+          // meaningless once volume varies this much: a store going from 4 GA to 1 reads
+          // as "-75%", the same order of magnitude as a store losing hundreds of GA, even
+          // though only the second one is worth anyone's attention. Ranking by absolute
+          // units lost means a real, high-impact decline can never get buried under a
+          // tiny store's noisy-looking percentage. This only reorders the list -- it does
+          // NOT filter anything out, so the count/export still include every declining
+          // store; small ones just fall out of the visible top-10 naturally instead of
+          // being explicitly excluded.
           var badMomAll = stores
             .filter(function (s) {
               return s.ga > 0 && s.momPct != null && s.momPct < 0;
             })
             .sort(function (a, b) {
-              return a.momPct - b.momPct;
+              return b.lmtdGa - b.ga - (a.lmtdGa - a.ga);
             })
             .map(function (s) {
               return { s: s };
