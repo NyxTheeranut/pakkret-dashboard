@@ -6922,7 +6922,7 @@
               x.s.ga > 0 ? pct(x.conv) : "—",
             ];
           }
-          var BAD_MOM_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "GA (LMTD)", "%MOM"];
+          var BAD_MOM_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "%MOM"];
           function badMomExportRow(x) {
             return [
               x.s.name,
@@ -7014,7 +7014,7 @@
                 esc(x.s.name) +
                 '</span><span class="v"><span class="col-num">GA ' +
                 fmt(x.s.ga) +
-                '</span> · <span class="col-num">GA (LMTD) ' +
+                '</span> · <span class="col-num">LMTD ' +
                 (x.s.lmtdGa != null ? fmt(x.s.lmtdGa) : "—") +
                 '</span> · <span class="col-pct">' +
                 pctColored(x.s.momPct) +
@@ -10919,7 +10919,12 @@
                 return clickableRow(
                   x.s.code,
                   '<span class="n">' + esc(x.s.name) + "</span>",
-                  '<span class="v">' + gaCol(x) + lmtdAndMom(x) + "</span>",
+                  '<span class="v">' +
+                    gaCol(x) +
+                    lmtdAndMom(x) +
+                    " · " +
+                    aeCol(x.s.ae) +
+                    "</span>",
                 );
               },
               null,
