@@ -10708,7 +10708,14 @@
           // per store per render is enough.
           var withSales = stores.map(function (s) {
             var rd = sevRowData(s);
-            return { s: s, sv: rd, momPct: rd.momPct, lmtdGa: rd.lmtdGa };
+            return {
+              s: s,
+              sv: rd,
+              momPct: rd.momPct,
+              lmtdGa: rd.lmtdGa,
+              revMomPct: rd.revMomPct,
+              prevRevAmt: rd.prevRevAmt,
+            };
           });
 
           var topGA = withSales
@@ -10720,12 +10727,20 @@
           var zeroGA = withSales.filter(function (x) {
             return x.sv.ga === 0;
           });
-          var lowGA = withSales
+          // Replaces the old "GA < 5" card by request -- ranks by REVENUE decline instead
+          // (%MTD/revMomPct worst first), a genuinely different signal from the GA-decline
+          // card below it: a store's GA and revenue don't always move together (price/pack
+          // mix can shift revenue down even while unit count holds, or vice versa). Gated
+          // on revAmt > 0 so a store that dropped to zero revenue belongs to a "no revenue"
+          // view, not here -- same reasoning as declining's own ga > 0 gate below.
+          var revDeclining = withSales
             .filter(function (x) {
-              return x.sv.ga > 0 && x.sv.ga < 5;
+              return (
+                x.sv.revAmt > 0 && x.revMomPct != null && x.revMomPct < 0
+              );
             })
             .sort(function (a, b) {
-              return a.sv.ga - b.sv.ga;
+              return a.revMomPct - b.revMomPct;
             });
           // MOM% only means something once a specific month is selected (sevPrevMonthGA returns null
           // otherwise) -- same gating convention as the table's MTD% column and RTR's quadrant chart.
@@ -10755,6 +10770,7 @@
             badgeText,
             exportItems,
             exportKey,
+            kind,
           ) {
             var body = items.length
               ? '<ul class="insight-list">' +
@@ -10768,6 +10784,10 @@
                 key: exportKey || "insight",
                 title: title,
                 items: exportItems,
+                // "ga" (default) or "rev" -- picks which export columns
+                // (sevExportCardPng/sevInsightsExportPng) this card's rows use, since รายได้
+                // ลดลง's rows are revenue-shaped, not GA-shaped like every other card here.
+                kind: kind || "ga",
               });
               exportBtn =
                 '<button class="insight-export-btn" data-export-idx="' +
@@ -10832,6 +10852,21 @@
           function aeCol(name) {
             return '<span class="col-ae">' + esc(firstName(name)) + "</span>";
           }
+          // Revenue equivalent of gaCol/lmtdAndMom, for the รายได้ลดลง card below.
+          function revCol(x) {
+            return (
+              '<span class="col-num">รายได้ ' + fmtBaht(x.sv.revAmt) + "</span>"
+            );
+          }
+          function revLmtdAndMom(x) {
+            return (
+              ' · <span class="col-num">LMTD ' +
+              (x.prevRevAmt != null ? fmtBaht(x.prevRevAmt) : "—") +
+              '</span> · <span class="col-pct">' +
+              pctColored(x.revMomPct) +
+              "</span>"
+            );
+          }
 
           // How concentrated sales are in the top 10 -- e.g. "top 10 stores are 42% of all
           // GA" reads very differently depending on whether there are 20 stores or 200.
@@ -10888,27 +10923,32 @@
             zeroGA,
             "ga-0",
           );
-          html += cardHtml(
-            "tag-migrant",
-            "GA < 5",
-            "ร้านที่ขายได้แต่น้อยกว่า 5 GA (" + lowGA.length + " ร้าน)",
-            lowGA.slice(0, 10),
-            function (x) {
-              return clickableRow(
-                x.s.code,
-                '<span class="n">' + esc(x.s.name) + "</span>",
-                '<span class="v">' +
-                  gaCol(x) +
-                  lmtdAndMom(x) +
-                  " · " +
-                  aeCol(x.s.ae) +
-                  "</span>",
-              );
-            },
-            null,
-            lowGA,
-            "ga-lt-5",
-          );
+          if (mk && !day) {
+            html += cardHtml(
+              "tag-migrant",
+              "รายได้ลดลง",
+              "ร้านที่รายได้ลดลงจากเดือนก่อนมากที่สุด (" +
+                revDeclining.length +
+                " ร้าน)",
+              revDeclining.slice(0, 10),
+              function (x) {
+                return clickableRow(
+                  x.s.code,
+                  '<span class="n">' + esc(x.s.name) + "</span>",
+                  '<span class="v">' +
+                    revCol(x) +
+                    revLmtdAndMom(x) +
+                    " · " +
+                    aeCol(x.s.ae) +
+                    "</span>",
+                );
+              },
+              null,
+              revDeclining,
+              "rev-declining",
+              "rev",
+            );
+          }
           if (mk && !day) {
             html += cardHtml(
               "tag-value",
@@ -10940,13 +10980,13 @@
               btn.addEventListener("click", function () {
                 var entry = exportRegistry[Number(btn.getAttribute("data-export-idx"))];
                 if (!entry) return;
-                sevExportCardPng(entry.title, entry.items, entry.key);
+                sevExportCardPng(entry.title, entry.items, entry.key, entry.kind);
               });
             },
           );
 
           // Snapshot of exactly what was just rendered (same slice(0,10) per card), so the export
-          // button paints the identical rows without re-deriving topGA/zeroGA/lowGA/declining --
+          // button paints the identical rows without re-deriving topGA/zeroGA/revDeclining/declining --
           // recomputing them independently in the export function would risk drifting from what's
           // actually on screen.
           state.sev._insightsSnapshot = {
@@ -10968,25 +11008,31 @@
               {
                 title: "ร้าน Top 10 ตามยอดขาย (" + periodLabel + ")",
                 items: topGA.slice(0, 10),
+                kind: "ga",
               },
               {
                 title: "ร้านที่ GA=0 ในช่วงนี้ (" + zeroGA.length + " ร้าน)",
                 items: zeroGA.slice(0, 10),
-              },
-              {
-                title:
-                  "ร้านที่ขายได้แต่น้อยกว่า 5 GA (" + lowGA.length + " ร้าน)",
-                items: lowGA.slice(0, 10),
+                kind: "ga",
               },
             ].concat(
               mk && !day
                 ? [
                     {
                       title:
+                        "ร้านที่รายได้ลดลงจากเดือนก่อนมากที่สุด (" +
+                        revDeclining.length +
+                        " ร้าน)",
+                      items: revDeclining.slice(0, 10),
+                      kind: "rev",
+                    },
+                    {
+                      title:
                         "ร้านที่ GA ลดลงจากเดือนก่อน (" +
                         declining.length +
                         " ร้าน)",
                       items: declining.slice(0, 10),
+                      kind: "ga",
                     },
                   ]
                 : [],
@@ -11997,6 +12043,7 @@
             apOver199: v.apOver199,
             momPct: momPct,
             revMomPct: revMomPct,
+            prevRevAmt: prevRevAmt, // last month's revenue up to the same cutoff day -- รายได้ (LMTD)
             lmtdGa: prevGA, // last month's GA up to the same cutoff day -- GA (LMTD)
             m1ga: v.ga > 0 ? v.revAmt / v.ga : null,
             target: targetActive ? s.target : null,
@@ -12472,16 +12519,17 @@
         // summaryValueColor painter the RTR one-page summary already uses -- one section header
         // + table per card, stacked vertically, sized by the same two-pass measure-then-draw
         // approach. Reads state.sev._insightsSnapshot (set by renderSevInsights on every render)
-        // rather than recomputing topGA/zeroGA/lowGA/declining itself, so the export can never
-        // drift from what's actually on screen.
-        function sevInsightsExportRows(items) {
-          function firstName(name) {
-            return (
-              String(name || "")
-                .trim()
-                .split(/\s+/)[0] || ""
-            );
-          }
+        // rather than recomputing topGA/zeroGA/revDeclining/declining itself, so the export can
+        // never drift from what's actually on screen.
+        function sevInsightsFirstName(name) {
+          return (
+            String(name || "")
+              .trim()
+              .split(/\s+/)[0] || ""
+          );
+        }
+        var SEV_GA_INSIGHTS_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "%MOM", "AE"];
+        function sevGaInsightsExportRows(items) {
           return items.map(function (x) {
             return [
               x.s.name,
@@ -12491,9 +12539,35 @@
               x.momPct == null
                 ? "—"
                 : (x.momPct > 0 ? "+" : "") + pct(x.momPct),
-              firstName(x.s.ae),
+              sevInsightsFirstName(x.s.ae),
             ];
           });
+        }
+        // Revenue counterpart of sevGaInsightsExportRows, for the รายได้ลดลง card -- its rows
+        // are shaped around revAmt/prevRevAmt/revMomPct instead of ga/lmtdGa/momPct.
+        var SEV_REV_INSIGHTS_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "รายได้", "LMTD", "%MOM", "AE"];
+        function sevRevInsightsExportRows(items) {
+          return items.map(function (x) {
+            return [
+              x.s.name,
+              x.s.code,
+              fmtBaht(x.sv.revAmt),
+              x.prevRevAmt != null ? fmtBaht(x.prevRevAmt) : "—",
+              x.revMomPct == null
+                ? "—"
+                : (x.revMomPct > 0 ? "+" : "") + pct(x.revMomPct),
+              sevInsightsFirstName(x.s.ae),
+            ];
+          });
+        }
+        // Picks the right cols/row-builder pair for a card's kind ("ga", the default, or
+        // "rev") -- shared by both the per-card export (sevExportCardPng) and the "export
+        // all picked cards" combined image (sevInsightsExportPng) below, so the two can
+        // never drift into using different columns for the same card.
+        function sevInsightsExportShape(kind) {
+          return kind === "rev"
+            ? { cols: SEV_REV_INSIGHTS_EXPORT_COLS, rows: sevRevInsightsExportRows }
+            : { cols: SEV_GA_INSIGHTS_EXPORT_COLS, rows: sevGaInsightsExportRows };
         }
 
         // Same painter (cellFont/drawCanvasTable/summaryValueColor) as the whole-section
@@ -12501,9 +12575,10 @@
         // export button next to each tag/title. Requested as an image instead of the CSV
         // this used to produce, so it pastes straight into chat the same way the section-level
         // export already does, just scoped to one card and not capped at 10 rows.
-        function sevExportCardPng(title, items, key) {
-          var cols = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "%MOM", "AE"];
-          var rows = sevInsightsExportRows(items);
+        function sevExportCardPng(title, items, key, kind) {
+          var shape = sevInsightsExportShape(kind);
+          var cols = shape.cols;
+          var rows = shape.rows(items);
 
           var probe = document.createElement("canvas").getContext("2d");
           var padX = 12;
@@ -12846,14 +12921,19 @@
           if (!snap || !snap.cards.length) return;
           cards = cards || snap.cards;
           if (!cards.length) return;
-          var cols = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "%MOM", "AE"];
+          // Each table keeps its OWN cols (ga-shaped or rev-shaped) instead of one shared
+          // set -- mirrors rtrInsightsExportPng's own reasoning, since a รายได้ลดลง card
+          // sitting next to a GA-shaped card means this grid genuinely isn't one column set
+          // anymore. colW (below) still takes the max across all of them so the two visual
+          // columns line up either way.
           var tables = cards.map(function (c) {
-            return { title: c.title, rows: sevInsightsExportRows(c.items) };
+            var shape = sevInsightsExportShape(c.kind);
+            return { title: c.title, cols: shape.cols, rows: shape.rows(c.items) };
           });
 
           var probe = document.createElement("canvas").getContext("2d");
           var colW = 0;
-          function measureTableWidth(rows) {
+          function measureTableWidth(cols, rows) {
             var padX = 12;
             var w = cols.map(function (c) {
               probe.font = "bold 12px Inter, sans-serif";
@@ -12871,7 +12951,7 @@
             }, 0);
           }
           tables.forEach(function (t) {
-            colW = Math.max(colW, measureTableWidth(t.rows));
+            colW = Math.max(colW, measureTableWidth(t.cols, t.rows));
             probe.font = "bold 13px Inter, sans-serif";
             colW = Math.max(colW, probe.measureText(t.title).width);
           });
@@ -12938,7 +13018,7 @@
             ctx.fillText(t.title, x, ty);
             ty += 20;
             if (t.rows.length) {
-              drawCanvasTable(ctx, x, ty, cols, t.rows);
+              drawCanvasTable(ctx, x, ty, t.cols, t.rows);
             } else {
               ctx.fillStyle = "#6B7280";
               ctx.font = "12.5px Inter, sans-serif";
