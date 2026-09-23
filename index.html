@@ -5906,7 +5906,7 @@
           if (key === "name") return row.cm;
           if (key === "stores") return row.storeCount;
           if (key === "ga") return row.ga;
-          if (key === "target") return row.target;
+          if (key === "target") return row.target == null ? -1 : row.target;
           if (key === "achieve")
             return row.achievePct == null ? -1 : row.achievePct;
           if (key === "pace") return row.paceDelta == null ? -2 : row.paceDelta;
@@ -5968,21 +5968,41 @@
           var pacing = rtrMonthPacing(m, prevMonth);
           var rows = cmNames.map(function (cm) {
             var cr = m.cmRollup[cm];
+            // Same rtrSegTargetInfo the KPI cards use, applied per CM row instead of once for
+            // the cluster total -- cr already carries the same mass/migrant/tourist/target/
+            // targetMassMigrant/targetTourist fields m.totals does. GA/Target/%Achieve (and
+            // everything the forecast derives from them) now follow the trend-chart toggles
+            // per CM. M1/ARPU stay on the FULL cr (unfiltered) -- revenue isn't tracked per
+            // segment at all, so there's no real "segment ARPU" to show; %MOM also stays on
+            // the full cr for now (a genuine like-for-like segment MOM needs per-day segment
+            // history threaded in here, not just this render-time totals object).
+            var segInfo = rtrSegTargetInfo(cr, state.rtr.segToggle);
             var arpu = cr.targetedGA > 0 ? cr.m1 / cr.targetedGA : null;
             var paceDelta =
-              pacing && cr.achievePct != null
-                ? cr.achievePct - pacing.expectedPct
+              pacing && segInfo.achievePct != null
+                ? segInfo.achievePct - pacing.expectedPct
                 : null;
             // Same projection as the headline forecast card, applied per CM -- so the leaderboard can
             // rank by who is projected to be short the most GA in absolute units. %Achieve alone hides
             // this: a 3-store CM at 60% is a much smaller problem than a 40-store CM at 92%.
-            var fc = rtrForecast(cr, pacing);
+            var fc = segInfo.supported
+              ? rtrForecast(
+                  {
+                    target: segInfo.target,
+                    targetedGA: segInfo.targetedGA,
+                    ga: segInfo.ga,
+                    targetOverridden: segInfo.targetOverridden,
+                  },
+                  pacing,
+                )
+              : null;
             return {
               cm: cm,
               storeCount: cr.storeCount,
-              ga: cr.ga,
-              target: cr.target,
-              achievePct: cr.achievePct,
+              ga: segInfo.ga,
+              target: segInfo.target,
+              achievePct: segInfo.achievePct,
+              segSupported: segInfo.supported,
               momPct: cr.momPct,
               m1: cr.m1,
               arpu: arpu,
@@ -6064,7 +6084,7 @@
                 fmt(r.ga) +
                 "</td>" +
                 '<td class="num-cell">' +
-                fmt(r.target) +
+                (r.target != null ? fmt(r.target) : "—") +
                 "</td>" +
                 '<td class="num-cell">' +
                 pctBadge(r.achievePct, "achieve") +
@@ -6678,12 +6698,12 @@
               btn.addEventListener("click", function () {
                 var key = btn.getAttribute("data-seg");
                 state.rtr.segToggle[key] = !state.rtr.segToggle[key];
-                renderRtrTrendAndSegment();
-                // Target/Actual GA/%Achieve/pacing/forecast (rtrSegTargetInfo) all read
-                // state.rtr.segToggle too now -- without this, toggling a segment updated
-                // the chart's own colors but left the KPI cards showing whatever the
-                // previous toggle state produced.
-                renderPerformance();
+                // Target/Actual GA/%Achieve/pacing/forecast, the CM leaderboard,
+                // the store table's GA column, and the "ยังไม่มียอดขายเลย" insight
+                // card all read state.rtr.segToggle now (via rtrSegTargetInfo /
+                // rtrStoreSegGA) -- re-run the whole dashboard render so every
+                // segment-aware section (not just the trend chart) updates together.
+                renderRtrDashboard();
               });
             },
           );
@@ -6873,6 +6893,12 @@
             return;
           }
 
+          // The two AP30D/AP1D conversion-risk cards below deliberately do NOT follow the
+          // Mass/Migrant/Tourist trend-chart toggles (unlike "ยังไม่มียอดขายเลย" further
+          // down, which does via rtrStoreSegGA) -- AP1D/AP30D were never tracked per segment
+          // anywhere in the source data, so narrowing their GA denominator to a segment
+          // would inflate/deflate "conversion%" into a number that isn't real, which is
+          // worse than just showing the honest whole-store figure.
           var withConv = stores.map(function (s) {
             return { s: s, conv: s.ga > 0 ? s.ap30d / s.ga : 0 };
           });
@@ -6929,9 +6955,12 @@
           // Stores with literally no GA this period -- the RTR-side equivalent of the 7-11
           // tab's "ยังไม่มียอดขายเลย" card. AP30D-descending so a store that's close to
           // converting (activity but no GA yet) surfaces before one with none at all.
+          // Segment-scoped (rtrStoreSegGA) -- a store selling only to Tourist, with Tourist
+          // unchecked, genuinely belongs on THIS list for the current view, even though its
+          // real (all-segment) GA is nonzero.
           var noGAAll = stores
             .filter(function (s) {
-              return s.ga === 0;
+              return rtrStoreSegGA(s) === 0;
             })
             .sort(function (a, b) {
               return b.ap30d - a.ap30d;
@@ -7086,7 +7115,7 @@
               '<span class="n">' +
               esc(s.name) +
               '</span><span class="v"><span class="col-num">GA ' +
-              fmt(s.ga) +
+              fmt(rtrStoreSegGA(s)) +
               '</span> · <span class="col-num">LMTD ' +
               (s.lmtdGa != null ? fmt(s.lmtdGa) : "—") +
               '</span> · <span class="col-num">AP1D ' +
@@ -7098,7 +7127,7 @@
             return [
               s.name,
               s.code,
-              fmt(s.ga),
+              fmt(rtrStoreSegGA(s)),
               s.lmtdGa != null ? fmt(s.lmtdGa) : "—",
               fmt(s.ap1d),
             ];
@@ -7225,6 +7254,23 @@
         // red-zone table, so column order lives in exactly one place. Both tables previously hand-wrote
         // their own <td> sequence and had to be edited in lockstep with RTR_TABLE_COLS -- the same drift
         // hazard already fixed on the 7-11 side.
+        // Segment-scoped GA for one store, current month only -- the table's Target/
+        // %Achieve/LMTD/%MOM/M1/ARPU/AP1D/AP30D columns all stay on the FULL store totals
+        // (see rtrTableCellHtml's own note): per-store target has no Mass/Migrant/Tourist
+        // split at all (only the CM-level committed target does, see rtrSegTargetInfo),
+        // AP1D/AP30D were never tracked per segment either -- dividing THOSE by a
+        // segment-narrowed GA would inflate/deflate a conversion% that isn't real, worse
+        // than just leaving it unfiltered. Only GA itself is genuinely safe to narrow.
+        function rtrStoreSegGA(s) {
+          var tog = state.rtr.segToggle;
+          if ((tog.mass && tog.migrant && tog.tourist) || (!tog.mass && !tog.migrant && !tog.tourist))
+            return s.ga;
+          return (
+            (tog.mass ? s.mass || 0 : 0) +
+            (tog.migrant ? s.migrant || 0 : 0) +
+            (tog.tourist ? s.tourist || 0 : 0)
+          );
+        }
         function rtrTableCellHtml(col, s) {
           var k = col.key;
           if (k === "name")
@@ -7235,7 +7281,8 @@
               esc(s.code) +
               "</div></td>"
             );
-          if (k === "ga") return '<td class="num-cell">' + fmt(s.ga) + "</td>";
+          if (k === "ga")
+            return '<td class="num-cell">' + fmt(rtrStoreSegGA(s)) + "</td>";
           if (k === "target")
             return (
               '<td class="num-cell">' +
@@ -7286,7 +7333,7 @@
         }
         function rtrSortValue(s, key) {
           if (key === "name") return s.name || "";
-          if (key === "ga") return s.ga;
+          if (key === "ga") return rtrStoreSegGA(s);
           if (key === "target") return s.target;
           if (key === "achieve")
             return s.achievePct == null ? -1 : s.achievePct;
@@ -7526,7 +7573,7 @@
         function rtrExportCellText(col, s) {
           if (col.key === "name") return s.name;
           if (col.key === "code") return s.code;
-          if (col.key === "ga") return fmt(s.ga);
+          if (col.key === "ga") return fmt(rtrStoreSegGA(s));
           if (col.key === "target") return s.hasTarget ? fmt(s.target) : "—";
           if (col.key === "achieve")
             return s.achievePct == null ? "—" : pct(s.achievePct);
@@ -7554,7 +7601,7 @@
           return String(Math.round(n));
         }
         function rtrExportCsvCellText(col, s) {
-          if (col.key === "ga") return plainNum(s.ga);
+          if (col.key === "ga") return plainNum(rtrStoreSegGA(s));
           if (col.key === "target") return s.hasTarget ? plainNum(s.target) : "—";
           if (col.key === "lmtdGa")
             return s.lmtdGa == null ? "—" : plainNum(s.lmtdGa);
