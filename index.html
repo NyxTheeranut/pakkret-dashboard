@@ -3450,11 +3450,19 @@
                 break;
               }
             }
+            // First occurrence wins for each -- mirrors the Python side's own
+            // parse_kpi_setup_targets exactly, including why (Tourist can legitimately
+            // repeat later in the row as a different granularity's own column).
             var totalGaIdx = -1;
+            var massMigrantIdx = -1;
+            var touristIdx = -1;
             for (var c = targetAnchor.idx; c < blockEnd; c++) {
-              if (sNorm[c] === "total ga") {
+              if (totalGaIdx === -1 && sNorm[c] === "total ga") {
                 totalGaIdx = c;
-                break;
+              } else if (massMigrantIdx === -1 && sNorm[c] === "mass + migrant") {
+                massMigrantIdx = c;
+              } else if (touristIdx === -1 && sNorm[c] === "tourist") {
+                touristIdx = c;
               }
             }
             if (totalGaIdx === -1) continue;
@@ -3490,7 +3498,13 @@
               var cmName = row[cmIdx] != null ? String(row[cmIdx]).trim() : "";
               if (!cmName) continue;
               var val = num(row[totalGaIdx]);
-              if (val > 0) targets.set(cmName, val);
+              if (val > 0) {
+                targets.set(cmName, {
+                  total: val,
+                  massMigrant: massMigrantIdx !== -1 ? num(row[massMigrantIdx]) : 0,
+                  tourist: touristIdx !== -1 ? num(row[touristIdx]) : 0,
+                });
+              }
             }
             if (trustworthy && targets.size > 0) results[monthAbbr] = targets;
           }
@@ -4482,6 +4496,10 @@
               cr.noTargetGA = 0;
               cr.noTargetCount = 0;
               cr.targetOverridden = false;
+              // 0, not null -- a CM with no KPI Set Up override this month simply has no
+              // segment-scoped target either, same "no data" convention as target itself.
+              cr.targetMassMigrant = 0;
+              cr.targetTourist = 0;
             });
             m.stores.forEach(function (s) {
               var cr = m.cmRollup[s.cm];
@@ -4506,7 +4524,10 @@
             Object.keys(m.cmRollup).forEach(function (cmName) {
               var cr = m.cmRollup[cmName];
               if (overrideMap && overrideMap.has(cmName)) {
-                cr.target = overrideMap.get(cmName);
+                var ov = overrideMap.get(cmName);
+                cr.target = ov.total;
+                cr.targetMassMigrant = ov.massMigrant;
+                cr.targetTourist = ov.tourist;
                 cr.targetedGA = cr.ga;
                 cr.targetOverridden = true;
               }
@@ -4517,6 +4538,14 @@
             });
             m.totals.target = Object.keys(m.cmRollup).reduce(function (a, cmName) {
               return a + (m.cmRollup[cmName].target || 0);
+            }, 0);
+            // Same reduce, one field over each -- lets the cluster-wide (no CM filter) view
+            // resolve a segment-scoped target too, not just a single CM's own cmRollup entry.
+            m.totals.targetMassMigrant = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+              return a + (m.cmRollup[cmName].targetMassMigrant || 0);
+            }, 0);
+            m.totals.targetTourist = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+              return a + (m.cmRollup[cmName].targetTourist || 0);
             }, 0);
             m.totals.targetedGA = Object.keys(m.cmRollup).reduce(function (
               a,
@@ -5457,6 +5486,68 @@
         // CM-wide committed figure (totals.targetOverridden, e.g. from KPI Set Up) rather than a sum
         // of individual store targets -- there targetedGA could be a small fraction of the CM's real
         // GA (most stores never got an individual target), so the full GA is the fair comparison.
+        // Resolves what Target/Actual/achievePct should read for the CURRENT Mass/Migrant/
+        // Tourist trend-chart toggle state, given a totals-shaped object (m.totals, a single
+        // cr from m.cmRollup, or district/mallType-filtered sumStoresToTotals output -- all
+        // three carry mass/migrant/tourist and target/targetMassMigrant/targetTourist, or
+        // degrade to 0/undefined gracefully if they don't).
+        //
+        // The KPI Set Up sheet only ever splits a CM's target 2 ways -- "Mass + Migrant"
+        // bundled as one committed number, "Tourist" separate -- never 3 independently. So
+        // only three toggle states resolve to a real number: everything checked (or nothing
+        // checked, treated the same as "unrestricted"), Tourist alone, or Mass and/or
+        // Migrant with Tourist off. Any other combination (e.g. Migrant+Tourist checked,
+        // Mass off) has no committed target behind it at all -- supported:false, not a guess.
+        function rtrSegTargetInfo(totals, segToggle) {
+          var mass = !!segToggle.mass,
+            migrant = !!segToggle.migrant,
+            tourist = !!segToggle.tourist;
+          var unrestricted = (mass && migrant && tourist) || (!mass && !migrant && !tourist);
+          if (unrestricted) {
+            return {
+              ga: totals.ga,
+              target: totals.target,
+              targetedGA: totals.targetedGA,
+              achievePct: totals.achievePct,
+              targetOverridden: totals.targetOverridden,
+              supported: true,
+              segLabel: null,
+            };
+          }
+          var segGA =
+            (mass ? totals.mass || 0 : 0) +
+            (migrant ? totals.migrant || 0 : 0) +
+            (tourist ? totals.tourist || 0 : 0);
+          var segTarget = null,
+            segLabel = null;
+          if (tourist && !mass && !migrant) {
+            segTarget = totals.targetTourist || 0;
+            segLabel = "Tourist";
+          } else if ((mass || migrant) && !tourist) {
+            segTarget = totals.targetMassMigrant || 0;
+            segLabel = "Mass + Migrant";
+          }
+          if (segTarget == null) {
+            return {
+              ga: segGA,
+              target: null,
+              targetedGA: null,
+              achievePct: null,
+              targetOverridden: false,
+              supported: false,
+              segLabel: null,
+            };
+          }
+          return {
+            ga: segGA,
+            target: segTarget,
+            targetedGA: segGA,
+            achievePct: segTarget > 0 ? segGA / segTarget : null,
+            targetOverridden: true,
+            supported: true,
+            segLabel: segLabel,
+          };
+        }
         function rtrForecast(totals, pacing) {
           if (!pacing || !(totals.target > 0) || !(pacing.expectedPct > 0))
             return null;
@@ -5497,6 +5588,13 @@
         function renderPerformance() {
           var scope = rtrCurrentScope();
           var t = scope.totals;
+          // Resolves Target/Actual GA/%Achieve for whatever the Mass/Migrant/Tourist
+          // trend-chart toggles currently are -- see rtrSegTargetInfo's own comment for
+          // which combinations actually have a real committed number behind them. Every
+          // card below that depends on target (Target GA, Actual GA, %Achieve, จังหวะ,
+          // forecast, need/day) reads segInfo instead of t directly from here on, so they
+          // all move together instead of Target changing while %Achieve/forecast don't.
+          var segInfo = rtrSegTargetInfo(t, state.rtr.segToggle);
           var arpu = t.targetedGA > 0 ? t.m1 / t.targetedGA : null;
           var momTxt =
             t.momPct == null
@@ -5511,8 +5609,12 @@
           // sentence -- it's the thing being scanned for, so it shouldn't be buried after words.
           var paceTxt = '<span class="pct-badge pct-badge-muted">—</span>',
             paceSub = "";
-          if (pacing && t.achievePct != null) {
-            var delta = t.achievePct - pacing.expectedPct;
+          if (!segInfo.supported) {
+            paceSub =
+              "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้ (เลือกได้เฉพาะ Tourist อย่างเดียว, " +
+              "Mass และ/หรือ Migrant โดยไม่มี Tourist, หรือครบทั้ง 3)";
+          } else if (pacing && segInfo.achievePct != null) {
+            var delta = segInfo.achievePct - pacing.expectedPct;
             var basis =
               pacing.method === "curve"
                 ? "เทียบรูปแบบรายวันจริงของเดือนก่อน"
@@ -5530,7 +5632,7 @@
               " วัน — ถึงตอนนี้ควรได้ " +
               pct(pacing.expectedPct) +
               " ของเป้า แต่ได้จริง " +
-              pct(t.achievePct) +
+              pct(segInfo.achievePct) +
               " (" +
               basis +
               ")";
@@ -5538,9 +5640,24 @@
             paceSub = "ไม่มีข้อมูลรายวันให้ประเมินจังหวะ";
           }
 
-          var fc = rtrForecast(t, pacing);
+          // Synthetic totals-shaped object so rtrForecast (which only ever reads
+          // target/targetedGA/ga/targetOverridden) transparently follows the same segment
+          // scope as everything else here, with no forecast-specific logic duplicated.
+          var fc = segInfo.supported
+            ? rtrForecast(
+                {
+                  target: segInfo.target,
+                  targetedGA: segInfo.targetedGA,
+                  ga: segInfo.ga,
+                  targetOverridden: segInfo.targetOverridden,
+                },
+                pacing,
+              )
+            : null;
           var landingTxt = "—",
-            landingSub = "ต้องมี Target และข้อมูลรายวันจึงจะคาดการณ์ได้";
+            landingSub = segInfo.supported
+              ? "ต้องมี Target และข้อมูลรายวันจึงจะคาดการณ์ได้"
+              : "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้";
           var needTxt = "—",
             needSub = "";
           if (fc) {
@@ -5551,7 +5668,7 @@
               ")</span>";
             landingSub =
               "ถ้ายังทำได้เท่าจังหวะนี้ · เทียบเป้า " +
-              fmt(t.target) +
+              fmt(segInfo.target) +
               " → " +
               (fc.surplus < 0 ? "ขาด " : "เกิน ") +
               fmt(Math.abs(fc.surplus)) +
@@ -5561,9 +5678,9 @@
                 '<span style="color:var(--accent);">ถึงเป้าแล้ว ✓</span>';
               needSub =
                 "ทำได้ " +
-                fmt(t.targetedGA) +
+                fmt(segInfo.targetedGA) +
                 " จากเป้า " +
-                fmt(t.target) +
+                fmt(segInfo.target) +
                 " — ที่เหลือคือส่วนเกิน";
             } else if (fc.needPerDay != null) {
               // The card label already says "ต่อวัน", so the value must not repeat "/วัน".
@@ -5628,10 +5745,20 @@
                   // target is zero", not "no target set", and the other 4 cards in this same
                   // group already show "—" for exactly this state, so this matches them instead
                   // of standing out as the one card that looks like real data when it isn't.
-                  value: t.target > 0 ? fmt(t.target) : "—",
-                  sub:
-                    t.target > 0
-                      ? "เป้ารวมของ CM ที่ตั้งไว้เดือนนี้"
+                  // When a Mass/Migrant/Tourist toggle narrows this to a real segment target
+                  // (segInfo.segLabel set), the sub says so -- otherwise a Target that suddenly
+                  // reads much smaller than usual looks like a bug, not the toggle working.
+                  value:
+                    segInfo.supported && segInfo.target > 0
+                      ? fmt(segInfo.target)
+                      : "—",
+                  sub: !segInfo.supported
+                    ? "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้"
+                    : segInfo.target > 0
+                      ? "เป้ารวมของ CM ที่ตั้งไว้เดือนนี้" +
+                        (segInfo.segLabel
+                          ? " (เฉพาะ " + segInfo.segLabel + ")"
+                          : "")
                       : "ยังไม่ได้ตั้งเป้าเดือนนี้",
                 },
                 {
@@ -5640,13 +5767,25 @@
                   // with no target published, there's nothing in that scope to sum, so this
                   // shows "—" (not applicable) rather than "0" (which reads as "no sales",
                   // when the cluster's real GA is shown elsewhere on this same page).
-                  value: t.target > 0 ? fmt(t.targetedGA) : "—",
-                  sub: t.target > 0 ? "" : "ยังไม่มีเป้าให้เทียบเดือนนี้",
+                  value:
+                    segInfo.supported && segInfo.target > 0
+                      ? fmt(segInfo.targetedGA)
+                      : "—",
+                  sub: !segInfo.supported
+                    ? "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้"
+                    : segInfo.target > 0
+                      ? ""
+                      : "ยังไม่มีเป้าให้เทียบเดือนนี้",
                 },
                 {
                   label: "%Achieve",
-                  value: pctBadge(t.achievePct, "achieve", "lg"),
-                  sub: "ยอดที่ทำได้ ÷ เป้า (เฉพาะร้านที่มีเป้า)",
+                  value: pctBadge(segInfo.achievePct, "achieve", "lg"),
+                  sub: !segInfo.supported
+                    ? "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้"
+                    : "ยอดที่ทำได้ ÷ เป้า" +
+                      (segInfo.segLabel
+                        ? " (เฉพาะ " + segInfo.segLabel + ")"
+                        : " (เฉพาะร้านที่มีเป้า)"),
                 },
                 { label: "จังหวะเป้าหมาย", value: paceTxt, sub: paceSub },
                 {
@@ -6540,6 +6679,11 @@
                 var key = btn.getAttribute("data-seg");
                 state.rtr.segToggle[key] = !state.rtr.segToggle[key];
                 renderRtrTrendAndSegment();
+                // Target/Actual GA/%Achieve/pacing/forecast (rtrSegTargetInfo) all read
+                // state.rtr.segToggle too now -- without this, toggling a segment updated
+                // the chart's own colors but left the KPI cards showing whatever the
+                // previous toggle state produced.
+                renderPerformance();
               });
             },
           );
@@ -14818,9 +14962,17 @@
               if (!s) return;
               s.simTypes[r[1]] = Number(r[2]) || 0;
             });
+            // {total, massMigrant, tourist} per CM, not a bare number -- massMigrant/
+            // tourist power the Mass/Migrant/Tourist trend-chart toggles' effect on Target
+            // (see rtrSegTargetInfo) -- the KPI Set Up sheet only ever splits target 2 ways
+            // (Mass+Migrant bundled, Tourist separate), never 3 independently.
             var cmTargetMap = new Map();
             parts[4].rows.forEach(function (r) {
-              cmTargetMap.set(r[0], Number(r[1]) || 0);
+              cmTargetMap.set(r[0], {
+                total: Number(r[1]) || 0,
+                massMigrant: Number(r[2]) || 0,
+                tourist: Number(r[3]) || 0,
+              });
             });
 
             return {
