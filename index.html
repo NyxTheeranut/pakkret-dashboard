@@ -10852,10 +10852,10 @@
           function aeCol(name) {
             return '<span class="col-ae">' + esc(firstName(name)) + "</span>";
           }
-          // Revenue equivalent of gaCol/lmtdAndMom, for the รายได้ลดลง card below.
+          // Revenue equivalent of gaCol/lmtdAndMom, for the M1 ลดลง card below.
           function revCol(x) {
             return (
-              '<span class="col-num">รายได้ ' + fmtBaht(x.sv.revAmt) + "</span>"
+              '<span class="col-num">M1 ' + fmtBaht(x.sv.revAmt) + "</span>"
             );
           }
           function revLmtdAndMom(x) {
@@ -10926,8 +10926,8 @@
           if (mk && !day) {
             html += cardHtml(
               "tag-migrant",
-              "รายได้ลดลง",
-              "ร้านที่รายได้ลดลงจากเดือนก่อนมากที่สุด (" +
+              "M1 ลดลง",
+              "ร้านที่ M1 ลดลงจากเดือนก่อนมากที่สุด (" +
                 revDeclining.length +
                 " ร้าน)",
               revDeclining.slice(0, 10),
@@ -11020,7 +11020,7 @@
                 ? [
                     {
                       title:
-                        "ร้านที่รายได้ลดลงจากเดือนก่อนมากที่สุด (" +
+                        "ร้านที่ M1 ลดลงจากเดือนก่อนมากที่สุด (" +
                         revDeclining.length +
                         " ร้าน)",
                       items: revDeclining.slice(0, 10),
@@ -12543,9 +12543,9 @@
             ];
           });
         }
-        // Revenue counterpart of sevGaInsightsExportRows, for the รายได้ลดลง card -- its rows
+        // Revenue counterpart of sevGaInsightsExportRows, for the M1 ลดลง card -- its rows
         // are shaped around revAmt/prevRevAmt/revMomPct instead of ga/lmtdGa/momPct.
-        var SEV_REV_INSIGHTS_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "รายได้", "LMTD", "%MOM", "AE"];
+        var SEV_REV_INSIGHTS_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "M1", "LMTD", "%MOM", "AE"];
         function sevRevInsightsExportRows(items) {
           return items.map(function (x) {
             return [
@@ -12922,7 +12922,7 @@
           cards = cards || snap.cards;
           if (!cards.length) return;
           // Each table keeps its OWN cols (ga-shaped or rev-shaped) instead of one shared
-          // set -- mirrors rtrInsightsExportPng's own reasoning, since a รายได้ลดลง card
+          // set -- mirrors rtrInsightsExportPng's own reasoning, since a M1 ลดลง card
           // sitting next to a GA-shaped card means this grid genuinely isn't one column set
           // anymore. colW (below) still takes the max across all of them so the two visual
           // columns line up either way.
