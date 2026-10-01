@@ -2762,6 +2762,7 @@
             currentCM: null,
             currentDistrict: null,
             currentMallType: null,
+            currentCOM: null,
             search: "",
             sortKey: "m1",
             sortDir: "desc",
@@ -4042,6 +4043,7 @@
                 state.rtr.months = months;
                 state.rtr.currentMonthIdx = months.length - 1; // default to most recent month, not "most rows"
                 state.rtr.currentCM = null;
+                state.rtr.currentCOM = null;
                 state.rtr.search = "";
                 state.rtr.visibleCount = 20;
                 state.rtr.allSheetCount = allNames.length;
@@ -4943,6 +4945,8 @@
           return m.stores.filter(function (s) {
             if (state.rtr.currentCM && s.cm !== state.rtr.currentCM)
               return false;
+            if (state.rtr.currentCOM && s.com !== state.rtr.currentCOM)
+              return false;
             if (
               state.rtr.currentDistrict &&
               districtLabel(s) !== state.rtr.currentDistrict
@@ -5045,10 +5049,14 @@
           return t;
         }
         function rtrCurrentScope() {
-          // returns {totals, daily, storeCount, label} for the current CM/district/mallType filter combo
+          // returns {totals, daily, storeCount, label} for the current CM/COM/district/mallType filter combo
           var m = rtrCurrentMonth();
+          // currentCOM has no precomputed rollup (unlike CM's own cmRollup), so it always forces
+          // the recompute-from-filtered-stores path below, same as district/mallType already do.
           var filtersBeyondCM =
-            state.rtr.currentDistrict || state.rtr.currentMallType;
+            state.rtr.currentDistrict ||
+            state.rtr.currentMallType ||
+            state.rtr.currentCOM;
           if (!state.rtr.currentCM && !filtersBeyondCM)
             return {
               totals: m.totals,
@@ -5058,6 +5066,7 @@
             };
 
           var labelParts = [state.rtr.currentCM || "ภาพรวมทุก CM"];
+          if (state.rtr.currentCOM) labelParts.push(state.rtr.currentCOM);
           if (state.rtr.currentDistrict)
             labelParts.push(state.rtr.currentDistrict);
           if (state.rtr.currentMallType)
@@ -5093,6 +5102,8 @@
           var prevStores = prevMonth
             ? prevMonth.stores.filter(function (s) {
                 if (state.rtr.currentCM && s.cm !== state.rtr.currentCM)
+                  return false;
+                if (state.rtr.currentCOM && s.com !== state.rtr.currentCOM)
                   return false;
                 if (
                   state.rtr.currentDistrict &&
@@ -5168,6 +5179,7 @@
             " ร้าน</span>";
           ovBtn.addEventListener("click", function () {
             state.rtr.currentCM = null;
+            state.rtr.currentCOM = null;
             state.rtr.currentDistrict = null;
             state.rtr.currentMallType = null;
             state.rtr.visibleCount = 20;
@@ -5188,6 +5200,7 @@
               " ร้าน</span>";
             btn.addEventListener("click", function () {
               state.rtr.currentCM = cm;
+              state.rtr.currentCOM = null;
               state.rtr.currentDistrict = null;
               state.rtr.currentMallType = null;
               state.rtr.visibleCount = 20;
@@ -5204,7 +5217,11 @@
           if (!wrap) return;
           var m = rtrCurrentMonth();
           var scopedStores = m.stores.filter(function (s) {
-            return !state.rtr.currentCM || s.cm === state.rtr.currentCM;
+            if (state.rtr.currentCM && s.cm !== state.rtr.currentCM)
+              return false;
+            if (state.rtr.currentCOM && s.com !== state.rtr.currentCOM)
+              return false;
+            return true;
           });
           var distSet = {};
           scopedStores.forEach(function (s) {
@@ -5255,6 +5272,8 @@
           var m = rtrCurrentMonth();
           var scopedStores = m.stores.filter(function (s) {
             if (state.rtr.currentCM && s.cm !== state.rtr.currentCM)
+              return false;
+            if (state.rtr.currentCOM && s.com !== state.rtr.currentCOM)
               return false;
             if (
               state.rtr.currentDistrict &&
@@ -5316,6 +5335,8 @@
           // scope WITHOUT the mallType filter, so we can measure what that filter is hiding
           var scoped = m.stores.filter(function (s) {
             if (state.rtr.currentCM && s.cm !== state.rtr.currentCM)
+              return false;
+            if (state.rtr.currentCOM && s.com !== state.rtr.currentCOM)
               return false;
             if (
               state.rtr.currentDistrict &&
@@ -6139,6 +6160,7 @@
               tr.addEventListener("click", function () {
                 var cm = tr.getAttribute("data-cm");
                 state.rtr.currentCM = state.rtr.currentCM === cm ? null : cm;
+                state.rtr.currentCOM = null;
                 state.rtr.currentDistrict = null;
                 state.rtr.currentMallType = null;
                 state.rtr.visibleCount = 20;
@@ -6279,7 +6301,8 @@
             return mult * (av - bv);
           });
 
-          $("comLeaderboardHint").textContent = "คลิกหัวตารางเพื่อเรียงลำดับ";
+          $("comLeaderboardHint").textContent =
+            "คลิกหัวตารางเพื่อเรียงลำดับ · คลิกแถวเพื่อดูเฉพาะ COM นั้น";
 
           var headerHtml = COM_LB_COLS.map(function (col) {
             var isActive = state.rtr.comLbSortKey === col.key;
@@ -6308,8 +6331,13 @@
 
           var bodyHtml = rows
             .map(function (r) {
+              var isCurrent = state.rtr.currentCOM === r.com;
               return (
-                "<tr>" +
+                '<tr class="clickable" tabindex="0" role="button" data-com="' +
+                esc(r.com) +
+                '"' +
+                (isCurrent ? ' style="background:var(--paper);"' : "") +
+                ">" +
                 "<td>" +
                 esc(r.com) +
                 "</td>" +
@@ -6346,6 +6374,32 @@
             bodyHtml +
             "</tbody></table></div>";
 
+          Array.prototype.forEach.call(
+            wrap.querySelectorAll("tbody tr"),
+            function (tr) {
+              function selectThisCom() {
+                var com = tr.getAttribute("data-com");
+                // Selecting a COM supersedes any CM/district/mallType filter already active --
+                // a COM belongs to exactly one CM, so leaving a DIFFERENT CM selected here would
+                // silently intersect to zero stores (the COM leaderboard itself always lists every
+                // COM regardless of the current CM tab, so that mismatch is a real possibility).
+                state.rtr.currentCOM =
+                  state.rtr.currentCOM === com ? null : com;
+                state.rtr.currentCM = null;
+                state.rtr.currentDistrict = null;
+                state.rtr.currentMallType = null;
+                state.rtr.visibleCount = 20;
+                renderRtrDashboard();
+              }
+              tr.addEventListener("click", selectThisCom);
+              tr.addEventListener("keydown", function (e) {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  selectThisCom();
+                }
+              });
+            },
+          );
           Array.prototype.forEach.call(
             wrap.querySelectorAll("thead th.sortable-th"),
             function (th) {
@@ -7584,7 +7638,7 @@
           });
 
           $("rtrStoreCountHint").textContent =
-            (state.rtr.currentCM || "ภาพรวม") +
+            (state.rtr.currentCM || state.rtr.currentCOM || "ภาพรวม") +
             " · พบ " +
             stores.length +
             " ร้าน";
@@ -7700,7 +7754,7 @@
         // EXPORT (RTR) — same PNG/canvas + PDF/print-dialog mechanism as the 7-11
         // tab's export (see sevExportPng/sevExportPdf), just driven by
         // RTR_TABLE_COLS/rtrSortValue/rtrCurrentStores instead. Exports whatever
-        // is currently filtered on the page (CM/district/mallType/search), shown
+        // is currently filtered on the page (CM/COM/district/mallType/search), shown
         // as a read-only summary in the modal, same reasoning as the 7-11 export.
         // =====================================================================
         var RTR_EXPORT_COLS = RTR_TABLE_COLS.slice(0, 1)
@@ -7713,6 +7767,7 @@
           }
           var parts = [
             state.rtr.currentCM,
+            state.rtr.currentCOM,
             state.rtr.currentDistrict,
             state.rtr.currentMallType,
           ].filter(Boolean);
@@ -8062,6 +8117,8 @@
             ? groupByCm(
                 prevMonth.stores.filter(function (s) {
                   if (state.rtr.currentCM && s.cm !== state.rtr.currentCM)
+                    return false;
+                  if (state.rtr.currentCOM && s.com !== state.rtr.currentCOM)
                     return false;
                   if (
                     state.rtr.currentDistrict &&
@@ -13937,6 +13994,7 @@
               state.rtr.months = months;
               state.rtr.currentMonthIdx = months.length - 1;
               state.rtr.currentCM = null;
+              state.rtr.currentCOM = null;
               state.rtr.search = "";
               state.rtr.visibleCount = 20;
               state.rtr.allSheetCount = cached.allSheetCount;
@@ -15382,6 +15440,7 @@
           state.rtr.currentMonthIdx = months.length - 1;
           state.rtr.loaded = true;
           state.rtr.currentCM = null;
+          state.rtr.currentCOM = null;
           state.rtr.currentDistrict = null;
           state.rtr.currentMallType = null;
           state.rtr.visibleCount = 20;
