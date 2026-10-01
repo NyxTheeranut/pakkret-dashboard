@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pak Kret Territory Explorer</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Ctext%20y%3D%27.9em%27%20font-size%3D%2790%27%3E%F0%9F%8F%AA%3C%2Ftext%3E%3C%2Fsvg%3E" />
-    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <meta name="apple-mobile-web-app-title" content="Pakkret Data" />
-    <link rel="manifest" href="manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -2037,6 +2034,16 @@
             </div>
           </section>
 
+          <section id="comLeaderboardSection">
+            <div class="section-head">
+              <h2>เปรียบเทียบ COM</h2>
+              <span class="hint" id="comLeaderboardHint"></span>
+            </div>
+            <div class="card">
+              <div id="comLeaderboardWrap"></div>
+            </div>
+          </section>
+
           <section>
             <div class="card">
               <div class="trend-header-row">
@@ -2769,6 +2776,8 @@
             fileHandle: null,
             cmLbSortKey: "gap",
             cmLbSortDir: "asc",
+            comLbSortKey: "ga",
+            comLbSortDir: "desc",
           },
           sev: {
             loaded: false,
@@ -5118,6 +5127,7 @@
           renderPerformance();
           renderApMix();
           renderCmLeaderboard();
+          renderComLeaderboard();
           renderRtrTrendAndSegment();
           renderQuadrant();
           renderRtrInsights();
@@ -6149,6 +6159,206 @@
                   state.rtr.cmLbSortDir = "desc";
                 }
                 renderCmLeaderboard();
+              }
+              th.addEventListener("click", doSort);
+              th.addEventListener("keydown", function (e) {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  doSort();
+                }
+              });
+            },
+          );
+        }
+
+        // RTR's own "เปรียบเทียบ COM" -- COM is a real org layer the primary RTR workbook's
+        // mapping sheets never carried at all (only the newer "routing" workbook does, see
+        // extract_routing_overrides on the Python side): one level below CM, confirmed by
+        // checking actual cardinality rather than assuming -- "RS Name"/"PBH Name" turned out
+        // to be constant across the whole territory (not a real per-store dimension), but
+        // "COM" genuinely varies, 4 distinct people each running a real subset of stores under
+        // one of the 2 CMs. No comRollup exists server-side (unlike cmRollup) since this is a
+        // newly-discovered grouping, so it's computed here from the stores list directly --
+        // target/achieve use targetedGA the same way CM's own does (summed only across stores
+        // that HAVE a target, never fabricated for the rest), and %MOM/ARPU are derived from
+        // each store's own lmtdGa/m1 rather than a precomputed per-COM daily bucket (which
+        // doesn't exist) -- genuinely equivalent math, just summed at render time instead of
+        // during Python aggregation. GA is segment-toggle-aware (rtrStoreSegGA, same as the
+        // store table); target/achieve/mom/m1/arpu are NOT, since there's no per-COM or
+        // per-store segment-scoped target/M1 source to filter them against honestly.
+        var COM_LB_COLS = [
+          { key: "name", label: "COM", align: "left" },
+          { key: "stores", label: "ร้าน" },
+          { key: "ga", label: "GA" },
+          { key: "target", label: "Target" },
+          { key: "achieve", label: "%Achieve" },
+          { key: "mom", label: "%MOM" },
+          { key: "m1", label: "M1" },
+          { key: "arpu", label: "ARPU" },
+        ];
+        function comLbSortValue(row, key) {
+          if (key === "name") return row.com;
+          if (key === "stores") return row.storeCount;
+          if (key === "ga") return row.ga;
+          if (key === "target") return row.target == null ? -1 : row.target;
+          if (key === "achieve")
+            return row.achievePct == null ? -1 : row.achievePct;
+          if (key === "mom") return row.momPct == null ? -2 : row.momPct;
+          if (key === "m1") return row.m1;
+          if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
+          return 0;
+        }
+        function renderComLeaderboard() {
+          var wrap = $("comLeaderboardWrap");
+          var m = rtrCurrentMonth();
+          var byCom = {};
+          m.stores.forEach(function (s) {
+            // Stores with no COM (outside the routing workbook's own cluster, or that file
+            // temporarily missing) simply aren't part of this comparison -- not an error.
+            if (!s.com) return;
+            var row =
+              byCom[s.com] ||
+              (byCom[s.com] = {
+                com: s.com,
+                storeCount: 0,
+                ga: 0,
+                targetedGA: 0,
+                target: 0,
+                hasAnyTarget: false,
+                m1: 0,
+                lmtdSum: 0,
+                hasLmtd: false,
+              });
+            row.storeCount++;
+            row.ga += rtrStoreSegGA(s);
+            row.m1 += s.m1;
+            if (s.hasTarget) {
+              row.targetedGA += s.ga;
+              row.target += s.target;
+              row.hasAnyTarget = true;
+            }
+            if (s.lmtdGa != null) {
+              row.lmtdSum += s.lmtdGa;
+              row.hasLmtd = true;
+            }
+          });
+          var comNames = Object.keys(byCom);
+          if (comNames.length <= 1) {
+            $("comLeaderboardHint").textContent = "";
+            wrap.innerHTML =
+              '<div class="insight-empty">มีแค่ 1 COM ในไฟล์นี้ ไม่มีอะไรให้เปรียบเทียบ</div>';
+            return;
+          }
+          var rows = comNames.map(function (com) {
+            var r = byCom[com];
+            return {
+              com: com,
+              storeCount: r.storeCount,
+              ga: r.ga,
+              target: r.hasAnyTarget ? r.target : null,
+              achievePct:
+                r.hasAnyTarget && r.target > 0
+                  ? r.targetedGA / r.target
+                  : null,
+              momPct:
+                r.hasLmtd && r.lmtdSum > 0
+                  ? (r.ga - r.lmtdSum) / r.lmtdSum
+                  : null,
+              m1: r.m1,
+              arpu: r.targetedGA > 0 ? r.m1 / r.targetedGA : null,
+            };
+          });
+
+          var sortKey = state.rtr.comLbSortKey,
+            mult = state.rtr.comLbSortDir === "asc" ? 1 : -1;
+          rows.sort(function (a, b) {
+            var av = comLbSortValue(a, sortKey),
+              bv = comLbSortValue(b, sortKey);
+            if (sortKey === "name")
+              return mult * String(av).localeCompare(String(bv));
+            return mult * (av - bv);
+          });
+
+          $("comLeaderboardHint").textContent = "คลิกหัวตารางเพื่อเรียงลำดับ";
+
+          var headerHtml = COM_LB_COLS.map(function (col) {
+            var isActive = state.rtr.comLbSortKey === col.key;
+            var arrow = isActive
+              ? state.rtr.comLbSortDir === "asc"
+                ? " ▲"
+                : " ▼"
+              : "";
+            var alignStyle =
+              col.align === "left" ? "" : ' style="text-align:right"';
+            return (
+              '<th class="sortable-th' +
+              (isActive ? " active-sort" : "") +
+              '" data-sort-key="' +
+              col.key +
+              '" tabindex="0" role="button" aria-label="เรียงตาม ' +
+              esc(col.label) +
+              '"' +
+              alignStyle +
+              ">" +
+              esc(col.label) +
+              arrow +
+              "</th>"
+            );
+          }).join("");
+
+          var bodyHtml = rows
+            .map(function (r) {
+              return (
+                "<tr>" +
+                "<td>" +
+                esc(r.com) +
+                "</td>" +
+                '<td class="num-cell">' +
+                fmt(r.storeCount) +
+                "</td>" +
+                '<td class="num-cell">' +
+                fmt(r.ga) +
+                "</td>" +
+                '<td class="num-cell">' +
+                (r.target != null ? fmt(r.target) : "—") +
+                "</td>" +
+                '<td class="num-cell">' +
+                pctBadge(r.achievePct, "achieve") +
+                "</td>" +
+                '<td class="num-cell">' +
+                pctBadge(r.momPct, "mom") +
+                "</td>" +
+                '<td class="num-cell">' +
+                fmtBaht(r.m1) +
+                "</td>" +
+                '<td class="num-cell">' +
+                (r.arpu != null ? fmtBaht(r.arpu) : "—") +
+                "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+
+          wrap.innerHTML =
+            '<div class="table-scroll-box"><table><thead><tr>' +
+            headerHtml +
+            "</tr></thead><tbody>" +
+            bodyHtml +
+            "</tbody></table></div>";
+
+          Array.prototype.forEach.call(
+            wrap.querySelectorAll("thead th.sortable-th"),
+            function (th) {
+              function doSort() {
+                var key = th.getAttribute("data-sort-key");
+                if (state.rtr.comLbSortKey === key) {
+                  state.rtr.comLbSortDir =
+                    state.rtr.comLbSortDir === "asc" ? "desc" : "asc";
+                } else {
+                  state.rtr.comLbSortKey = key;
+                  state.rtr.comLbSortDir = "desc";
+                }
+                renderComLeaderboard();
               }
               th.addEventListener("click", doSort);
               th.addEventListener("keydown", function (e) {
@@ -14993,6 +15203,9 @@
                 dStock: Number(r[25]) || 0,
                 stock: Number(r[26]) || 0,
                 coverMth: Number(r[27]) || 0,
+                // r[28] added later still (the routing workbook's COM, one rep level below
+                // cm) -- same degrade-gracefully reasoning as hasStock/etc above.
+                com: r[28] || "",
                 simTypes: {},
                 daily: {},
               };
