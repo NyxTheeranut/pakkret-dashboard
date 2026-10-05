@@ -1385,6 +1385,7 @@
       .table-scroll-box {
         max-height: 480px;
         overflow-y: auto;
+        overflow-x: auto;
         border-radius: 14px;
       }
       .table-scroll-box table {
@@ -6420,13 +6421,21 @@
             function (tr) {
               function selectThisCom() {
                 var com = tr.getAttribute("data-com");
-                // Selecting a COM supersedes any CM/district/mallType filter already active --
-                // a COM belongs to exactly one CM, so leaving a DIFFERENT CM selected here would
-                // silently intersect to zero stores (the COM leaderboard itself always lists every
-                // COM regardless of the current CM tab, so that mismatch is a real possibility).
-                state.rtr.currentCOM =
-                  state.rtr.currentCOM === com ? null : com;
-                state.rtr.currentCM = null;
+                if (state.rtr.currentCOM === com) {
+                  state.rtr.currentCOM = null;
+                  state.rtr.currentCM = null;
+                } else {
+                  // Selecting a COM also selects ITS OWN CM (not clears it) -- a COM belongs to
+                  // exactly one CM, so the rest of the page (store table, district/mall tabs)
+                  // should scope to that real CM/COM pair, same as picking that CM from the CM
+                  // tabs would, rather than leaving the CM tabs showing "ภาพรวม" while the table
+                  // is actually narrowed to one COM's stores.
+                  var owner = rtrCurrentMonth().stores.find(function (s) {
+                    return s.com === com;
+                  });
+                  state.rtr.currentCOM = com;
+                  state.rtr.currentCM = owner ? owner.cm : null;
+                }
                 state.rtr.currentDistrict = null;
                 state.rtr.currentMallType = null;
                 state.rtr.visibleCount = 20;
@@ -7372,6 +7381,21 @@
             );
           }
 
+          // COM (the RTR equivalent of 7-11's AE -- one rep level below CM) next to every
+          // actionable row, same reasoning and same first-name-only trim as the 7-11 insight
+          // cards' aeCol: a store's own rep is exactly who needs to act on it.
+          function firstName(name) {
+            return (
+              String(name || "")
+                .trim()
+                .split(/\s+/)[0] || ""
+            );
+          }
+          function comCol(name) {
+            return name
+              ? '<span class="col-ae">' + esc(firstName(name)) + "</span>"
+              : "";
+          }
           // Shared row shape for every card below -- GA/AP1D/AP30D/conversion% -- same
           // fixed-width .col-num/.col-pct columns as the 7-11 insight cards (see
           // renderSevInsights), plus room for one card-specific trailing detail (e.g. the
@@ -7393,22 +7417,24 @@
               "</span>"
             );
           }
-          var RISK_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "AP1D", "AP30D", "Conversion%"];
+          var RISK_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "COM", "GA", "AP1D", "AP30D", "Conversion%"];
           function riskExportRow(x) {
             return [
               x.s.name,
               x.s.code,
+              x.s.com || "",
               fmt(x.s.ga),
               fmt(x.s.ap1d),
               fmt(x.s.ap30d),
               x.s.ga > 0 ? pct(x.conv) : "—",
             ];
           }
-          var BAD_MOM_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "%MOM"];
+          var BAD_MOM_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "COM", "GA", "LMTD", "%MOM"];
           function badMomExportRow(x) {
             return [
               x.s.name,
               x.s.code,
+              x.s.com || "",
               fmt(x.s.ga),
               x.s.lmtdGa != null ? fmt(x.s.lmtdGa) : "—",
               pct(x.s.momPct),
@@ -7418,7 +7444,7 @@
           // activity metric isn't the useful signal) and shows LMTD right next to GA
           // instead -- "was this normal for them" (last month's GA to the same cutoff
           // day) is what actually tells you whether a zero this period is new or not.
-          var NO_GA_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "AP1D"];
+          var NO_GA_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "COM", "GA", "LMTD", "AP1D"];
           function noGaRow(s) {
             return (
               '<span class="n">' +
@@ -7429,13 +7455,16 @@
               (s.lmtdGa != null ? fmt(s.lmtdGa) : "—") +
               '</span> · <span class="col-num">AP1D ' +
               fmt(s.ap1d) +
-              "</span></span>"
+              "</span>" +
+              (s.com ? " · " + comCol(s.com) : "") +
+              "</span>"
             );
           }
           function noGaExportRow(s) {
             return [
               s.name,
               s.code,
+              s.com || "",
               fmt(rtrStoreSegGA(s)),
               s.lmtdGa != null ? fmt(s.lmtdGa) : "—",
               fmt(s.ap1d),
@@ -7451,7 +7480,7 @@
               ")",
             riskStores,
             function (x) {
-              return gaApRow(x.s, x.conv);
+              return gaApRow(x.s, x.conv, comCol(x.s.com));
             },
             RISK_EXPORT_COLS,
             riskStoresAll.map(riskExportRow),
@@ -7465,7 +7494,7 @@
               ")",
             riskStoresAp1d,
             function (x) {
-              return gaApRow(x.s, x.conv);
+              return gaApRow(x.s, x.conv, comCol(x.s.com));
             },
             RISK_EXPORT_COLS,
             riskStoresAp1dAll.map(riskExportRow),
@@ -7500,7 +7529,9 @@
                 (x.s.lmtdGa != null ? fmt(x.s.lmtdGa) : "—") +
                 '</span> · <span class="col-pct">' +
                 pctColored(x.s.momPct) +
-                "</span></span>"
+                "</span>" +
+                (x.s.com ? " · " + comCol(x.s.com) : "") +
+                "</span>"
               );
             },
             BAD_MOM_EXPORT_COLS,
@@ -9932,33 +9963,41 @@
         // เขต), so each row's available options are computed from whichever OTHER filters are already
         // active, rather than assuming a fixed parent->child order.
         function sevFilteredStores(exclude) {
+          // exclude may be a single dimension name (legacy call sites) or an array of several --
+          // array form lets a leaderboard ignore more than one dimension of its own at once (see
+          // renderSevCmLeaderboard's "cm"+"ae" call).
+          var excludeList = Array.isArray(exclude)
+            ? exclude
+            : exclude
+              ? [exclude]
+              : [];
           return state.sev.stores.filter(function (s) {
             if (
-              exclude !== "cm" &&
+              excludeList.indexOf("cm") === -1 &&
               state.sev.currentCM &&
               s.cm !== state.sev.currentCM
             )
               return false;
             if (
-              exclude !== "khet" &&
+              excludeList.indexOf("khet") === -1 &&
               state.sev.currentKhet &&
               s.khet !== state.sev.currentKhet
             )
               return false;
             if (
-              exclude !== "fyai" &&
+              excludeList.indexOf("fyai") === -1 &&
               state.sev.currentFyai &&
               s.fyai !== state.sev.currentFyai
             )
               return false;
             if (
-              exclude !== "gm" &&
+              excludeList.indexOf("gm") === -1 &&
               state.sev.currentGm &&
               s.gm !== state.sev.currentGm
             )
               return false;
             if (
-              exclude !== "ae" &&
+              excludeList.indexOf("ae") === -1 &&
               state.sev.currentAe &&
               s.ae !== state.sev.currentAe
             )
@@ -10660,7 +10699,13 @@
         function renderSevCmLeaderboard() {
           var section = $("sevCmLeaderboardSection");
           var wrap = $("sevCmLeaderboardWrap");
-          var stores = sevFilteredStores("cm");
+          // BUGFIX: this used to read sevFilteredStores("cm") (ignoring only the CM filter), so
+          // picking an AE narrowed the input down to that AE's own CM -- exactly one CM -- which
+          // tripped the "<=1 CM, nothing to compare" branch below and made the whole section
+          // vanish. The CM comparison must ignore AE too, same as the AE comparison already
+          // ignores CM (sevFilteredStores("ae") below) -- both leaderboards show the full
+          // territory-wide comparison regardless of any other filter active on the page.
+          var stores = sevFilteredStores(["cm", "ae"]);
           var mk = state.sev.currentMonthKey,
             day = state.sev.selectedDay;
           var targetActive =
@@ -10864,6 +10909,9 @@
               tr.addEventListener("click", function () {
                 var cm = tr.getAttribute("data-cm");
                 state.sev.currentCM = state.sev.currentCM === cm ? null : cm;
+                // An AE picked earlier may not belong to this CM at all -- leaving it set would
+                // silently intersect the rest of the page down to zero stores.
+                state.sev.currentAe = null;
                 renderSevDashboard();
               });
             },
@@ -11165,7 +11213,20 @@
             function (tr) {
               tr.addEventListener("click", function () {
                 var ae = tr.getAttribute("data-ae");
-                state.sev.currentAe = state.sev.currentAe === ae ? null : ae;
+                if (state.sev.currentAe === ae) {
+                  state.sev.currentAe = null;
+                  state.sev.currentCM = null;
+                } else {
+                  // Selecting an AE also selects ITS OWN CM (not clears it) -- so the rest of
+                  // the page (store table, CM tabs) scopes to that real AE/CM pair instead of
+                  // the CM tabs still showing "ภาพรวม" while the table is actually narrowed to
+                  // one AE's stores.
+                  var owner = state.sev.stores.find(function (s) {
+                    return s.ae === ae;
+                  });
+                  state.sev.currentAe = ae;
+                  state.sev.currentCM = owner ? owner.cm : null;
+                }
                 renderSevDashboard();
               });
             },
