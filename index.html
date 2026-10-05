@@ -2031,6 +2031,12 @@
           <section id="cmLeaderboardSection">
             <div class="section-head">
               <h2>เปรียบเทียบ CM</h2>
+              <button
+                class="pill small"
+                id="cmTargetModeBtn"
+                type="button"
+                title="สลับ Target/%Achieve ระหว่างฐาน GA กับฐาน M1 (%MOM/pace/forecast อิง GA เสมอ)"
+              ></button>
               <span class="hint" id="cmLeaderboardHint"></span>
             </div>
             <div class="card">
@@ -2478,6 +2484,12 @@
           <section id="sevCmLeaderboardSection" style="display: none">
             <div class="section-head">
               <h2>เปรียบเทียบ CM</h2>
+              <button
+                class="pill small"
+                id="sevCmTargetModeBtn"
+                type="button"
+                title="สลับ Target/%Achieve/%MOM ระหว่างฐาน GA กับฐาน M1"
+              ></button>
               <span class="hint" id="sevCmLeaderboardHint"></span>
             </div>
             <div class="card">
@@ -2781,6 +2793,7 @@
             fileHandle: null,
             cmLbSortKey: "gap",
             cmLbSortDir: "asc",
+            cmLbTargetMode: "ga", // "ga" | "m1" -- which committed target Target/%Achieve read
             comLbSortKey: "ga",
             comLbSortDir: "desc",
           },
@@ -2817,7 +2830,8 @@
             aeLbSortDir: "desc",
             cmLbSortKey: "ga",
             cmLbSortDir: "desc",
-            cmTargets: {}, // CM name -> committed GA target, from the "TG CM" sheet
+            cmLbTargetMode: "ga", // "ga" | "m1" -- which committed target Target/%Achieve/%MOM read
+            cmTargets: {}, // CM name -> {ga, m1} committed target, from the "TG CM" sheet
             cmTargetMonthKey: null,
             visibleCount: 20,
           },
@@ -3494,6 +3508,43 @@
             }
             if (!monthAbbr) continue;
             if (results[monthAbbr]) continue; // already have this month's CM-level block
+
+            // A SEPARATE "Target M1 (<Month>)" anchor sits later in this exact same header row
+            // (every month, every granularity -- confirmed against the real file), same 3-column
+            // Mass+Migrant/Tourist/Total shape as the GA block above, just never read before.
+            // Mirrors parse_kpi_setup_targets on the Python side exactly.
+            var m1Anchor = null;
+            for (var a3 = 0; a3 < anchors.length; a3++) {
+              if (
+                anchors[a3].text.indexOf("target m1") === 0 &&
+                anchors[a3].text.indexOf(monthAbbr) !== -1
+              ) {
+                m1Anchor = anchors[a3];
+                break;
+              }
+            }
+            var totalM1Idx = -1,
+              m1MassMigrantIdx = -1,
+              m1TouristIdx = -1;
+            if (m1Anchor) {
+              var m1BlockEnd = gRow.length;
+              for (var a4 = 0; a4 < anchors.length; a4++) {
+                if (anchors[a4].idx > m1Anchor.idx) {
+                  m1BlockEnd = anchors[a4].idx;
+                  break;
+                }
+              }
+              for (var c2 = m1Anchor.idx; c2 < m1BlockEnd; c2++) {
+                if (totalM1Idx === -1 && sNorm[c2] === "total m1") {
+                  totalM1Idx = c2;
+                } else if (m1MassMigrantIdx === -1 && sNorm[c2] === "mass + migrant") {
+                  m1MassMigrantIdx = c2;
+                } else if (m1TouristIdx === -1 && sNorm[c2] === "tourist") {
+                  m1TouristIdx = c2;
+                }
+              }
+            }
+
             var targets = new Map();
             var trustworthy = true;
             for (var r = gIdx + 2; r < rows2D.length; r++) {
@@ -3521,6 +3572,9 @@
                   total: val,
                   massMigrant: massMigrantIdx !== -1 ? num(row[massMigrantIdx]) : 0,
                   tourist: touristIdx !== -1 ? num(row[touristIdx]) : 0,
+                  m1Total: totalM1Idx !== -1 ? num(row[totalM1Idx]) : 0,
+                  m1MassMigrant: m1MassMigrantIdx !== -1 ? num(row[m1MassMigrantIdx]) : 0,
+                  m1Tourist: m1TouristIdx !== -1 ? num(row[m1TouristIdx]) : 0,
                 });
               }
             }
@@ -4557,6 +4611,10 @@
               // segment-scoped target either, same "no data" convention as target itself.
               cr.targetMassMigrant = 0;
               cr.targetTourist = 0;
+              // Committed M1 target -- NOT the same as cr.m1 (actual M1 achieved, summed just
+              // above). Only ever comes from the KPI Set Up override (no per-store M1 target
+              // exists anywhere), same "0 = no data" convention.
+              cr.targetM1 = 0;
             });
             m.stores.forEach(function (s) {
               var cr = m.cmRollup[s.cm];
@@ -4585,6 +4643,7 @@
                 cr.target = ov.total;
                 cr.targetMassMigrant = ov.massMigrant;
                 cr.targetTourist = ov.tourist;
+                cr.targetM1 = ov.m1Total || 0;
                 cr.targetedGA = cr.ga;
                 cr.targetOverridden = true;
               }
@@ -4603,6 +4662,9 @@
             }, 0);
             m.totals.targetTourist = Object.keys(m.cmRollup).reduce(function (a, cmName) {
               return a + (m.cmRollup[cmName].targetTourist || 0);
+            }, 0);
+            m.totals.targetM1 = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+              return a + (m.cmRollup[cmName].targetM1 || 0);
             }, 0);
             m.totals.targetedGA = Object.keys(m.cmRollup).reduce(function (
               a,
@@ -6030,8 +6092,19 @@
           );
         }
 
+        // Attached once here (not inside renderCmLeaderboard, which runs on every dashboard
+        // re-render) -- #cmTargetModeBtn is a static button, never regenerated via innerHTML,
+        // so attaching inside the render function would stack a fresh duplicate listener on
+        // every render instead of firing once per real click.
+        $("cmTargetModeBtn").addEventListener("click", function () {
+          state.rtr.cmLbTargetMode =
+            state.rtr.cmLbTargetMode === "m1" ? "ga" : "m1";
+          renderCmLeaderboard();
+        });
         function renderCmLeaderboard() {
           var wrap = $("cmLeaderboardWrap");
+          $("cmTargetModeBtn").textContent =
+            "Target: " + (state.rtr.cmLbTargetMode === "m1" ? "M1" : "GA");
           var m = rtrCurrentMonth();
           var cmNames = Object.keys(m.cmRollup);
           if (cmNames.length <= 1) {
@@ -6043,6 +6116,7 @@
           var mIdx = state.rtr.currentMonthIdx;
           var prevMonth = mIdx > 0 ? state.rtr.months[mIdx - 1] : null;
           var pacing = rtrMonthPacing(m, prevMonth);
+          var targetMode = state.rtr.cmLbTargetMode;
           var rows = cmNames.map(function (cm) {
             var cr = m.cmRollup[cm];
             // Same rtrSegTargetInfo the KPI cards use, applied per CM row instead of once for
@@ -6055,13 +6129,34 @@
             // history threaded in here, not just this render-time totals object).
             var segInfo = rtrSegTargetInfo(cr, state.rtr.segToggle);
             var arpu = cr.targetedGA > 0 ? cr.m1 / cr.targetedGA : null;
+            // Target/%Achieve ALONE switch to the M1 basis when toggled -- cr.targetM1 is a
+            // real committed figure (KPI Set Up's own "Target M1 (<Month>)" block, same sheet
+            // and same trust rule as the GA target), compared against the CM's full actual M1
+            // (not a segment- or per-store-target-gated subset, since M1 has neither). Pace/
+            // gap/need/forecast stay GA-based always -- those are inherently tied to the daily-
+            // tracked GA pace, which M1 has no equivalent of (RTR's own M1 has no day-level
+            // breakdown anywhere, unlike GA/revAmt). %MOM also stays GA-based for the same
+            // reason: a trustworthy cutoff-day M1 comparison isn't possible without daily M1
+            // data, and a cruder full-month one would silently be less reliable while looking
+            // identical to the GA version.
+            var target, achievePct, segSupported;
+            if (targetMode === "m1") {
+              target = cr.targetM1 > 0 ? cr.targetM1 : null;
+              achievePct = cr.targetM1 > 0 ? cr.m1 / cr.targetM1 : null;
+              segSupported = true;
+            } else {
+              target = segInfo.target;
+              achievePct = segInfo.achievePct;
+              segSupported = segInfo.supported;
+            }
             var paceDelta =
               pacing && segInfo.achievePct != null
                 ? segInfo.achievePct - pacing.expectedPct
                 : null;
             // Same projection as the headline forecast card, applied per CM -- so the leaderboard can
             // rank by who is projected to be short the most GA in absolute units. %Achieve alone hides
-            // this: a 3-store CM at 60% is a much smaller problem than a 40-store CM at 92%.
+            // this: a 3-store CM at 60% is a much smaller problem than a 40-store CM at 92%. Always
+            // GA-based (see comment above) regardless of targetMode.
             var fc = segInfo.supported
               ? rtrForecast(
                   {
@@ -6077,9 +6172,9 @@
               cm: cm,
               storeCount: cr.storeCount,
               ga: segInfo.ga,
-              target: segInfo.target,
-              achievePct: segInfo.achievePct,
-              segSupported: segInfo.supported,
+              target: target,
+              achievePct: achievePct,
+              segSupported: segSupported,
               momPct: cr.momPct,
               m1: cr.m1,
               arpu: arpu,
@@ -6161,7 +6256,11 @@
                 fmt(r.ga) +
                 "</td>" +
                 '<td class="num-cell">' +
-                (r.target != null ? fmt(r.target) : "—") +
+                (r.target != null
+                  ? targetMode === "m1"
+                    ? fmtBaht(r.target)
+                    : fmt(r.target)
+                  : "—") +
                 "</td>" +
                 '<td class="num-cell">' +
                 pctBadge(r.achievePct, "achieve") +
@@ -9496,9 +9595,10 @@
         // %Achieve columns, the way aggregateSevTargetRows' per-store numbers feed the store table.
         // The sheet lays out TWO side-by-side pivot tables on one tab (GA Mass/Migrant/Tourist/All
         // on the left, M1 Mass/Migrant/Tourist/All on the right), each with its OWN "Row Labels"
-        // name column -- so the name column can't be found by header text alone (it appears twice).
-        // Resolved by scanning left from "GA All" for the nearest "Row Labels", i.e. the one that
-        // belongs to the same (GA) pivot table rather than the M1 one three columns over.
+        // name column -- so neither pivot's name column can be found by header text alone (it
+        // appears twice). Both are read, independently, each scanning left from its own "X All"
+        // anchor for the nearest "Row Labels" -- a CM missing from one pivot still gets a record
+        // from the other, {ga, m1}, each starting at 0 until its own pivot sets it.
         function aggregateSevCmTargetRows(rows2D, cmToTarget, stats) {
           var hIdx = findHeaderRow(rows2D, ["row labels", "ga all"], 10);
           if (hIdx < 0) return;
@@ -9519,6 +9619,25 @@
             }
           }
           if (nameIdx < 0) return;
+          // M1 pivot, three columns over -- confirmed against the real file: "M1 All" carries
+          // real per-CM committed M1 figures, previously just never read. Found and scanned
+          // the same way as the GA pivot's own name column, independently.
+          var m1AllIdx = -1;
+          for (var mi = 0; mi < header.length; mi++) {
+            if (normHeader(header[mi]) === "m1 all") {
+              m1AllIdx = mi;
+              break;
+            }
+          }
+          var m1NameIdx = -1;
+          if (m1AllIdx >= 0) {
+            for (var mj = m1AllIdx; mj >= 0; mj--) {
+              if (normHeader(header[mj]) === "row labels") {
+                m1NameIdx = mj;
+                break;
+              }
+            }
+          }
 
           for (var r = hIdx + 1; r < rows2D.length; r++) {
             var row = rows2D[r];
@@ -9529,8 +9648,26 @@
             if (/grand total/i.test(nameTrimmed)) continue; // pivot's own summary row, not a CM
             var target = num(row[gaAllIdx]);
             if (target > 0) {
-              cmToTarget.set(nameTrimmed, target);
+              var rec = cmToTarget.get(nameTrimmed) || { ga: 0, m1: 0 };
+              rec.ga = target;
+              cmToTarget.set(nameTrimmed, rec);
               stats.rows++;
+            }
+          }
+          if (m1AllIdx >= 0 && m1NameIdx >= 0) {
+            for (var r2 = hIdx + 1; r2 < rows2D.length; r2++) {
+              var row2 = rows2D[r2];
+              if (!row2) continue;
+              var name2 = row2[m1NameIdx];
+              if (name2 == null || String(name2).trim() === "") continue;
+              var name2Trimmed = String(name2).trim();
+              if (/grand total/i.test(name2Trimmed)) continue;
+              var m1Target = num(row2[m1AllIdx]);
+              if (m1Target > 0) {
+                var rec2 = cmToTarget.get(name2Trimmed) || { ga: 0, m1: 0 };
+                rec2.m1 = m1Target;
+                cmToTarget.set(name2Trimmed, rec2);
+              }
             }
           }
         }
@@ -10626,7 +10763,7 @@
             title: "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA AE นี้ที่ราคาแพ็คต่ำกว่า 100",
           },
           { key: "mom", label: "%MOM" },
-          { key: "rev", label: "รายได้" },
+          { key: "rev", label: "M1" },
           { key: "arpu", label: "ARPU" },
         ];
         function aeLbSortValue(row, key) {
@@ -10670,7 +10807,7 @@
             title: "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA CM นี้ที่ราคาแพ็คต่ำกว่า 100",
           },
           { key: "mom", label: "%MOM" },
-          { key: "rev", label: "รายได้" },
+          { key: "rev", label: "M1" },
           { key: "arpu", label: "ARPU" },
         ];
         function sevCmLbSortValue(row, key) {
@@ -10691,14 +10828,27 @@
           if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
           return 0;
         }
+        // Attached once here (not inside renderSevCmLeaderboard, which runs on every dashboard
+        // re-render) -- #sevCmTargetModeBtn is a static button, never regenerated via innerHTML,
+        // so attaching inside the render function would stack a fresh duplicate listener on every
+        // render instead of firing once per real click.
+        $("sevCmTargetModeBtn").addEventListener("click", function () {
+          state.sev.cmLbTargetMode =
+            state.sev.cmLbTargetMode === "m1" ? "ga" : "m1";
+          renderSevCmLeaderboard();
+        });
         // Mirrors renderSevAeLeaderboard exactly (same rollup/sort/click-to-scope plumbing), grouped
         // by s.cm instead of s.ae, with Target/%Achieve added -- the "TG CM" sheet's committed GA is
         // a per-CM figure (not per-store, that's "TG Store"), so it only fits this rollup, not the
         // store table. Target/%Achieve only shown when the target's own month (cmTargetMonthKey) is
-        // the exact month selected, same reasoning as the store table's target gating.
+        // the exact month selected, same reasoning as the store table's target gating. Target/
+        // %Achieve/%MOM all follow cmLbTargetMode (GA vs M1) -- see renderSevCmLeaderboard's own
+        // comment above the rows.map call for exactly what does and doesn't switch.
         function renderSevCmLeaderboard() {
           var section = $("sevCmLeaderboardSection");
           var wrap = $("sevCmLeaderboardWrap");
+          $("sevCmTargetModeBtn").textContent =
+            "Target: " + (state.sev.cmLbTargetMode === "m1" ? "M1" : "GA");
           // BUGFIX: this used to read sevFilteredStores("cm") (ignoring only the CM filter), so
           // picking an AE narrowed the input down to that AE's own CM -- exactly one CM -- which
           // tripped the "<=1 CM, nothing to compare" branch below and made the whole section
@@ -10760,20 +10910,28 @@
             return;
           }
           section.style.display = "block";
+          // Target/%Achieve/%MOM all read whichever basis the toggle is set to -- GA (committed
+          // GA target vs actual GA) or M1 (committed M1/revenue target vs actual revAmt). The
+          // GA column itself, AP tiers, and ARPU stay GA-based regardless of the toggle -- only
+          // the metrics the toggle's own label names switch.
+          var mode = state.sev.cmLbTargetMode;
           var rows = cmNames.map(function (cm) {
             var r = byCm[cm];
-            r.momPct =
+            var gaMomPct =
               mk && !day && r.hasPrevGA && r.prevGA > 0
                 ? (r.ga - r.prevGA) / r.prevGA
                 : null;
-            r.revDeltaPct =
+            var m1MomPct =
               mk && !day && r.hasPrevRev && r.prevRev > 0
                 ? (r.curRevMature - r.prevRev) / r.prevRev
                 : null;
+            r.momPct = mode === "m1" ? m1MomPct : gaMomPct;
             r.arpu = r.ga > 0 ? r.revAmt / r.ga : null;
-            r.target = targetActive ? state.sev.cmTargets[cm] || null : null;
+            var tgt = targetActive ? state.sev.cmTargets[cm] : null;
+            r.target = tgt ? (mode === "m1" ? tgt.m1 : tgt.ga) || null : null;
+            var achieveBasis = mode === "m1" ? r.revAmt : r.ga;
             r.achievePct =
-              targetActive && r.target > 0 ? r.ga / r.target : null;
+              targetActive && r.target > 0 ? achieveBasis / r.target : null;
             r.apUnder100Pct = r.ga > 0 ? (r.ap49 + r.ap99) / r.ga : null;
             return r;
           });
@@ -10848,7 +11006,11 @@
                 fmt(r.ga) +
                 "</td>" +
                 '<td class="num-cell">' +
-                (r.target != null ? fmt(r.target) : "—") +
+                (r.target != null
+                  ? mode === "m1"
+                    ? fmtBaht(r.target)
+                    : fmt(r.target)
+                  : "—") +
                 "</td>" +
                 '<td class="num-cell">' +
                 pctBadge(r.achievePct, "achieve") +
@@ -12049,7 +12211,12 @@
                 mk && !day && r.hasPrevGA && r.prevGA > 0
                   ? (r.ga - r.prevGA) / r.prevGA
                   : null;
-              r.target = targetActive ? state.sev.cmTargets[cm] || null : null;
+              // This export summary is always GA-based (a fixed printable snapshot, not the
+              // interactive toggle-able leaderboard) -- cmTargets[cm] is now {ga, m1}, so pull
+              // .ga explicitly rather than assigning the whole record.
+              r.target = targetActive
+                ? (state.sev.cmTargets[cm] && state.sev.cmTargets[cm].ga) || null
+                : null;
               r.achievePct =
                 r.target > 0 ? r.ga / r.target : null;
               var f = sevForecast(r.ga, r.target || 0, pacing);
@@ -14740,13 +14907,14 @@
             // scoping as the per-store target column above, and the same "cm"/"target" shape as
             // RTR's cmtargets table.
             cmtargets: {
-              headers: ["cm", "target"],
+              headers: ["cm", "target", "targetM1"],
               rows:
                 state.sev.cmTargetMonthKey === monthKey
                   ? Object.keys(state.sev.cmTargets)
                       .sort()
                       .map(function (cm) {
-                        return [cm, state.sev.cmTargets[cm]];
+                        var t = state.sev.cmTargets[cm] || {};
+                        return [cm, t.ga || 0, t.m1 || 0];
                       })
                   : [],
             },
@@ -15386,16 +15554,19 @@
               if (!s) return;
               s.simTypes[r[1]] = Number(r[2]) || 0;
             });
-            // {total, massMigrant, tourist} per CM, not a bare number -- massMigrant/
+            // {total, massMigrant, tourist, m1Total} per CM, not a bare number -- massMigrant/
             // tourist power the Mass/Migrant/Tourist trend-chart toggles' effect on Target
             // (see rtrSegTargetInfo) -- the KPI Set Up sheet only ever splits target 2 ways
-            // (Mass+Migrant bundled, Tourist separate), never 3 independently.
+            // (Mass+Migrant bundled, Tourist separate), never 3 independently. m1Total (r[4])
+            // added later -- a Sheet synced before this existed simply won't have it, same
+            // degrade-gracefully pattern as the stock/com columns on the stores table.
             var cmTargetMap = new Map();
             parts[4].rows.forEach(function (r) {
               cmTargetMap.set(r[0], {
                 total: Number(r[1]) || 0,
                 massMigrant: Number(r[2]) || 0,
                 tourist: Number(r[3]) || 0,
+                m1Total: Number(r[4]) || 0,
               });
             });
 
@@ -15487,7 +15658,9 @@
             });
             var cmTargets = {};
             parts[3].rows.forEach(function (r) {
-              cmTargets[r[0]] = Number(r[1]) || 0;
+              // r[2] (targetM1) added later -- a Sheet synced before this existed simply won't
+              // have it, same degrade-gracefully pattern as RTR's stock/com columns.
+              cmTargets[r[0]] = { ga: Number(r[1]) || 0, m1: Number(r[2]) || 0 };
             });
             return {
               monthKey: monthKey,
