@@ -6265,6 +6265,8 @@
           if (targetMode === "m1") {
             cmLbKeys.splice(cmLbKeys.indexOf("target"), 1);
             cmLbKeys.splice(cmLbKeys.indexOf("m1") + 1, 0, "target");
+            cmLbKeys.splice(cmLbKeys.indexOf("achieve"), 1);
+            cmLbKeys.splice(cmLbKeys.indexOf("target") + 1, 0, "achieve");
           }
 
           var headerHtml = cmLbKeys
@@ -11027,6 +11029,8 @@
           if (mode === "m1") {
             sevCmKeys.splice(sevCmKeys.indexOf("target"), 1);
             sevCmKeys.splice(sevCmKeys.indexOf("rev") + 1, 0, "target");
+            sevCmKeys.splice(sevCmKeys.indexOf("achieve"), 1);
+            sevCmKeys.splice(sevCmKeys.indexOf("target") + 1, 0, "achieve");
           }
 
           var headerHtml = sevCmKeys
