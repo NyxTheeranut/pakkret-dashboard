@@ -6257,30 +6257,45 @@
               : "") +
             "เรียงจากคนที่คาดว่าจะขาดเป้ามากที่สุด · คลิกแถวเพื่อดูเฉพาะ CM นั้น";
 
-          var headerHtml = CM_LB_COLS.map(function (col) {
-            var isActive = state.rtr.cmLbSortKey === col.key;
-            var arrow = isActive
-              ? state.rtr.cmLbSortDir === "asc"
-                ? " ▲"
-                : " ▼"
-              : "";
-            var alignStyle =
-              col.align === "left" ? "" : ' style="text-align:right"';
-            return (
-              '<th class="sortable-th' +
-              (isActive ? " active-sort" : "") +
-              '" data-sort-key="' +
-              col.key +
-              '" tabindex="0" role="button" aria-label="เรียงตาม ' +
-              esc(col.label) +
-              '"' +
-              alignStyle +
-              ">" +
-              esc(col.label) +
-              arrow +
-              "</th>"
-            );
-          }).join("");
+          // In M1 mode the Target column moves to sit right behind M1 (header and body share
+          // this one ordering, so they can't drift apart).
+          var cmLbKeys = CM_LB_COLS.map(function (c) {
+            return c.key;
+          });
+          if (targetMode === "m1") {
+            cmLbKeys.splice(cmLbKeys.indexOf("target"), 1);
+            cmLbKeys.splice(cmLbKeys.indexOf("m1") + 1, 0, "target");
+          }
+
+          var headerHtml = cmLbKeys
+            .map(function (key) {
+              var col = CM_LB_COLS.find(function (c) {
+                return c.key === key;
+              });
+              var isActive = state.rtr.cmLbSortKey === col.key;
+              var arrow = isActive
+                ? state.rtr.cmLbSortDir === "asc"
+                  ? " ▲"
+                  : " ▼"
+                : "";
+              var alignStyle =
+                col.align === "left" ? "" : ' style="text-align:right"';
+              return (
+                '<th class="sortable-th' +
+                (isActive ? " active-sort" : "") +
+                '" data-sort-key="' +
+                col.key +
+                '" tabindex="0" role="button" aria-label="เรียงตาม ' +
+                esc(col.label) +
+                '"' +
+                alignStyle +
+                ">" +
+                esc(col.label) +
+                arrow +
+                "</th>"
+              );
+            })
+            .join("");
 
           var bodyHtml = rows
             .map(function (r) {
@@ -6289,49 +6304,43 @@
                 r.paceDelta == null
                   ? '<span class="pct-badge pct-badge-muted">—</span>'
                   : pctColored(r.paceDelta);
+              var cellByKey = {
+                name: "<td>" + esc(r.cm) + "</td>",
+                stores: '<td class="num-cell">' + fmt(r.storeCount) + "</td>",
+                ga: '<td class="num-cell">' + fmt(r.ga) + "</td>",
+                target:
+                  '<td class="num-cell">' +
+                  (r.target != null
+                    ? targetMode === "m1"
+                      ? fmtBaht(r.target)
+                      : fmt(r.target)
+                    : "—") +
+                  "</td>",
+                achieve:
+                  '<td class="num-cell">' +
+                  pctBadge(r.achievePct, "achieve") +
+                  "</td>",
+                pace: '<td class="num-cell">' + paceHtml + "</td>",
+                gap: '<td class="num-cell">' + signedUnits(r.surplus) + "</td>",
+                need: '<td class="num-cell">' + cmNeedCellHtml(r) + "</td>",
+                mom: '<td class="num-cell">' + pctBadge(r.momPct, "mom") + "</td>",
+                m1: '<td class="num-cell">' + fmtBaht(r.m1) + "</td>",
+                arpu:
+                  '<td class="num-cell">' +
+                  (r.arpu != null ? fmtBaht(r.arpu) : "—") +
+                  "</td>",
+              };
               return (
                 '<tr class="clickable" tabindex="0" role="button" data-cm="' +
                 esc(r.cm) +
                 '"' +
                 (isCurrent ? ' style="background:var(--paper);"' : "") +
                 ">" +
-                "<td>" +
-                esc(r.cm) +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmt(r.storeCount) +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmt(r.ga) +
-                "</td>" +
-                '<td class="num-cell">' +
-                (r.target != null
-                  ? targetMode === "m1"
-                    ? fmtBaht(r.target)
-                    : fmt(r.target)
-                  : "—") +
-                "</td>" +
-                '<td class="num-cell">' +
-                pctBadge(r.achievePct, "achieve") +
-                "</td>" +
-                '<td class="num-cell">' +
-                paceHtml +
-                "</td>" +
-                '<td class="num-cell">' +
-                signedUnits(r.surplus) +
-                "</td>" +
-                '<td class="num-cell">' +
-                cmNeedCellHtml(r) +
-                "</td>" +
-                '<td class="num-cell">' +
-                pctBadge(r.momPct, "mom") +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmtBaht(r.m1) +
-                "</td>" +
-                '<td class="num-cell">' +
-                (r.arpu != null ? fmtBaht(r.arpu) : "—") +
-                "</td>" +
+                cmLbKeys
+                  .map(function (key) {
+                    return cellByKey[key];
+                  })
+                  .join("") +
                 "</tr>"
               );
             })
@@ -11010,78 +11019,51 @@
                 : " · เลือกเดือนใดเดือนหนึ่งเพื่อดู %MOM") +
             " · คลิกแถวเพื่อดูเฉพาะ CM นั้น";
 
-          var headerHtml = SEV_CM_LB_COLS.map(function (col) {
-            var isActive = state.sev.cmLbSortKey === col.key;
-            var arrow = isActive
-              ? state.sev.cmLbSortDir === "asc"
-                ? " ▲"
-                : " ▼"
-              : "";
-            var alignStyle =
-              col.align === "left" ? "" : ' style="text-align:right"';
-            return (
-              '<th class="sortable-th' +
-              (isActive ? " active-sort" : "") +
-              '" data-sort-key="' +
-              col.key +
-              '" tabindex="0" role="button" aria-label="เรียงตาม ' +
-              esc(col.label) +
-              '"' +
-              (col.title ? ' title="' + esc(col.title) + '"' : "") +
-              alignStyle +
-              ">" +
-              esc(col.label) +
-              arrow +
-              "</th>"
-            );
-          }).join("");
+          // In M1 mode the Target column moves to sit right behind M1 (header and body share
+          // this one ordering, so they can't drift apart).
+          var sevCmKeys = SEV_CM_LB_COLS.map(function (c) {
+            return c.key;
+          });
+          if (mode === "m1") {
+            sevCmKeys.splice(sevCmKeys.indexOf("target"), 1);
+            sevCmKeys.splice(sevCmKeys.indexOf("rev") + 1, 0, "target");
+          }
+
+          var headerHtml = sevCmKeys
+            .map(function (key) {
+              var col = SEV_CM_LB_COLS.find(function (c) {
+                return c.key === key;
+              });
+              var isActive = state.sev.cmLbSortKey === col.key;
+              var arrow = isActive
+                ? state.sev.cmLbSortDir === "asc"
+                  ? " ▲"
+                  : " ▼"
+                : "";
+              var alignStyle =
+                col.align === "left" ? "" : ' style="text-align:right"';
+              return (
+                '<th class="sortable-th' +
+                (isActive ? " active-sort" : "") +
+                '" data-sort-key="' +
+                col.key +
+                '" tabindex="0" role="button" aria-label="เรียงตาม ' +
+                esc(col.label) +
+                '"' +
+                (col.title ? ' title="' + esc(col.title) + '"' : "") +
+                alignStyle +
+                ">" +
+                esc(col.label) +
+                arrow +
+                "</th>"
+              );
+            })
+            .join("");
 
           var bodyHtml = rows
             .map(function (r) {
               var isCurrent = state.sev.currentCM === r.cm;
-              return (
-                '<tr class="clickable" tabindex="0" role="button" data-cm="' +
-                esc(r.cm) +
-                '"' +
-                (isCurrent ? ' style="background:var(--paper);"' : "") +
-                ">" +
-                "<td>" +
-                esc(r.cm) +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmt(r.storeCount) +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmt(r.ga) +
-                "</td>" +
-                '<td class="num-cell">' +
-                (r.target != null
-                  ? mode === "m1"
-                    ? fmtBaht(r.target)
-                    : fmt(r.target)
-                  : "—") +
-                "</td>" +
-                '<td class="num-cell">' +
-                pctBadge(r.achievePct, "achieve") +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmt(r.ap49) +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmt(r.ap99) +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmt(r.ap199) +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmt(r.apOver199) +
-                "</td>" +
-                '<td class="num-cell">' +
-                (r.apUnder100Pct != null ? pct(r.apUnder100Pct) : "—") +
-                "</td>" +
-                '<td class="num-cell">' +
-                pctBadge(r.momPct, "mom") +
-                "</td>" +
+              var revCell =
                 '<td class="num-cell"' +
                 (r.revDeltaPct != null
                   ? ' title="' +
@@ -11098,10 +11080,49 @@
                 ">" +
                 fmtBaht(r.revAmt) +
                 deltaArrow(r.revDeltaPct) +
-                "</td>" +
-                '<td class="num-cell">' +
-                (r.arpu != null ? fmtBaht(r.arpu) : "—") +
-                "</td>" +
+                "</td>";
+              var cellByKey = {
+                name: "<td>" + esc(r.cm) + "</td>",
+                stores: '<td class="num-cell">' + fmt(r.storeCount) + "</td>",
+                ga: '<td class="num-cell">' + fmt(r.ga) + "</td>",
+                target:
+                  '<td class="num-cell">' +
+                  (r.target != null
+                    ? mode === "m1"
+                      ? fmtBaht(r.target)
+                      : fmt(r.target)
+                    : "—") +
+                  "</td>",
+                achieve:
+                  '<td class="num-cell">' +
+                  pctBadge(r.achievePct, "achieve") +
+                  "</td>",
+                ap49: '<td class="num-cell">' + fmt(r.ap49) + "</td>",
+                ap99: '<td class="num-cell">' + fmt(r.ap99) + "</td>",
+                ap199: '<td class="num-cell">' + fmt(r.ap199) + "</td>",
+                apOver199: '<td class="num-cell">' + fmt(r.apOver199) + "</td>",
+                apUnder100:
+                  '<td class="num-cell">' +
+                  (r.apUnder100Pct != null ? pct(r.apUnder100Pct) : "—") +
+                  "</td>",
+                mom: '<td class="num-cell">' + pctBadge(r.momPct, "mom") + "</td>",
+                rev: revCell,
+                arpu:
+                  '<td class="num-cell">' +
+                  (r.arpu != null ? fmtBaht(r.arpu) : "—") +
+                  "</td>",
+              };
+              return (
+                '<tr class="clickable" tabindex="0" role="button" data-cm="' +
+                esc(r.cm) +
+                '"' +
+                (isCurrent ? ' style="background:var(--paper);"' : "") +
+                ">" +
+                sevCmKeys
+                  .map(function (key) {
+                    return cellByKey[key];
+                  })
+                  .join("") +
                 "</tr>"
               );
             })
