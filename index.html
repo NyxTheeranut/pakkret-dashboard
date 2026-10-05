@@ -3544,6 +3544,41 @@
                 }
               }
             }
+            // "Ach M1 (<Month>)" is its own anchor immediately after the Target M1 block (same
+            // row, same 3-column shape) -- the CM's actual M1 as this sheet itself records it,
+            // by request used in place of summing each store's own "M1 <Month>" column from the
+            // mapping sheet (a different, less authoritative source).
+            var achM1Anchor = null;
+            for (var a5 = 0; a5 < anchors.length; a5++) {
+              if (
+                anchors[a5].text.indexOf("ach m1") === 0 &&
+                anchors[a5].text.indexOf(monthAbbr) !== -1
+              ) {
+                achM1Anchor = anchors[a5];
+                break;
+              }
+            }
+            var achM1TotalIdx = -1,
+              achM1MassMigrantIdx = -1,
+              achM1TouristIdx = -1;
+            if (achM1Anchor) {
+              var achM1BlockEnd = gRow.length;
+              for (var a6 = 0; a6 < anchors.length; a6++) {
+                if (anchors[a6].idx > achM1Anchor.idx) {
+                  achM1BlockEnd = anchors[a6].idx;
+                  break;
+                }
+              }
+              for (var c3 = achM1Anchor.idx; c3 < achM1BlockEnd; c3++) {
+                if (achM1TotalIdx === -1 && sNorm[c3] === "total m1") {
+                  achM1TotalIdx = c3;
+                } else if (achM1MassMigrantIdx === -1 && sNorm[c3] === "mass + migrant") {
+                  achM1MassMigrantIdx = c3;
+                } else if (achM1TouristIdx === -1 && sNorm[c3] === "tourist") {
+                  achM1TouristIdx = c3;
+                }
+              }
+            }
 
             var targets = new Map();
             var trustworthy = true;
@@ -3575,6 +3610,10 @@
                   m1Total: totalM1Idx !== -1 ? num(row[totalM1Idx]) : 0,
                   m1MassMigrant: m1MassMigrantIdx !== -1 ? num(row[m1MassMigrantIdx]) : 0,
                   m1Tourist: m1TouristIdx !== -1 ? num(row[m1TouristIdx]) : 0,
+                  achM1Total: achM1TotalIdx !== -1 ? num(row[achM1TotalIdx]) : 0,
+                  achM1MassMigrant:
+                    achM1MassMigrantIdx !== -1 ? num(row[achM1MassMigrantIdx]) : 0,
+                  achM1Tourist: achM1TouristIdx !== -1 ? num(row[achM1TouristIdx]) : 0,
                 });
               }
             }
@@ -4646,6 +4685,13 @@
                 cr.targetM1 = ov.m1Total || 0;
                 cr.targetedGA = cr.ga;
                 cr.targetOverridden = true;
+                // "Ach M1 (<Month>)" -- the CM's own actual M1 as this sheet itself records it,
+                // by request used in place of summing each store's own M1 column (a different,
+                // less authoritative source). Only overrides when this sheet actually has a
+                // real figure for this CM -- otherwise the per-store sum above (cr.m1, already
+                // accumulated earlier in this function) stays, same graceful-degradation rule
+                // as everything else here.
+                if (ov.achM1Total > 0) cr.m1 = ov.achM1Total;
               }
             });
             Object.keys(m.cmRollup).forEach(function (cmName) {
@@ -4672,8 +4718,11 @@
             ) {
               return a + (m.cmRollup[cmName].targetedGA || 0);
             }, 0);
-            m.totals.m1 = m.stores.reduce(function (a, s) {
-              return a + s.m1;
+            // From cmRollup (post Ach-M1 override), not independently from stores -- a CM with
+            // a real "Ach M1" figure has already had cr.m1 replaced with it above, and the
+            // total must reflect that too, same reasoning as target just above.
+            m.totals.m1 = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+              return a + (m.cmRollup[cmName].m1 || 0);
             }, 0);
             m.totals.achievePct =
               m.totals.target > 0
@@ -15554,12 +15603,13 @@
               if (!s) return;
               s.simTypes[r[1]] = Number(r[2]) || 0;
             });
-            // {total, massMigrant, tourist, m1Total} per CM, not a bare number -- massMigrant/
-            // tourist power the Mass/Migrant/Tourist trend-chart toggles' effect on Target
-            // (see rtrSegTargetInfo) -- the KPI Set Up sheet only ever splits target 2 ways
-            // (Mass+Migrant bundled, Tourist separate), never 3 independently. m1Total (r[4])
-            // added later -- a Sheet synced before this existed simply won't have it, same
-            // degrade-gracefully pattern as the stock/com columns on the stores table.
+            // {total, massMigrant, tourist, m1Total, achM1Total} per CM, not a bare number --
+            // massMigrant/tourist power the Mass/Migrant/Tourist trend-chart toggles' effect on
+            // Target (see rtrSegTargetInfo) -- the KPI Set Up sheet only ever splits target 2
+            // ways (Mass+Migrant bundled, Tourist separate), never 3 independently. m1Total
+            // (r[4]) and achM1Total (r[5]) added later -- a Sheet synced before these existed
+            // simply won't have them, same degrade-gracefully pattern as the stock/com columns
+            // on the stores table.
             var cmTargetMap = new Map();
             parts[4].rows.forEach(function (r) {
               cmTargetMap.set(r[0], {
@@ -15567,6 +15617,7 @@
                 massMigrant: Number(r[2]) || 0,
                 tourist: Number(r[3]) || 0,
                 m1Total: Number(r[4]) || 0,
+                achM1Total: Number(r[5]) || 0,
               });
             });
 
