@@ -1,10 +1,18 @@
-# Belt-and-braces: never publish source data or local artefacts.
-# The real protection is that this folder simply does not contain them.
+# Local-only data and tooling. Source spreadsheets, backups and caches never go to GitHub.
+.DS_Store
+__pycache__/
+*.pyc
+.pipeline_cache.json
+Source Data/
+Backups/
+Config/
 *.xlsx
 *.xls
 *.csv
-RTR/
-7-11/
-TOL/
 *.command
 paceholder.txt
+TOL/
+RTR/
+7-11/
+*preview*.html
+drive-file-test.html

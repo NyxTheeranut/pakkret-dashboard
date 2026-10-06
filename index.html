@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pak Kret Territory Explorer</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Ctext%20y%3D%27.9em%27%20font-size%3D%2790%27%3E%F0%9F%8F%AA%3C%2Ftext%3E%3C%2Fsvg%3E" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Ctext%20y%3D%27.9em%27%20font-size%3D%2790%27%3E%F0%9F%8F%AA%3C%2Ftext%3E%3C%2Fsvg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -1783,7 +1786,10 @@
       <div class="login-card">
         <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
         <h1>Pak Kret <span>Territory Explorer</span></h1>
-        <p>เข้าสู่ระบบด้วยบัญชี Google เพื่อดูแดชบอร์ด — ข้อมูลจะเริ่มโหลดหลังเข้าสู่ระบบเท่านั้น</p>
+        <p>
+          เข้าสู่ระบบด้วยบัญชี Google เพื่อดูแดชบอร์ด —
+          ข้อมูลจะเริ่มโหลดหลังเข้าสู่ระบบเท่านั้น
+        </p>
         <div id="gsiButton"></div>
         <div class="login-status" id="loginStatus"></div>
       </div>
@@ -2572,10 +2578,7 @@
             </div>
             <div class="modal-body">
               <div class="modal-hint">เลือกการ์ดที่ต้องการรวมในภาพเดียวกัน</div>
-              <div
-                class="modal-radio-row"
-                id="sevActionsExportChecks"
-              ></div>
+              <div class="modal-radio-row" id="sevActionsExportChecks"></div>
               <button
                 class="file-btn"
                 id="sevActionsExportGo"
@@ -3491,7 +3494,10 @@
             for (var c = targetAnchor.idx; c < blockEnd; c++) {
               if (totalGaIdx === -1 && sNorm[c] === "total ga") {
                 totalGaIdx = c;
-              } else if (massMigrantIdx === -1 && sNorm[c] === "mass + migrant") {
+              } else if (
+                massMigrantIdx === -1 &&
+                sNorm[c] === "mass + migrant"
+              ) {
                 massMigrantIdx = c;
               } else if (touristIdx === -1 && sNorm[c] === "tourist") {
                 touristIdx = c;
@@ -3537,7 +3543,10 @@
               for (var c2 = m1Anchor.idx; c2 < m1BlockEnd; c2++) {
                 if (totalM1Idx === -1 && sNorm[c2] === "total m1") {
                   totalM1Idx = c2;
-                } else if (m1MassMigrantIdx === -1 && sNorm[c2] === "mass + migrant") {
+                } else if (
+                  m1MassMigrantIdx === -1 &&
+                  sNorm[c2] === "mass + migrant"
+                ) {
                   m1MassMigrantIdx = c2;
                 } else if (m1TouristIdx === -1 && sNorm[c2] === "tourist") {
                   m1TouristIdx = c2;
@@ -3572,7 +3581,10 @@
               for (var c3 = achM1Anchor.idx; c3 < achM1BlockEnd; c3++) {
                 if (achM1TotalIdx === -1 && sNorm[c3] === "total m1") {
                   achM1TotalIdx = c3;
-                } else if (achM1MassMigrantIdx === -1 && sNorm[c3] === "mass + migrant") {
+                } else if (
+                  achM1MassMigrantIdx === -1 &&
+                  sNorm[c3] === "mass + migrant"
+                ) {
                   achM1MassMigrantIdx = c3;
                 } else if (achM1TouristIdx === -1 && sNorm[c3] === "tourist") {
                   achM1TouristIdx = c3;
@@ -3605,15 +3617,21 @@
               if (val > 0) {
                 targets.set(cmName, {
                   total: val,
-                  massMigrant: massMigrantIdx !== -1 ? num(row[massMigrantIdx]) : 0,
+                  massMigrant:
+                    massMigrantIdx !== -1 ? num(row[massMigrantIdx]) : 0,
                   tourist: touristIdx !== -1 ? num(row[touristIdx]) : 0,
                   m1Total: totalM1Idx !== -1 ? num(row[totalM1Idx]) : 0,
-                  m1MassMigrant: m1MassMigrantIdx !== -1 ? num(row[m1MassMigrantIdx]) : 0,
+                  m1MassMigrant:
+                    m1MassMigrantIdx !== -1 ? num(row[m1MassMigrantIdx]) : 0,
                   m1Tourist: m1TouristIdx !== -1 ? num(row[m1TouristIdx]) : 0,
-                  achM1Total: achM1TotalIdx !== -1 ? num(row[achM1TotalIdx]) : 0,
+                  achM1Total:
+                    achM1TotalIdx !== -1 ? num(row[achM1TotalIdx]) : 0,
                   achM1MassMigrant:
-                    achM1MassMigrantIdx !== -1 ? num(row[achM1MassMigrantIdx]) : 0,
-                  achM1Tourist: achM1TouristIdx !== -1 ? num(row[achM1TouristIdx]) : 0,
+                    achM1MassMigrantIdx !== -1
+                      ? num(row[achM1MassMigrantIdx])
+                      : 0,
+                  achM1Tourist:
+                    achM1TouristIdx !== -1 ? num(row[achM1TouristIdx]) : 0,
                 });
               }
             }
@@ -4698,18 +4716,30 @@
               var cr = m.cmRollup[cmName];
               cr.achievePct = cr.target > 0 ? cr.targetedGA / cr.target : null;
             });
-            m.totals.target = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+            m.totals.target = Object.keys(m.cmRollup).reduce(function (
+              a,
+              cmName,
+            ) {
               return a + (m.cmRollup[cmName].target || 0);
             }, 0);
             // Same reduce, one field over each -- lets the cluster-wide (no CM filter) view
             // resolve a segment-scoped target too, not just a single CM's own cmRollup entry.
-            m.totals.targetMassMigrant = Object.keys(m.cmRollup).reduce(function (a, cmName) {
-              return a + (m.cmRollup[cmName].targetMassMigrant || 0);
-            }, 0);
-            m.totals.targetTourist = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+            m.totals.targetMassMigrant = Object.keys(m.cmRollup).reduce(
+              function (a, cmName) {
+                return a + (m.cmRollup[cmName].targetMassMigrant || 0);
+              },
+              0,
+            );
+            m.totals.targetTourist = Object.keys(m.cmRollup).reduce(function (
+              a,
+              cmName,
+            ) {
               return a + (m.cmRollup[cmName].targetTourist || 0);
             }, 0);
-            m.totals.targetM1 = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+            m.totals.targetM1 = Object.keys(m.cmRollup).reduce(function (
+              a,
+              cmName,
+            ) {
               return a + (m.cmRollup[cmName].targetM1 || 0);
             }, 0);
             m.totals.targetedGA = Object.keys(m.cmRollup).reduce(function (
@@ -4731,7 +4761,10 @@
             // Summed from cmRollup's own tallies (NOT ga-minus-targetedGA) -- targetedGA no longer
             // means "GA from stores with an individual target," so that subtraction would silently
             // drift to a different number (GA from CMs with no committed target this month).
-            m.totals.noTargetGA = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+            m.totals.noTargetGA = Object.keys(m.cmRollup).reduce(function (
+              a,
+              cmName,
+            ) {
               return a + (m.cmRollup[cmName].noTargetGA || 0);
             }, 0);
             m.totals.noTargetCount = m.stores.filter(function (s) {
@@ -5690,7 +5723,8 @@
           var mass = !!segToggle.mass,
             migrant = !!segToggle.migrant,
             tourist = !!segToggle.tourist;
-          var unrestricted = (mass && migrant && tourist) || (!mass && !migrant && !tourist);
+          var unrestricted =
+            (mass && migrant && tourist) || (!mass && !migrant && !tourist);
           if (unrestricted) {
             return {
               ga: totals.ga,
@@ -6325,7 +6359,8 @@
                 pace: '<td class="num-cell">' + paceHtml + "</td>",
                 gap: '<td class="num-cell">' + signedUnits(r.surplus) + "</td>",
                 need: '<td class="num-cell">' + cmNeedCellHtml(r) + "</td>",
-                mom: '<td class="num-cell">' + pctBadge(r.momPct, "mom") + "</td>",
+                mom:
+                  '<td class="num-cell">' + pctBadge(r.momPct, "mom") + "</td>",
                 m1: '<td class="num-cell">' + fmtBaht(r.m1) + "</td>",
                 arpu:
                   '<td class="num-cell">' +
@@ -6480,9 +6515,7 @@
               ga: r.ga,
               target: r.hasAnyTarget ? r.target : null,
               achievePct:
-                r.hasAnyTarget && r.target > 0
-                  ? r.targetedGA / r.target
-                  : null,
+                r.hasAnyTarget && r.target > 0 ? r.targetedGA / r.target : null,
               momPct:
                 r.hasLmtd && r.lmtdSum > 0
                   ? (r.ga - r.lmtdSum) / r.lmtdSum
@@ -7419,9 +7452,7 @@
           var riskStoresAp1dAll = withConvAp1d
             .filter(function (x) {
               return (
-                x.s.ga >= topTertileCut &&
-                x.conv < medianConvAp1d &&
-                x.s.ga > 0
+                x.s.ga >= topTertileCut && x.conv < medianConvAp1d && x.s.ga > 0
               );
             })
             .sort(function (a, b) {
@@ -7576,7 +7607,15 @@
               "</span>"
             );
           }
-          var RISK_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "COM", "GA", "AP1D", "AP30D", "Conversion%"];
+          var RISK_EXPORT_COLS = [
+            "ร้าน",
+            "รหัสร้าน",
+            "COM",
+            "GA",
+            "AP1D",
+            "AP30D",
+            "Conversion%",
+          ];
           function riskExportRow(x) {
             return [
               x.s.name,
@@ -7588,7 +7627,14 @@
               x.s.ga > 0 ? pct(x.conv) : "—",
             ];
           }
-          var BAD_MOM_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "COM", "GA", "LMTD", "%MOM"];
+          var BAD_MOM_EXPORT_COLS = [
+            "ร้าน",
+            "รหัสร้าน",
+            "COM",
+            "GA",
+            "LMTD",
+            "%MOM",
+          ];
           function badMomExportRow(x) {
             return [
               x.s.name,
@@ -7603,7 +7649,14 @@
           // activity metric isn't the useful signal) and shows LMTD right next to GA
           // instead -- "was this normal for them" (last month's GA to the same cutoff
           // day) is what actually tells you whether a zero this period is new or not.
-          var NO_GA_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "COM", "GA", "LMTD", "AP1D"];
+          var NO_GA_EXPORT_COLS = [
+            "ร้าน",
+            "รหัสร้าน",
+            "COM",
+            "GA",
+            "LMTD",
+            "AP1D",
+          ];
           function noGaRow(s) {
             return (
               '<span class="n">' +
@@ -7676,7 +7729,9 @@
           html += cardHtml(
             "tag-risk",
             "ความเสี่ยงคุณภาพ",
-            "ร้านที่ GA ลดลงจากเดือนก่อนมากที่สุด (" + badMomAll.length + " ร้าน)",
+            "ร้านที่ GA ลดลงจากเดือนก่อนมากที่สุด (" +
+              badMomAll.length +
+              " ร้าน)",
             badMom,
             function (x) {
               return (
@@ -7704,9 +7759,16 @@
             function (btn) {
               btn.addEventListener("click", function () {
                 var entry =
-                  rtrExportRegistry[Number(btn.getAttribute("data-rtr-export-idx"))];
+                  rtrExportRegistry[
+                    Number(btn.getAttribute("data-rtr-export-idx"))
+                  ];
                 if (!entry) return;
-                rtrExportCardPng(entry.title, entry.cols, entry.rows, entry.key);
+                rtrExportCardPng(
+                  entry.title,
+                  entry.cols,
+                  entry.rows,
+                  entry.key,
+                );
               });
             },
           );
@@ -7762,7 +7824,10 @@
         // than just leaving it unfiltered. Only GA itself is genuinely safe to narrow.
         function rtrStoreSegGA(s) {
           var tog = state.rtr.segToggle;
-          if ((tog.mass && tog.migrant && tog.tourist) || (!tog.mass && !tog.migrant && !tog.tourist))
+          if (
+            (tog.mass && tog.migrant && tog.tourist) ||
+            (!tog.mass && !tog.migrant && !tog.tourist)
+          )
             return s.ga;
           return (
             (tog.mass ? s.mass || 0 : 0) +
@@ -8102,14 +8167,14 @@
         }
         function rtrExportCsvCellText(col, s) {
           if (col.key === "ga") return plainNum(rtrStoreSegGA(s));
-          if (col.key === "target") return s.hasTarget ? plainNum(s.target) : "—";
+          if (col.key === "target")
+            return s.hasTarget ? plainNum(s.target) : "—";
           if (col.key === "lmtdGa")
             return s.lmtdGa == null ? "—" : plainNum(s.lmtdGa);
           if (col.key === "ap1dSubs") return plainNum(s.ap1d);
           if (col.key === "ap30dSubs") return plainNum(s.ap30d);
           if (col.key === "m1") return plainNum(s.m1);
-          if (col.key === "arpu")
-            return s.ga > 0 ? plainNum(s.m1 / s.ga) : "—";
+          if (col.key === "arpu") return s.ga > 0 ? plainNum(s.m1 / s.ga) : "—";
           return rtrExportCellText(col, s);
         }
 
@@ -10820,7 +10885,8 @@
           {
             key: "apUnder100",
             label: "%AP<100",
-            title: "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA AE นี้ที่ราคาแพ็คต่ำกว่า 100",
+            title:
+              "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA AE นี้ที่ราคาแพ็คต่ำกว่า 100",
           },
           { key: "mom", label: "%MOM" },
           { key: "rev", label: "M1" },
@@ -10864,7 +10930,8 @@
           {
             key: "apUnder100",
             label: "%AP<100",
-            title: "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA CM นี้ที่ราคาแพ็คต่ำกว่า 100",
+            title:
+              "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA CM นี้ที่ราคาแพ็คต่ำกว่า 100",
           },
           { key: "mom", label: "%MOM" },
           { key: "rev", label: "M1" },
@@ -11109,7 +11176,8 @@
                   '<td class="num-cell">' +
                   (r.apUnder100Pct != null ? pct(r.apUnder100Pct) : "—") +
                   "</td>",
-                mom: '<td class="num-cell">' + pctBadge(r.momPct, "mom") + "</td>",
+                mom:
+                  '<td class="num-cell">' + pctBadge(r.momPct, "mom") + "</td>",
                 rev: revCell,
                 arpu:
                   '<td class="num-cell">' +
@@ -11263,7 +11331,9 @@
           var rows = aeNames.map(function (ae) {
             var r = byAe[ae];
             r.runrateGA =
-              pacing && pacing.expectedPct > 0 ? r.ga / pacing.expectedPct : null;
+              pacing && pacing.expectedPct > 0
+                ? r.ga / pacing.expectedPct
+                : null;
             r.momPct =
               mk && !day && r.hasPrevGA && r.prevGA > 0
                 ? (r.ga - r.prevGA) / r.prevGA
@@ -11389,9 +11459,7 @@
                       : ""),
                 ) +
                 '">' +
-                (r.productivity != null
-                  ? r.productivity.toFixed(1)
-                  : "—") +
+                (r.productivity != null ? r.productivity.toFixed(1) : "—") +
                 deltaArrow(r.productivityDeltaPct) +
                 "</td>" +
                 '<td class="num-cell">' +
@@ -11535,9 +11603,7 @@
           // view, not here -- same reasoning as declining's own ga > 0 gate below.
           var revDeclining = withSales
             .filter(function (x) {
-              return (
-                x.sv.revAmt > 0 && x.revMomPct != null && x.revMomPct < 0
-              );
+              return x.sv.revAmt > 0 && x.revMomPct != null && x.revMomPct < 0;
             })
             .sort(function (a, b) {
               return a.revMomPct - b.revMomPct;
@@ -11603,7 +11669,9 @@
               esc(tagText) +
               "</span>" +
               (badgeText
-                ? '<span class="insight-card-badge">' + esc(badgeText) + "</span>"
+                ? '<span class="insight-card-badge">' +
+                  esc(badgeText) +
+                  "</span>"
                 : "") +
               "</span>" +
               exportBtn +
@@ -11678,7 +11746,11 @@
           }, 0);
           var top10Badge =
             totalGAAll > 0
-              ? "รวม GA " + fmt(top10GA) + " · " + pct(top10GA / totalGAAll) + " ของทั้งหมด"
+              ? "รวม GA " +
+                fmt(top10GA) +
+                " · " +
+                pct(top10GA / totalGAAll) +
+                " ของทั้งหมด"
               : null;
 
           var html = "";
@@ -11778,9 +11850,15 @@
             $("sevInsightsGrid").querySelectorAll("[data-export-idx]"),
             function (btn) {
               btn.addEventListener("click", function () {
-                var entry = exportRegistry[Number(btn.getAttribute("data-export-idx"))];
+                var entry =
+                  exportRegistry[Number(btn.getAttribute("data-export-idx"))];
                 if (!entry) return;
-                sevExportCardPng(entry.title, entry.items, entry.key, entry.kind);
+                sevExportCardPng(
+                  entry.title,
+                  entry.items,
+                  entry.key,
+                  entry.kind,
+                );
               });
             },
           );
@@ -12267,7 +12345,13 @@
             var v = sevScopedValue(s, mk, day);
             var row =
               byCm[s.cm] ||
-              (byCm[s.cm] = { cm: s.cm, storeCount: 0, ga: 0, prevGA: 0, hasPrevGA: false });
+              (byCm[s.cm] = {
+                cm: s.cm,
+                storeCount: 0,
+                ga: 0,
+                prevGA: 0,
+                hasPrevGA: false,
+              });
             row.storeCount++;
             row.ga += v.ga;
             if (mk && !day) {
@@ -12289,10 +12373,10 @@
               // interactive toggle-able leaderboard) -- cmTargets[cm] is now {ga, m1}, so pull
               // .ga explicitly rather than assigning the whole record.
               r.target = targetActive
-                ? (state.sev.cmTargets[cm] && state.sev.cmTargets[cm].ga) || null
+                ? (state.sev.cmTargets[cm] && state.sev.cmTargets[cm].ga) ||
+                  null
                 : null;
-              r.achievePct =
-                r.target > 0 ? r.ga / r.target : null;
+              r.achievePct = r.target > 0 ? r.ga / r.target : null;
               var f = sevForecast(r.ga, r.target || 0, pacing);
               return [
                 cm,
@@ -12783,7 +12867,8 @@
           {
             key: "apUnder100",
             label: "%AP<100",
-            title: "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA ร้านนี้ที่ราคาแพ็คต่ำกว่า 100",
+            title:
+              "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA ร้านนี้ที่ราคาแพ็คต่ำกว่า 100",
           },
           { key: "mtd", label: "%MTD" },
           { key: "achieve", label: "%Achieve" },
@@ -13312,7 +13397,8 @@
           if (col.key === "apUnder100")
             return d.apUnder100Pct == null ? "—" : pct(d.apUnder100Pct);
           if (col.key === "mtd") return d.momPct == null ? "—" : pct(d.momPct);
-          if (col.key === "target") return d.target == null ? "—" : fmt(d.target);
+          if (col.key === "target")
+            return d.target == null ? "—" : fmt(d.target);
           if (col.key === "achieve")
             return d.achievePct == null ? "—" : pct(d.achievePct);
           if (col.key === "m1ga") return d.m1ga == null ? "—" : fmtBaht(d.m1ga);
@@ -13333,7 +13419,14 @@
               .split(/\s+/)[0] || ""
           );
         }
-        var SEV_GA_INSIGHTS_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "GA", "LMTD", "%MOM", "AE"];
+        var SEV_GA_INSIGHTS_EXPORT_COLS = [
+          "ร้าน",
+          "รหัสร้าน",
+          "GA",
+          "LMTD",
+          "%MOM",
+          "AE",
+        ];
         function sevGaInsightsExportRows(items) {
           return items.map(function (x) {
             return [
@@ -13350,7 +13443,14 @@
         }
         // Revenue counterpart of sevGaInsightsExportRows, for the M1 ลดลง card -- its rows
         // are shaped around revAmt/prevRevAmt/revMomPct instead of ga/lmtdGa/momPct.
-        var SEV_REV_INSIGHTS_EXPORT_COLS = ["ร้าน", "รหัสร้าน", "M1", "LMTD", "%MOM", "AE"];
+        var SEV_REV_INSIGHTS_EXPORT_COLS = [
+          "ร้าน",
+          "รหัสร้าน",
+          "M1",
+          "LMTD",
+          "%MOM",
+          "AE",
+        ];
         function sevRevInsightsExportRows(items) {
           return items.map(function (x) {
             return [
@@ -13371,8 +13471,14 @@
         // never drift into using different columns for the same card.
         function sevInsightsExportShape(kind) {
           return kind === "rev"
-            ? { cols: SEV_REV_INSIGHTS_EXPORT_COLS, rows: sevRevInsightsExportRows }
-            : { cols: SEV_GA_INSIGHTS_EXPORT_COLS, rows: sevGaInsightsExportRows };
+            ? {
+                cols: SEV_REV_INSIGHTS_EXPORT_COLS,
+                rows: sevRevInsightsExportRows,
+              }
+            : {
+                cols: SEV_GA_INSIGHTS_EXPORT_COLS,
+                rows: sevGaInsightsExportRows,
+              };
         }
 
         // Same painter (cellFont/drawCanvasTable/summaryValueColor) as the whole-section
@@ -13440,7 +13546,8 @@
             var url = URL.createObjectURL(blob);
             var a = document.createElement("a");
             a.href = url;
-            a.download = "pak-kret-sev-" + (key || "insight") + "-" + Date.now() + ".png";
+            a.download =
+              "pak-kret-sev-" + (key || "insight") + "-" + Date.now() + ".png";
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -13511,7 +13618,8 @@
             var url = URL.createObjectURL(blob);
             var a = document.createElement("a");
             a.href = url;
-            a.download = "pak-kret-rtr-" + (key || "insight") + "-" + Date.now() + ".png";
+            a.download =
+              "pak-kret-rtr-" + (key || "insight") + "-" + Date.now() + ".png";
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -13733,7 +13841,11 @@
           // columns line up either way.
           var tables = cards.map(function (c) {
             var shape = sevInsightsExportShape(c.kind);
-            return { title: c.title, cols: shape.cols, rows: shape.rows(c.items) };
+            return {
+              title: c.title,
+              cols: shape.cols,
+              rows: shape.rows(c.items),
+            };
           });
 
           var probe = document.createElement("canvas").getContext("2d");
@@ -15736,7 +15848,10 @@
             parts[3].rows.forEach(function (r) {
               // r[2] (targetM1) added later -- a Sheet synced before this existed simply won't
               // have it, same degrade-gracefully pattern as RTR's stock/com columns.
-              cmTargets[r[0]] = { ga: Number(r[1]) || 0, m1: Number(r[2]) || 0 };
+              cmTargets[r[0]] = {
+                ga: Number(r[1]) || 0,
+                m1: Number(r[2]) || 0,
+              };
             });
             return {
               monthKey: monthKey,
@@ -15966,9 +16081,7 @@
                 (b.dataAsOf ? " · <b>" + esc(b.dataAsOf) + "</b>" : "") +
                 " · ซิงค์ล่าสุด " +
                 esc(when) +
-                (partial
-                  ? " · <b>กำลังโหลดเดือนก่อนหน้าเพิ่มเติม…</b>"
-                  : "") +
+                (partial ? " · <b>กำลังโหลดเดือนก่อนหน้าเพิ่มเติม…</b>" : "") +
                 "</span></div>";
           });
         }
@@ -16046,7 +16159,11 @@
               // network entirely (beyond the one cheap meta read just above) and render
               // straight from what was already parsed last time.
               var cached = loadCloudCache();
-              if (cached && cached.updatedAt && cached.updatedAt === meta.updated_at) {
+              if (
+                cached &&
+                cached.updatedAt &&
+                cached.updatedAt === meta.updated_at
+              ) {
                 applyCloudResult(cached.rtrObjs, cached.sevObjs, meta);
                 return;
               }
