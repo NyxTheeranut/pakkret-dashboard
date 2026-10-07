@@ -1792,7 +1792,7 @@
       #panelOverview .ov-rowname { font-weight: 600; font-size: 14px; display: flex; flex-direction: column; }
       #panelOverview .ov-rowcm { font-size: 11px; font-weight: 400; color: var(--muted); }
       #panelOverview .ov-bars { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-      #panelOverview .ov-barline { display: grid; grid-template-columns: 150px 1fr 84px; gap: 10px; align-items: center; font-size: 12px; }
+      #panelOverview .ov-barline { display: grid; grid-template-columns: 150px 64px 1fr 84px; gap: 10px; align-items: center; font-size: 12px; }
       #panelOverview .ov-barline.later .ov-bar { opacity: 0.5; }
       #panelOverview .ov-bartag { color: var(--muted); white-space: nowrap; }
       #panelOverview .ov-bartrack { display: block; height: 12px; border-radius: 4px; background: rgba(18, 26, 43, 0.06); overflow: hidden; }
@@ -1802,10 +1802,10 @@
       #panelOverview .ov-barval { text-align: right; font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
       @media (max-width: 560px) {
         #panelOverview .ov-row { grid-template-columns: 1fr; gap: 6px; }
-        #panelOverview .ov-barline { grid-template-columns: 110px 1fr 72px; }
+        #panelOverview .ov-barline { grid-template-columns: 110px 56px 1fr 72px; }
       }
       #panelOverview .ov-filter-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
-      #panelOverview .ov-rowbadge { margin-left: 8px; font-weight: 400; }
+      #panelOverview .ov-barpct { text-align: left; }
       #panelOverview .ov-month { background: none; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
       #panelOverview .ov-month[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
       #panelOverview .ov-month.partial .ov-bar-stack { outline: 1px dashed var(--muted); outline-offset: 2px; }
@@ -4286,22 +4286,18 @@
                 return (
                   '<span class="ov-barline' + (ki ? " later" : "") + '" title="' + esc(tip) + '">' +
                   '<span class="ov-bartag">' + esc(ovLabel(k)) + " · " + name + "</span>" +
+                  '<span class="ov-barpct">' + ovPctCell(val != null && t ? val / t : null) + "</span>" +
                   '<span class="ov-bartrack"><span class="ov-bar ' + ch + '" style="width:' + w.toFixed(2) + '%"></span></span>' +
                   '<span class="ov-barval">' + (val == null ? "—" : fmt(val)) + "</span></span>"
                 );
               }).join("");
             }).join("");
-            var lv = it.vals[latest];
-            var comb = ovCombine(lv.rtr, lv.sev);
-            var combT = lv.rtrT != null && lv.sevT != null ? lv.rtrT + lv.sevT : null;
-            var badge = ovPctCell(combT && comb != null ? comb / combT : null);
             return (
               head +
               '<button type="button" class="ov-row" data-go="rtr" data-cm="' + esc(it.cm) + '"' +
               (person ? ' data-com="' + esc(it.name) + '"' : "") + ">" +
               '<span class="ov-rowname">' + esc(it.name) +
-              (person ? '<span class="ov-rowcm">' + esc(it.cm) + "</span>" : "") +
-              '<span class="ov-rowbadge">' + badge + "</span></span>" +
+              (person ? '<span class="ov-rowcm">' + esc(it.cm) + "</span>" : "") + "</span>" +
               '<span class="ov-bars">' + bars + "</span></button>"
             );
           }).join("");
