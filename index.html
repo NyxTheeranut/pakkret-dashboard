@@ -1779,6 +1779,18 @@
           grid-template-columns: 1fr;
         }
       }
+
+      #panelOverview button { min-height: 44px; }
+      #panelOverview :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      #panelOverview .ov-legend button[aria-pressed="false"] { opacity: 0.45; }
+      #panelOverview .ov-legend button { display: inline-flex; align-items: center; gap: 6px; }
+      #panelOverview .ov-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+      #panelOverview .ov-month { background: none; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
+      #panelOverview .ov-month[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+      #panelOverview .ov-month.partial .ov-bar-stack { outline: 1px dashed var(--muted); outline-offset: 2px; }
+      @media (prefers-reduced-motion: reduce) {
+        #panelOverview * { transition: none !important; animation: none !important; }
+      }
     </style>
   </head>
   <body>
@@ -1953,6 +1965,39 @@
         <button class="top-tab" id="tabBtnSev" data-tab="sev">
           <span class="dot"></span>7-11
         </button>
+        <button class="top-tab" id="tabBtnOverview" data-tab="overview">
+          <span class="dot"></span>ภาพรวม
+        </button>
+      </div>
+
+      <!-- ============ OVERVIEW PANEL (RTR + 7-11 combined) ============ -->
+      <div id="panelOverview" style="display: none">
+        <div class="section-head">
+          <h2>ภาพรวม RTR + 7-11</h2>
+          <span class="hint" id="ovHint"></span>
+        </div>
+        <div class="card">
+          <div id="ovMonthPicker"></div>
+          <div id="ovCoverage"></div>
+        </div>
+        <section>
+          <div class="section-head"><h3>GA เทียบรายคู่ CM</h3><span class="hint">คลิกชื่อ CM เพื่อเปิดแท็บนั้น</span></div>
+          <div class="card">
+            <div id="ovBarChart"></div>
+          </div>
+        </section>
+        <section>
+          <div class="section-head"><h3>ตาราง GA รายคู่ CM</h3></div>
+          <div class="card"><div id="ovCmTable"></div></div>
+        </section>
+        <section>
+          <div class="section-head"><h3>M1 รายคู่ CM</h3></div>
+          <div class="card"><div id="ovM1Table"></div></div>
+        </section>
+        <section>
+          <div class="section-head"><h3>GA รายเดือน (RTR + 7-11)</h3><span class="hint">คลิกเดือนเพื่อเลือก (สูงสุด 2 เดือน)</span></div>
+          <div class="card"><div id="ovTrend"></div></div>
+        </section>
       </div>
 
       <!-- ============ RTR PANEL ============ -->
@@ -2794,6 +2839,8 @@
             segToggle: { mass: true, migrant: true, tourist: true },
             selectedDay: null,
             fileHandle: null,
+            // Overview tab: months the user picked (null = default, the latest two)
+            overviewMonths: null,
             cmLbSortKey: "gap",
             cmLbSortDir: "asc",
             cmLbTargetMode: "ga", // "ga" | "m1" -- which committed target Target/%Achieve read
@@ -2836,6 +2883,7 @@
             cmLbTargetMode: "ga", // "ga" | "m1" -- which committed target Target/%Achieve/%MOM read
             cmTargets: {}, // CM name -> {ga, m1} committed target, from the "TG CM" sheet
             cmTargetMonthKey: null,
+            cmTargetsByMonth: {}, // "YYYYMM" -> {cm: {ga, m1}}, every month's 7-11 CM target (Overview tab)
             visibleCount: 20,
           },
         };
@@ -3727,8 +3775,11 @@
           state.activeTab = tab;
           $("tabBtnRtr").classList.toggle("active", tab === "rtr");
           $("tabBtnSev").classList.toggle("active", tab === "sev");
+          $("tabBtnOverview").classList.toggle("active", tab === "overview");
           $("panelRtr").style.display = tab === "rtr" ? "block" : "none";
           $("panelSev").style.display = tab === "sev" ? "block" : "none";
+          $("panelOverview").style.display = tab === "overview" ? "block" : "none";
+          if (tab === "overview") renderOverview();
           renderDebugToggleBtn();
         }
         $("tabBtnRtr").addEventListener("click", function () {
@@ -3737,6 +3788,446 @@
         $("tabBtnSev").addEventListener("click", function () {
           switchTab("sev");
         });
+        $("tabBtnOverview").addEventListener("click", function () {
+          switchTab("overview");
+        });
+
+        // =====================================================================
+        // OVERVIEW TAB: RTR + 7-11 combined, per CM, for whichever months the
+        // user picks. Combined numbers are only ever shown when both channels
+        // have what they need for that month -- never a blended % with a
+        // missing side.
+        // =====================================================================
+        function ovMonthKeyOfRtr(m) {
+          var d = parseSheetDate(m.sheetName);
+          if (!d) return null;
+          var y = d.year || new Date().getFullYear();
+          return String(y) + (d.monthIndex + 1 < 10 ? "0" : "") + String(d.monthIndex + 1);
+        }
+        function ovAllKeys() {
+          var set = {};
+          (state.rtr.months || []).forEach(function (m) {
+            var k = ovMonthKeyOfRtr(m);
+            if (k) set[k] = true;
+          });
+          (state.sev.monthsAvailable || []).forEach(function (k) {
+            set[k] = true;
+          });
+          return Object.keys(set).sort();
+        }
+        function ovLabel(key) {
+          return MONTH_LABEL[parseInt(key.slice(4, 6), 10) - 1] + " " + key.slice(0, 4);
+        }
+        function ovRtrMonth(key) {
+          return (state.rtr.months || []).find(function (m) {
+            return ovMonthKeyOfRtr(m) === key;
+          }) || null;
+        }
+        function ovCms() {
+          var set = {};
+          (state.rtr.months || []).forEach(function (m) {
+            Object.keys(m.cmRollup || {}).forEach(function (c) {
+              if (c !== UNMAPPED_CM) set[c] = true;
+            });
+          });
+          state.sev.stores.forEach(function (s) {
+            if (s.cm && s.cm !== UNMAPPED_CM) set[s.cm] = true;
+          });
+          return Object.keys(set).sort();
+        }
+        // Per-CM figures for one month, from each channel's own numbers. A side that
+        // has no actual or no target for the month is recorded as null, not zero.
+        function ovCmData(key) {
+          var rm = ovRtrMonth(key);
+          var sevHas = (state.sev.monthsAvailable || []).indexOf(key) !== -1;
+          var sevTargets = state.sev.cmTargetsByMonth[key] || {};
+          var out = {};
+          ovCms().forEach(function (cm) {
+            var cr = rm && rm.cmRollup ? rm.cmRollup[cm] : null;
+            var sevGA = null, sevRev = null;
+            if (sevHas) {
+              sevGA = 0;
+              sevRev = 0;
+              state.sev.stores.forEach(function (s) {
+                if (s.cm !== cm) return;
+                var b = s.byMonth && s.byMonth[key];
+                if (b) {
+                  sevGA += b.ga || 0;
+                  sevRev += b.revAmt || 0;
+                }
+              });
+            }
+            var t = sevTargets[cm] || {};
+            out[cm] = {
+              rtrGA: cr ? cr.ga : null,
+              rtrT: cr && cr.target > 0 ? cr.target : null,
+              rtrM1: cr ? cr.m1 : null,
+              rtrM1T: cr && cr.targetM1 > 0 ? cr.targetM1 : null,
+              sevGA: sevGA,
+              sevT: t.ga > 0 ? t.ga : null,
+              sevM1: sevRev,
+              sevM1T: t.m1 > 0 ? t.m1 : null,
+            };
+          });
+          return out;
+        }
+        function ovPartial(key) {
+          var rm = ovRtrMonth(key);
+          if (!rm) return false;
+          var dim = new Date(parseInt(key.slice(0, 4), 10), parseInt(key.slice(4, 6), 10), 0).getDate();
+          return monthMaxDay(rm) < dim;
+        }
+        function ovSum(vals) {
+          var real = vals.filter(function (v) { return v != null; });
+          return real.length ? real.reduce(function (a, b) { return a + b; }, 0) : null;
+        }
+        function ovCombine(a, b) {
+          if (a == null && b == null) return null;
+          return (a || 0) + (b || 0);
+        }
+        function ovPctCell(v) {
+          return v == null ? "—" : pctBadge(v, "achieve");
+        }
+        function ovNum(v, baht) {
+          if (v == null) return "—";
+          return baht ? fmtBaht(v) : fmt(v);
+        }
+
+        function renderOvPicker(keys, sel) {
+          $("ovMonthPicker").innerHTML =
+            '<span class="lbl">เดือน</span> ' +
+            keys
+              .map(function (k) {
+                return (
+                  '<button class="pill small' +
+                  (sel.indexOf(k) !== -1 ? " active" : "") +
+                  '" data-ov-month="' + k + '">' +
+                  esc(ovLabel(k)) +
+                  (ovPartial(k) ? " · ยังไม่ครบเดือน" : "") +
+                  "</button>"
+                );
+              })
+              .join("");
+        }
+        function renderOvCoverage(sel) {
+          var sevMonths = state.sev.monthsAvailable || [];
+          $("ovCoverage").innerHTML = sel
+            .map(function (k) {
+              var hasRtr = !!ovRtrMonth(k);
+              var hasSev = sevMonths.indexOf(k) !== -1;
+              var parts = [];
+              if (hasRtr && hasSev) parts.push("RTR + 7-11");
+              else if (hasRtr) parts.push("RTR เท่านั้น");
+              else if (hasSev) parts.push("7-11 เท่านั้น");
+              if (ovPartial(k)) parts.push("ข้อมูลยังไม่ครบเดือน");
+              if (hasRtr && !hasSev) parts.push("ไม่มีข้อมูล 7-11 เดือนนี้");
+              return (
+                '<div class="notice-row">' +
+                esc(ovLabel(k)) + ": " + esc(parts.join(" · ")) +
+                "</div>"
+              );
+            })
+            .join("");
+        }
+        // One table, one column group per selected month. metric = "ga" | "m1".
+        function renderOvTable(sel, metric) {
+          var cms = ovCms();
+          var byKey = {};
+          sel.forEach(function (k) { byKey[k] = ovCmData(k); });
+          var isM1 = metric === "m1";
+          var cols = isM1
+            ? ["RTR M1", "7-11 M1", "รวม M1", "เป้ารวม", "%Ach"]
+            : ["RTR GA", "7-11 GA", "รวม GA", "เป้ารวม", "%Ach"];
+
+          var head =
+            '<tr><th style="text-align:left">CM</th>' +
+            sel.map(function (k) {
+              return (
+                '<th colspan="5" style="text-align:center">' + esc(ovLabel(k)) + "</th>"
+              );
+            }).join("") +
+            "</tr><tr><th></th>" +
+            sel.map(function () {
+              return cols.map(function (c) {
+                return '<th style="text-align:right">' + c + "</th>";
+              }).join("");
+            }).join("") +
+            "</tr>";
+
+          function cellsFor(k, row) {
+            var rA = isM1 ? row.rtrM1 : row.rtrGA;
+            var sA = isM1 ? row.sevM1 : row.sevGA;
+            var rT = isM1 ? row.rtrM1T : row.rtrT;
+            var sT = isM1 ? row.sevM1T : row.sevT;
+            var comb = ovCombine(rA, sA);
+            var combT = rT != null && sT != null ? rT + sT : null;
+            var noTarget = combT == null && (rA != null || sA != null);
+            var pctVal = combT ? comb / combT : null;
+            return (
+              '<td class="num-cell" data-go="rtr" data-cm="' + esc(row.cm) + '">' + ovNum(rA, isM1) + "</td>" +
+              '<td class="num-cell" data-go="sev" data-cm="' + esc(row.cm) + '">' + ovNum(sA, isM1) + "</td>" +
+              '<td class="num-cell">' + ovNum(comb, isM1) + "</td>" +
+              '<td class="num-cell">' + (combT != null ? ovNum(combT, isM1) : noTarget ? "ไม่มีเป้า" : "—") + "</td>" +
+              '<td class="num-cell">' + ovPctCell(pctVal) + "</td>"
+            );
+          }
+
+          var rowsHtml = cms.map(function (cm) {
+            return (
+              '<tr class="clickable" data-go="both" data-cm="' + esc(cm) + '"><td>' + esc(cm) + "</td>" +
+              sel.map(function (k) { return cellsFor(k, byKey[k][cm]); }).join("") +
+              "</tr>"
+            );
+          }).join("");
+
+          // Total row: a combined target only if every CM has one on both sides.
+          var totalRow = { cm: "รวม" };
+          var totals = sel.map(function (k) {
+            var d = byKey[k];
+            var keysCm = Object.keys(d);
+            var agg = {
+              rtrGA: ovSum(keysCm.map(function (c) { return d[c].rtrGA; })),
+              sevGA: ovSum(keysCm.map(function (c) { return d[c].sevGA; })),
+              rtrM1: ovSum(keysCm.map(function (c) { return d[c].rtrM1; })),
+              sevM1: ovSum(keysCm.map(function (c) { return d[c].sevM1; })),
+              rtrT: ovSum(keysCm.map(function (c) { return d[c].rtrT; })),
+              sevT: ovSum(keysCm.map(function (c) { return d[c].sevT; })),
+              rtrM1T: ovSum(keysCm.map(function (c) { return d[c].rtrM1T; })),
+              sevM1T: ovSum(keysCm.map(function (c) { return d[c].sevM1T; })),
+            };
+            var complete = keysCm.every(function (c) {
+              return isM1
+                ? d[c].rtrM1T != null && d[c].sevM1T != null
+                : d[c].rtrT != null && d[c].sevT != null;
+            });
+            return { k: k, agg: agg, complete: complete };
+          });
+          var totalCells = totals.map(function (t) {
+            var a = t.agg;
+            var rA = isM1 ? a.rtrM1 : a.rtrGA;
+            var sA = isM1 ? a.sevM1 : a.sevGA;
+            var rT = isM1 ? a.rtrM1T : a.rtrT;
+            var sT = isM1 ? a.sevM1T : a.sevT;
+            var comb = ovCombine(rA, sA);
+            var combT = t.complete && rT != null && sT != null ? rT + sT : null;
+            var pctVal = combT ? comb / combT : null;
+            return (
+              "<td class=\"num-cell\">" + ovNum(rA, isM1) + "</td>" +
+              "<td class=\"num-cell\">" + ovNum(sA, isM1) + "</td>" +
+              "<td class=\"num-cell\">" + ovNum(comb, isM1) + "</td>" +
+              "<td class=\"num-cell\">" + (combT != null ? ovNum(combT, isM1) : "ไม่ครบ") + "</td>" +
+              "<td class=\"num-cell\">" + ovPctCell(pctVal) + "</td>"
+            );
+          }).join("");
+
+          return (
+            '<div class="table-scroll-box"><table><thead>' + head + "</thead><tbody>" +
+            rowsHtml +
+            '<tr class="total-row"><td>รวม</td>' + totalCells + "</tr>" +
+            "</tbody></table></div>"
+          );
+        }
+        function ovToggleMonth(k) {
+          // Holds at most 2 months. Picking a third drops the one selected first.
+          var sel = (state.rtr.overviewMonths || []).slice();
+          var i = sel.indexOf(k);
+          if (i !== -1) {
+            if (sel.length > 1) sel.splice(i, 1);
+          } else {
+            sel.push(k);
+            if (sel.length > 2) sel.shift();
+          }
+          state.rtr.overviewMonths = sel;
+          renderOverview();
+        }
+        function ovSeries() {
+          return state.rtr.ovSeries || (state.rtr.ovSeries = { rtr: true, sev: true });
+        }
+        function renderOvTrend(sel) {
+          var keys = ovAllKeys();
+          var sevMonths = state.sev.monthsAvailable || [];
+          var bars = keys.map(function (k) {
+            var d = ovCmData(k);
+            var rtr = 0, sev = 0;
+            Object.keys(d).forEach(function (c) {
+              rtr += d[c].rtrGA || 0;
+              sev += d[c].sevGA || 0;
+            });
+            return { k: k, rtr: rtr, sev: sev, hasSev: sevMonths.indexOf(k) !== -1, partial: ovPartial(k) };
+          });
+          var max = Math.max.apply(null, bars.map(function (b) { return b.rtr + b.sev; }).concat([1]));
+          $("ovTrend").innerHTML =
+            '<div style="display:flex;gap:10px;align-items:flex-end;height:220px;padding:8px 4px;overflow-x:auto">' +
+            bars.map(function (b) {
+              var hR = Math.round((b.rtr / max) * 170);
+              var hS = Math.round((b.sev / max) * 170);
+              var isSel = sel.indexOf(b.k) !== -1;
+              return (
+                '<button type="button" class="ov-month' + (b.partial ? " partial" : "") +
+                '" data-ov-month="' + b.k + '" aria-pressed="' + (isSel ? "true" : "false") +
+                '" aria-label="' + esc(ovLabel(b.k)) + ' RTR ' + fmt(b.rtr) + ' 7-11 ' + (b.hasSev ? fmt(b.sev) : "ไม่มีข้อมูล") + '"' +
+                ' style="flex:1;min-width:64px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;padding:6px">' +
+                '<div style="font-size:12px;margin-bottom:4px">' + fmt(b.rtr + b.sev) + "</div>" +
+                '<div class="ov-bar-stack" style="width:70%;max-width:70px;display:flex;flex-direction:column-reverse">' +
+                '<div style="height:' + hR + 'px;background:var(--accent)"></div>' +
+                '<div style="height:' + hS + 'px;background:var(--warn)"></div>' +
+                "</div>" +
+                '<div style="font-size:12px;margin-top:6px">' + esc(ovLabel(b.k)) + (b.partial ? " · ยังไม่ครบ" : "") + "</div>" +
+                "</button>"
+              );
+            }).join("") +
+            "</div>";
+        }
+
+        // Grouped bars: one group per CM, one bar per (selected month x channel).
+        // Legend buttons switch a channel off/on; hovering a bar shows its numbers
+        // (<title> tooltip, also read by screen readers); clicking a group opens that CM.
+        function renderOvBarChart(show) {
+          var series = ovSeries();
+          var chans = ["rtr", "sev"].filter(function (c) { return series[c]; });
+          var cms = ovCms();
+          var data = {};
+          show.forEach(function (k) { data[k] = ovCmData(k); });
+          var W = 640, H = 300, padL = 52, padT = 16, padB = 64;
+          var plotH = H - padT - padB;
+          var max = 1;
+          show.forEach(function (k) {
+            cms.forEach(function (cm) {
+              var d = data[k][cm];
+              if (series.rtr && d.rtrGA > max) max = d.rtrGA;
+              if (series.sev && d.sevGA > max) max = d.sevGA;
+            });
+          });
+          var groupW = (W - padL - 10) / Math.max(cms.length, 1);
+          var slots = Math.max(show.length * chans.length, 1);
+          var barW = Math.min(30, (groupW - 24) / slots);
+          var svg = "";
+          [0, 0.5, 1].forEach(function (f) {
+            var y = padT + plotH - f * plotH;
+            svg += '<line x1="' + padL + '" x2="' + (W - 6) + '" y1="' + y + '" y2="' + y + '" stroke="var(--line)"/>';
+            svg += '<text x="' + (padL - 6) + '" y="' + (y + 4) + '" text-anchor="end" font-size="11" fill="var(--muted)">' + fmt(max * f) + "</text>";
+          });
+          cms.forEach(function (cm, gi) {
+            var gx = padL + gi * groupW + groupW / 2;
+            var x = gx - (slots * barW) / 2;
+            show.forEach(function (k) {
+              chans.forEach(function (ch) {
+                var d = data[k][cm];
+                var v = ch === "rtr" ? d.rtrGA : d.sevGA;
+                var t = ch === "rtr" ? d.rtrT : d.sevT;
+                var h = v != null ? Math.round((v / max) * plotH) : 0;
+                var color = ch === "rtr" ? "var(--accent)" : "var(--warn)";
+                var tip = cm + " · " + ovLabel(k) + " · " + (ch === "rtr" ? "RTR" : "7-11") +
+                  " GA " + (v == null ? "—" : fmt(v)) + " · เป้า " + (t ? fmt(t) : "ไม่มีเป้า") +
+                  " · %Ach " + (v != null && t ? pct(v / t) : "—");
+                svg += '<g tabindex="0" role="img" aria-label="' + esc(tip) + '">' +
+                  '<rect x="' + x.toFixed(1) + '" y="' + (padT + plotH - h) + '" width="' + (barW - 2).toFixed(1) +
+                  '" height="' + h + '" rx="3" fill="' + color + '"/>' +
+                  "<title>" + esc(tip) + "</title></g>";
+                x += barW;
+              });
+            });
+            svg += '<text x="' + gx + '" y="' + (H - 40) + '" text-anchor="middle" font-size="12" fill="var(--ink)">' + esc(cm) + "</text>";
+            svg += '<rect data-go="rtr" data-cm="' + esc(cm) + '" tabindex="0" role="button" aria-label="เปิดแท็บ RTR ของ ' + esc(cm) +
+              '" x="' + (padL + gi * groupW) + '" y="' + padT + '" width="' + groupW + '" height="' + plotH +
+              '" fill="transparent" style="cursor:pointer"/>';
+          });
+          var legend =
+            '<div class="ov-legend" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">' +
+            [["rtr", "RTR", "var(--accent)"], ["sev", "7-11", "var(--warn)"]].map(function (c) {
+              return '<button type="button" data-series="' + c[0] + '" aria-pressed="' + (series[c[0]] ? "true" : "false") + '">' +
+                '<span class="ov-swatch" style="background:' + c[2] + '"></span>' + c[1] + "</button>";
+            }).join("") +
+            "</div>";
+          $("ovBarChart").innerHTML =
+            '<svg viewBox="0 0 ' + W + " " + H + '" width="100%" role="img" aria-label="กราฟ GA เทียบรายคู่ CM">' +
+            svg + "</svg>" + legend;
+        }
+
+        function renderOverview() {
+          var keys = ovAllKeys();
+          if (!keys.length) {
+            $("ovCmTable").innerHTML = '<div class="insight-empty">ยังไม่มีข้อมูล — โหลดไฟล์ RTR หรือ 7-11 ก่อน</div>';
+            $("ovM1Table").innerHTML = "";
+            $("ovTrend").innerHTML = "";
+            $("ovBarChart").innerHTML = "";
+            $("ovCoverage").innerHTML = "";
+            $("ovMonthPicker").innerHTML = "";
+            return;
+          }
+          var sel = (state.rtr.overviewMonths || []).filter(function (k) {
+            return keys.indexOf(k) !== -1;
+          });
+          if (!sel.length) sel = keys.slice(-2);
+          if (sel.length > 2) sel = sel.slice(-2);
+          state.rtr.overviewMonths = sel;
+          var show = sel.slice().sort();
+          $("ovHint").textContent = "รวม GA และ M1 จากทั้งสองช่องทาง · เป้ารวมแสดงเฉพาะเมื่อทั้งสองช่องทางมีเป้าของเดือนนั้น · เลือกได้ 2 เดือน";
+          renderOvPicker(keys, show);
+          renderOvCoverage(show);
+          renderOvBarChart(show);
+          $("ovCmTable").innerHTML = renderOvTable(show, "ga");
+          $("ovM1Table").innerHTML = renderOvTable(show, "m1");
+          renderOvTrend(show);
+        }
+
+        // Event delegation on the static containers, attached once.
+        $("ovMonthPicker").onclick = function (e) {
+          var btn = e.target.closest("[data-ov-month]");
+          if (btn) ovToggleMonth(btn.getAttribute("data-ov-month"));
+        };
+        $("ovTrend").onclick = function (e) {
+          var btn = e.target.closest("[data-ov-month]");
+          if (btn) ovToggleMonth(btn.getAttribute("data-ov-month"));
+        };
+        $("ovBarChart").onclick = function (e) {
+          var legend = e.target.closest("[data-series]");
+          if (legend) {
+            var series = ovSeries();
+            var ch = legend.getAttribute("data-series");
+            var on = series[ch];
+            // Keep at least one channel on, so the chart never goes empty.
+            if (on && (ch === "rtr" ? series.sev : series.rtr) === false) return;
+            series[ch] = !on;
+            renderOverview();
+            return;
+          }
+          var grp = e.target.closest("[data-go]");
+          if (grp) ovGo(grp.getAttribute("data-cm"), "rtr");
+        };
+        $("ovBarChart").onkeydown = function (e) {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          var grp = e.target.closest("[data-go]");
+          if (!grp) return;
+          e.preventDefault();
+          ovGo(grp.getAttribute("data-cm"), "rtr");
+        };
+        function ovGo(cm, target) {
+          state.rtr.currentCM = cm;
+          state.rtr.currentCOM = null;
+          state.rtr.currentDistrict = null;
+          state.rtr.currentMallType = null;
+          state.rtr.visibleCount = 20;
+          state.sev.currentCM = cm;
+          state.sev.currentAe = null;
+          if (target === "sev") {
+            switchTab("sev");
+            if (state.sev.loaded) renderSevDashboard();
+          } else {
+            switchTab("rtr");
+            if (state.rtr.loaded) renderRtrDashboard();
+          }
+        }
+        function ovHandleTableClick(e) {
+          var cell = e.target.closest("[data-go]");
+          if (!cell) return;
+          var cm = cell.getAttribute("data-cm");
+          var go = cell.getAttribute("data-go");
+          if (go === "both") ovGo(cm, "rtr");
+          else ovGo(cm, go);
+        }
+        $("ovCmTable").onclick = ovHandleTableClick;
+        $("ovM1Table").onclick = ovHandleTableClick;
         $("debugToggleBtn").addEventListener("click", function () {
           document.body.classList.toggle("debug-open");
         });
@@ -10005,6 +10496,8 @@
               state.sev.unmappedCount = unmappedCount;
               state.sev.unmappedGA = unmappedGA;
               state.sev.cmTargets = cmTargets;
+              if (targetMonthKey && Object.keys(cmTargets).length > 0)
+                state.sev.cmTargetsByMonth[targetMonthKey] = cmTargets;
               state.sev.cmTargetMonthKey =
                 Object.keys(cmTargets).length > 0 ? targetMonthKey : null;
 
@@ -14502,6 +14995,8 @@
               state.sev.unmappedGA = cached.unmappedGA || 0;
               state.sev.cmTargets = cached.cmTargets || {};
               state.sev.cmTargetMonthKey = cached.cmTargetMonthKey || null;
+              if (state.sev.cmTargetMonthKey && Object.keys(state.sev.cmTargets).length > 0)
+                state.sev.cmTargetsByMonth[state.sev.cmTargetMonthKey] = state.sev.cmTargets;
 
               $("tabBtnSev").classList.add("ready");
               if (cached.fileNames)
@@ -15929,6 +16424,7 @@
           var months = [];
           var cmTargets = {};
           var cmTargetMonthKey = null;
+          var cmTargetsByMonth = {};
           monthPayloads.forEach(function (p) {
             if (!p || !p.stores) return;
             months.push(p.monthKey);
@@ -15938,6 +16434,7 @@
             if (p.cmTargets && Object.keys(p.cmTargets).length > 0) {
               cmTargets = p.cmTargets;
               cmTargetMonthKey = p.monthKey;
+              cmTargetsByMonth[p.monthKey] = p.cmTargets;
             }
             p.stores.forEach(function (s) {
               var t = byCode[s.code];
@@ -16032,6 +16529,7 @@
           state.sev.fromCloud = true; // suppresses file-parsing notes/warnings
           state.sev.cmTargets = cmTargets;
           state.sev.cmTargetMonthKey = cmTargetMonthKey;
+          state.sev.cmTargetsByMonth = cmTargetsByMonth;
           $("tabBtnSev").classList.add("ready");
         }
 
