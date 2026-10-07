@@ -1804,6 +1804,8 @@
         #panelOverview .ov-row { grid-template-columns: 1fr; gap: 6px; }
         #panelOverview .ov-barline { grid-template-columns: 110px 1fr 72px; }
       }
+      #panelOverview .ov-filter-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+      #panelOverview .ov-rowbadge { margin-left: 8px; font-weight: 400; }
       #panelOverview .ov-month { background: none; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
       #panelOverview .ov-month[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
       #panelOverview .ov-month.partial .ov-bar-stack { outline: 1px dashed var(--muted); outline-offset: 2px; }
@@ -1997,6 +1999,7 @@
         </div>
         <div class="card">
           <div id="ovViewSwitch"></div>
+          <div id="ovFilters" style="margin-top:10px"></div>
           <div id="ovMonthPicker" style="margin-top:10px"></div>
           <div id="ovCoverage"></div>
         </div>
@@ -3950,7 +3953,7 @@
         }
         // One table, one column group per selected month. metric = "ga" | "m1".
         function renderOvTable(sel, metric) {
-          var cms = ovCms();
+          var cms = ovCmsVisible();
           var byKey = {};
           sel.forEach(function (k) { byKey[k] = ovCmData(k); });
           var isM1 = metric === "m1";
@@ -4003,7 +4006,7 @@
           var totalRow = { cm: "รวม" };
           var totals = sel.map(function (k) {
             var d = byKey[k];
-            var keysCm = Object.keys(d);
+            var keysCm = cms;
             var agg = {
               rtrGA: ovSum(keysCm.map(function (c) { return d[c].rtrGA; })),
               sevGA: ovSum(keysCm.map(function (c) { return d[c].sevGA; })),
@@ -4078,8 +4081,8 @@
           $("ovTrend").innerHTML =
             '<div style="display:flex;gap:10px;align-items:flex-end;height:220px;padding:8px 4px;overflow-x:auto">' +
             bars.map(function (b) {
-              var hR = Math.round((b.rtr / max) * 170);
-              var hS = Math.round((b.sev / max) * 170);
+              var hR = Math.round((b.rtr / max) * 135);
+              var hS = Math.round((b.sev / max) * 135);
               var isSel = sel.indexOf(b.k) !== -1;
               return (
                 '<button type="button" class="ov-month' + (b.partial ? " partial" : "") +
@@ -4101,6 +4104,16 @@
         function ovView() {
           return state.rtr.ovView === "ae" ? "ae" : "cm";
         }
+        function ovCmFilter() {
+          return state.rtr.ovCmFilter || null;
+        }
+        function ovSortBy() {
+          return state.rtr.ovSort || "name";
+        }
+        function ovCmsVisible() {
+          var f = ovCmFilter();
+          return ovCms().filter(function (c) { return !f || c === f; });
+        }
         // Joined by name: the same people appear under the same CM in both channels
         // (7-11 calls them AE, RTR calls them COM).
         function ovPeople() {
@@ -4115,10 +4128,6 @@
             (m.stores || []).forEach(function (s) { add(s.com, s.cm); });
           });
           state.sev.stores.forEach(function (s) { add(s.ae, s.cm); });
-          out.sort(function (a, b) {
-            if (a.cm !== b.cm) return a.cm.localeCompare(b.cm, "th");
-            return a.name.localeCompare(b.name, "th");
-          });
           return out;
         }
         function ovAeData(key) {
@@ -4142,13 +4151,13 @@
                 if (s.hasTarget && s.targetMonthKey === key) sevT = (sevT || 0) + s.target;
               });
             }
-            out[p.name] = { cm: p.cm, rtr: rtr, rtrT: rtrT, sev: sev, sevT: sevT };
+            out[p.name] = { rtr: rtr, rtrT: rtrT, sev: sev, sevT: sevT };
           });
           return out;
         }
         function ovTotal(key) {
           var d = ovCmData(key);
-          var cms = Object.keys(d);
+          var cms = ovCmsVisible();
           var rtr = ovSum(cms.map(function (c) { return d[c].rtrGA; }));
           var sev = ovSum(cms.map(function (c) { return d[c].sevGA; }));
           var rT = ovSum(cms.map(function (c) { return d[c].rtrT; }));
@@ -4156,6 +4165,50 @@
           var complete = cms.every(function (c) { return d[c].rtrT != null && d[c].sevT != null; });
           var combT = complete && rT != null && sT != null ? rT + sT : null;
           return { rtr: rtr, sev: sev, comb: ovCombine(rtr, sev), combT: combT };
+        }
+        // One row per CM (or per person) with the figures for each selected month.
+        function ovAllItems(show, person) {
+          var f = ovCmFilter();
+          var byKey = {};
+          show.forEach(function (k) { byKey[k] = person ? ovAeData(k) : ovCmData(k); });
+          var names = person
+            ? ovPeople()
+            : ovCmsVisible().map(function (cm) { return { name: cm, cm: cm }; });
+          return names
+            .filter(function (p) { return !f || p.cm === f; })
+            .map(function (p) {
+              var vals = {};
+              show.forEach(function (k) {
+                var d = byKey[k][p.name];
+                vals[k] = person
+                  ? { rtr: d.rtr, rtrT: d.rtrT, sev: d.sev, sevT: d.sevT }
+                  : { rtr: d.rtrGA, rtrT: d.rtrT, sev: d.sevGA, sevT: d.sevT };
+              });
+              return { name: p.name, cm: p.cm, vals: vals };
+            });
+        }
+        // Sort key for one row's figures in one month. Rows without data sink to the bottom.
+        function ovSortValue(v, by) {
+          var comb = ovCombine(v.rtr, v.sev);
+          if (by === "sales") return comb == null ? -Infinity : comb;
+          if (by === "pct") {
+            var t = v.rtrT != null && v.sevT != null ? v.rtrT + v.sevT : null;
+            return t && comb != null ? comb / t : -Infinity;
+          }
+          return 0;
+        }
+        // People stay grouped under their CM; the chosen sort orders rows inside each group.
+        function ovOrdered(items, latest, person) {
+          var by = ovSortBy();
+          return items.slice().sort(function (a, b) {
+            if (person && a.cm !== b.cm) return a.cm.localeCompare(b.cm, "th");
+            if (by !== "name") {
+              var va = ovSortValue(a.vals[latest], by);
+              var vb = ovSortValue(b.vals[latest], by);
+              if (va !== vb) return va < vb ? 1 : -1;
+            }
+            return a.name.localeCompare(b.name, "th");
+          });
         }
         function renderOvViewSwitch() {
           var v = ovView();
@@ -4167,14 +4220,33 @@
                 '" data-ov-view="' + o[0] + '" aria-pressed="' + (on ? "true" : "false") + '">' + o[1] + "</button>";
             }).join("");
         }
+        function renderOvFilters() {
+          var f = ovCmFilter() || "";
+          var by = ovSortBy();
+          function pill(attr, val, label, on) {
+            return '<button type="button" class="pill small' + (on ? " active" : "") + '" ' + attr + '="' + esc(val) +
+              '" aria-pressed="' + (on ? "true" : "false") + '">' + esc(label) + "</button>";
+          }
+          $("ovFilters").innerHTML =
+            '<div class="ov-filter-row"><span class="lbl">CM</span>' +
+            pill("data-ov-cm", "", "ทุก CM", f === "") +
+            ovCms().map(function (c) { return pill("data-ov-cm", c, c, f === c); }).join("") +
+            "</div>" +
+            '<div class="ov-filter-row"><span class="lbl">เรียงตาม</span>' +
+            [["name", "ชื่อ"], ["sales", "ยอด GA"], ["pct", "%Ach"]].map(function (o) {
+              return pill("data-ov-sort", o[0], o[1], by === o[0]);
+            }).join("") +
+            "</div>";
+        }
         function renderOvKpis(show) {
+          var f = ovCmFilter();
           $("ovKpis").innerHTML =
             '<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">' +
             show.map(function (k) {
               var t = ovTotal(k);
-              var pctVal = t.combT ? t.comb / t.combT : null;
+              var pctVal = t.combT && t.comb != null ? t.comb / t.combT : null;
               return (
-                '<div class="kpi-card"><div class="label">GA รวม · ' + esc(ovLabel(k)) +
+                '<div class="kpi-card"><div class="label">GA รวม' + (f ? " · " + esc(f) : "") + " · " + esc(ovLabel(k)) +
                 (ovPartial(k) ? " · ยังไม่ครบเดือน" : "") + "</div>" +
                 '<div class="value">' + ovNum(t.comb) + "</div>" +
                 '<div class="sub">RTR ' + ovNum(t.rtr) + " · 7-11 " + ovNum(t.sev) + " · %Ach " +
@@ -4182,59 +4254,33 @@
               );
             }).join("") + "</div>";
         }
-        function ovCmRows(show) {
-          var byKey = {};
-          show.forEach(function (k) { byKey[k] = ovCmData(k); });
-          return ovCms().map(function (cm) {
-            var vals = {};
-            show.forEach(function (k) {
-              var d = byKey[k][cm];
-              vals[k] = { rtr: d.rtrGA, sev: d.sevGA, rtrT: d.rtrT, sevT: d.sevT };
-            });
-            return { type: "row", label: cm, cm: cm, com: null, vals: vals };
-          });
-        }
-        function ovAeRows(show) {
-          var byKey = {};
-          show.forEach(function (k) { byKey[k] = ovAeData(k); });
-          var rows = [];
-          var lastCm = null;
-          ovPeople().forEach(function (p) {
-            if (p.cm !== lastCm) {
-              rows.push({ type: "head", label: p.cm });
-              lastCm = p.cm;
-            }
-            var vals = {};
-            show.forEach(function (k) {
-              var d = byKey[k][p.name];
-              vals[k] = { rtr: d.rtr, sev: d.sev, rtrT: d.rtrT, sevT: d.sevT };
-            });
-            rows.push({ type: "row", label: p.name, cm: p.cm, com: p.name, vals: vals });
-          });
-          return rows;
-        }
-        // Rows are either a CM heading or a clickable row (CM, or one person).
-        function renderOvBars(show, rows) {
+        // Rows are clickable: a CM row opens that CM on RTR; a person row opens that person.
+        function renderOvBars(show, items, person) {
           var series = ovSeries();
           var chans = ["rtr", "sev"].filter(function (c) { return series[c]; });
+          var latest = show[show.length - 1];
           var max = 1;
-          rows.forEach(function (r) {
-            if (r.type !== "row") return;
+          items.forEach(function (it) {
             show.forEach(function (k) {
-              var v = r.vals[k];
+              var v = it.vals[k];
               if (series.rtr && v.rtr > max) max = v.rtr;
               if (series.sev && v.sev > max) max = v.sev;
             });
           });
-          var body = rows.map(function (r) {
-            if (r.type === "head") return '<div class="ov-cmhead">' + esc(r.label) + "</div>";
+          var lastCm = null;
+          var body = items.map(function (it) {
+            var head = "";
+            if (person && it.cm !== lastCm) {
+              head = '<div class="ov-cmhead">' + esc(it.cm) + "</div>";
+              lastCm = it.cm;
+            }
             var bars = show.map(function (k, ki) {
               return chans.map(function (ch) {
-                var v = r.vals[k];
+                var v = it.vals[k];
                 var val = ch === "rtr" ? v.rtr : v.sev;
                 var t = ch === "rtr" ? v.rtrT : v.sevT;
                 var name = ch === "rtr" ? "RTR" : "7-11";
-                var tip = r.label + " · " + ovLabel(k) + " · " + name + " GA " + (val == null ? "—" : fmt(val)) +
+                var tip = it.name + " · " + ovLabel(k) + " · " + name + " GA " + (val == null ? "—" : fmt(val)) +
                   " · เป้า " + (t ? fmt(t) : "ไม่มีเป้า") + " · %Ach " + (val != null && t ? pct(val / t) : "—");
                 var w = val != null ? Math.max(0.5, (val / max) * 100) : 0;
                 return (
@@ -4245,13 +4291,21 @@
                 );
               }).join("");
             }).join("");
+            var lv = it.vals[latest];
+            var comb = ovCombine(lv.rtr, lv.sev);
+            var combT = lv.rtrT != null && lv.sevT != null ? lv.rtrT + lv.sevT : null;
+            var badge = ovPctCell(combT && comb != null ? comb / combT : null);
             return (
-              '<button type="button" class="ov-row" data-go="rtr" data-cm="' + esc(r.cm) + '"' +
-              (r.com ? ' data-com="' + esc(r.com) + '"' : "") + ">" +
-              '<span class="ov-rowname">' + esc(r.label) + '<span class="ov-rowcm">' + esc(r.cm) + "</span></span>" +
+              head +
+              '<button type="button" class="ov-row" data-go="rtr" data-cm="' + esc(it.cm) + '"' +
+              (person ? ' data-com="' + esc(it.name) + '"' : "") + ">" +
+              '<span class="ov-rowname">' + esc(it.name) +
+              (person ? '<span class="ov-rowcm">' + esc(it.cm) + "</span>" : "") +
+              '<span class="ov-rowbadge">' + badge + "</span></span>" +
               '<span class="ov-bars">' + bars + "</span></button>"
             );
           }).join("");
+          if (!items.length) body = '<div class="insight-empty">ไม่พบรายการตามตัวกรองนี้</div>';
           var legend =
             '<div class="ov-legend" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">' +
             [["rtr", "RTR", "var(--accent)"], ["sev", "7-11", "var(--warn)"]].map(function (c) {
@@ -4263,8 +4317,7 @@
           $("ovBarChart").innerHTML = '<div class="ov-chart">' + body + "</div>" + legend;
         }
         function renderOvAeTable(show) {
-          var byKey = {};
-          show.forEach(function (k) { byKey[k] = ovAeData(k); });
+          var items = ovOrdered(ovAllItems(show, true), show[show.length - 1], true);
           var head =
             '<tr><th style="text-align:left">AE / COM</th>' +
             show.map(function (k) {
@@ -4277,13 +4330,13 @@
               }).join("");
             }).join("") +
             "</tr>";
-          var rows = ovPeople().map(function (p) {
+          var rows = items.map(function (it) {
             var cells = show.map(function (k) {
-              var d = byKey[k][p.name];
+              var d = it.vals[k];
               var comb = ovCombine(d.rtr, d.sev);
               var combT = d.rtrT != null && d.sevT != null ? d.rtrT + d.sevT : null;
-              var pctVal = combT ? comb / combT : null;
-              var attrs = ' data-cm="' + esc(p.cm) + '" data-com="' + esc(p.name) + '"';
+              var pctVal = combT && comb != null ? comb / combT : null;
+              var attrs = ' data-cm="' + esc(it.cm) + '" data-com="' + esc(it.name) + '"';
               return (
                 '<td class="num-cell" data-go="rtr"' + attrs + ">" + ovNum(d.rtr) + "</td>" +
                 '<td class="num-cell" data-go="sev"' + attrs + ">" + ovNum(d.sev) + "</td>" +
@@ -4293,13 +4346,16 @@
               );
             }).join("");
             return (
-              '<tr class="clickable" data-go="rtr" data-cm="' + esc(p.cm) + '" data-com="' + esc(p.name) + '"><td>' +
-              esc(p.name) + '<div class="hint" style="font-size:11px">' + esc(p.cm) + "</div></td>" + cells + "</tr>"
+              '<tr class="clickable" data-go="rtr" data-cm="' + esc(it.cm) + '" data-com="' + esc(it.name) + '"><td>' +
+              esc(it.name) + '<div class="hint" style="font-size:11px">' + esc(it.cm) + "</div></td>" + cells + "</tr>"
             );
           }).join("");
+          if (!items.length) {
+            rows = '<tr><td colspan="' + (1 + show.length * 5) + '" class="table-empty">ไม่พบรายการตามตัวกรองนี้</td></tr>';
+          }
           var totalCells = show.map(function (k) {
             var t = ovTotal(k);
-            var pctVal = t.combT ? t.comb / t.combT : null;
+            var pctVal = t.combT && t.comb != null ? t.comb / t.combT : null;
             return (
               '<td class="num-cell">' + ovNum(t.rtr) + "</td>" +
               '<td class="num-cell">' + ovNum(t.sev) + "</td>" +
@@ -4318,6 +4374,7 @@
           var keys = ovAllKeys();
           if (!keys.length) {
             $("ovViewSwitch").innerHTML = "";
+            $("ovFilters").innerHTML = "";
             $("ovKpis").innerHTML = "";
             $("ovCmTable").innerHTML = '<div class="insight-empty">ยังไม่มีข้อมูล — โหลดไฟล์ RTR หรือ 7-11 ก่อน</div>';
             $("ovM1Table").innerHTML = "";
@@ -4337,11 +4394,12 @@
           var ae = ovView() === "ae";
           $("ovHint").textContent = "รวม GA จากทั้งสองช่องทาง · เป้ารวมแสดงเฉพาะเมื่อทั้งสองช่องทางมีเป้า · เลือกได้ 2 เดือน";
           renderOvViewSwitch();
+          renderOvFilters();
           renderOvPicker(keys, show);
           renderOvCoverage(show);
           renderOvKpis(show);
           $("ovBarsTitle").textContent = ae ? "GA รายคน (AE / COM)" : "GA รายคู่ CM";
-          renderOvBars(show, ae ? ovAeRows(show) : ovCmRows(show));
+          renderOvBars(show, ovOrdered(ovAllItems(show, ae), show[show.length - 1], ae), ae);
           $("ovTableTitle").textContent = ae ? "ตาราง GA รายคน" : "ตาราง GA รายคู่ CM";
           $("ovCmTable").innerHTML = ae ? renderOvAeTable(show) : renderOvTable(show, "ga");
           $("ovM1Section").style.display = ae ? "none" : "";
@@ -4355,6 +4413,19 @@
           if (!btn) return;
           state.rtr.ovView = btn.getAttribute("data-ov-view");
           renderOverview();
+        };
+        $("ovFilters").onclick = function (e) {
+          var cmBtn = e.target.closest("[data-ov-cm]");
+          if (cmBtn) {
+            state.rtr.ovCmFilter = cmBtn.getAttribute("data-ov-cm") || null;
+            renderOverview();
+            return;
+          }
+          var sortBtn = e.target.closest("[data-ov-sort]");
+          if (sortBtn) {
+            state.rtr.ovSort = sortBtn.getAttribute("data-ov-sort");
+            renderOverview();
+          }
         };
         $("ovMonthPicker").onclick = function (e) {
           var btn = e.target.closest("[data-ov-month]");
