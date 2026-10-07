@@ -1981,21 +1981,21 @@
           <div id="ovCoverage"></div>
         </div>
         <section>
-          <div class="section-head"><h3>GA เทียบรายคู่ CM</h3><span class="hint">คลิกชื่อ CM เพื่อเปิดแท็บนั้น</span></div>
+          <div class="section-head"><h2>GA เทียบรายคู่ CM</h2><span class="hint">คลิกชื่อ CM เพื่อเปิดแท็บนั้น</span></div>
           <div class="card">
             <div id="ovBarChart"></div>
           </div>
         </section>
         <section>
-          <div class="section-head"><h3>ตาราง GA รายคู่ CM</h3></div>
+          <div class="section-head"><h2>ตาราง GA รายคู่ CM</h2></div>
           <div class="card"><div id="ovCmTable"></div></div>
         </section>
         <section>
-          <div class="section-head"><h3>M1 รายคู่ CM</h3></div>
+          <div class="section-head"><h2>M1 รายคู่ CM</h2></div>
           <div class="card"><div id="ovM1Table"></div></div>
         </section>
         <section>
-          <div class="section-head"><h3>GA รายเดือน (RTR + 7-11)</h3><span class="hint">คลิกเดือนเพื่อเลือก (สูงสุด 2 เดือน)</span></div>
+          <div class="section-head"><h2>GA รายเดือน (RTR + 7-11)</h2><span class="hint">คลิกเดือนเพื่อเลือก (สูงสุด 2 เดือน)</span></div>
           <div class="card"><div id="ovTrend"></div></div>
         </section>
       </div>
@@ -3922,7 +3922,7 @@
               if (ovPartial(k)) parts.push("ข้อมูลยังไม่ครบเดือน");
               if (hasRtr && !hasSev) parts.push("ไม่มีข้อมูล 7-11 เดือนนี้");
               return (
-                '<div class="notice-row">' +
+                '<div class="hint" style="font-size:12px;margin-top:6px">' +
                 esc(ovLabel(k)) + ": " + esc(parts.join(" · ")) +
                 "</div>"
               );
@@ -4080,16 +4080,14 @@
         }
 
         // Grouped bars: one group per CM, one bar per (selected month x channel).
-        // Legend buttons switch a channel off/on; hovering a bar shows its numbers
-        // (<title> tooltip, also read by screen readers); clicking a group opens that CM.
+        // Plain HTML/CSS bars, so text keeps its normal size at every width.
+        // Hover shows the numbers (title); clicking a CM group opens that CM.
         function renderOvBarChart(show) {
           var series = ovSeries();
           var chans = ["rtr", "sev"].filter(function (c) { return series[c]; });
           var cms = ovCms();
           var data = {};
           show.forEach(function (k) { data[k] = ovCmData(k); });
-          var W = 640, H = 300, padL = 52, padT = 16, padB = 64;
-          var plotH = H - padT - padB;
           var max = 1;
           show.forEach(function (k) {
             cms.forEach(function (cm) {
@@ -4098,50 +4096,43 @@
               if (series.sev && d.sevGA > max) max = d.sevGA;
             });
           });
-          var groupW = (W - padL - 10) / Math.max(cms.length, 1);
-          var slots = Math.max(show.length * chans.length, 1);
-          var barW = Math.min(30, (groupW - 24) / slots);
-          var svg = "";
-          [0, 0.5, 1].forEach(function (f) {
-            var y = padT + plotH - f * plotH;
-            svg += '<line x1="' + padL + '" x2="' + (W - 6) + '" y1="' + y + '" y2="' + y + '" stroke="var(--line)"/>';
-            svg += '<text x="' + (padL - 6) + '" y="' + (y + 4) + '" text-anchor="end" font-size="11" fill="var(--muted)">' + fmt(max * f) + "</text>";
-          });
-          cms.forEach(function (cm, gi) {
-            var gx = padL + gi * groupW + groupW / 2;
-            var x = gx - (slots * barW) / 2;
-            show.forEach(function (k) {
-              chans.forEach(function (ch) {
+          var PLOT = 220;
+          var groups = cms.map(function (cm) {
+            var bars = show.map(function (k) {
+              return chans.map(function (ch) {
                 var d = data[k][cm];
                 var v = ch === "rtr" ? d.rtrGA : d.sevGA;
                 var t = ch === "rtr" ? d.rtrT : d.sevT;
-                var h = v != null ? Math.round((v / max) * plotH) : 0;
+                var h = v != null ? Math.max(2, Math.round((v / max) * PLOT)) : 0;
                 var color = ch === "rtr" ? "var(--accent)" : "var(--warn)";
                 var tip = cm + " · " + ovLabel(k) + " · " + (ch === "rtr" ? "RTR" : "7-11") +
                   " GA " + (v == null ? "—" : fmt(v)) + " · เป้า " + (t ? fmt(t) : "ไม่มีเป้า") +
                   " · %Ach " + (v != null && t ? pct(v / t) : "—");
-                svg += '<g tabindex="0" role="img" aria-label="' + esc(tip) + '">' +
-                  '<rect x="' + x.toFixed(1) + '" y="' + (padT + plotH - h) + '" width="' + (barW - 2).toFixed(1) +
-                  '" height="' + h + '" rx="3" fill="' + color + '"/>' +
-                  "<title>" + esc(tip) + "</title></g>";
-                x += barW;
-              });
-            });
-            svg += '<text x="' + gx + '" y="' + (H - 40) + '" text-anchor="middle" font-size="12" fill="var(--ink)">' + esc(cm) + "</text>";
-            svg += '<rect data-go="rtr" data-cm="' + esc(cm) + '" tabindex="0" role="button" aria-label="เปิดแท็บ RTR ของ ' + esc(cm) +
-              '" x="' + (padL + gi * groupW) + '" y="' + padT + '" width="' + groupW + '" height="' + plotH +
-              '" fill="transparent" style="cursor:pointer"/>';
-          });
+                return (
+                  '<div title="' + esc(tip) + '" aria-label="' + esc(tip) + '" style="flex:1;max-width:44px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:' + PLOT + 'px">' +
+                  '<div style="font-size:11px;color:var(--muted);margin-bottom:3px">' + (v == null ? "" : fmt(v)) + "</div>" +
+                  '<div style="width:100%;height:' + h + "px;background:" + color + ';border-radius:4px 4px 0 0"></div>' +
+                  "</div>"
+                );
+              }).join("");
+            }).join("");
+            return (
+              '<button type="button" class="ov-group" data-go="rtr" data-cm="' + esc(cm) + '" aria-label="เปิดแท็บ RTR ของ ' + esc(cm) + '"' +
+              ' style="flex:1;min-width:0;background:none;border:0;cursor:pointer;display:flex;flex-direction:column;align-items:center">' +
+              '<div style="display:flex;gap:6px;align-items:flex-end;justify-content:center;width:100%">' + bars + "</div>" +
+              '<div style="font-size:13px;font-weight:600;margin-top:10px;color:var(--ink)">' + esc(cm) + "</div>" +
+              "</button>"
+            );
+          }).join("");
           var legend =
-            '<div class="ov-legend" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">' +
+            '<div class="ov-legend" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
             [["rtr", "RTR", "var(--accent)"], ["sev", "7-11", "var(--warn)"]].map(function (c) {
-              return '<button type="button" data-series="' + c[0] + '" aria-pressed="' + (series[c[0]] ? "true" : "false") + '">' +
-                '<span class="ov-swatch" style="background:' + c[2] + '"></span>' + c[1] + "</button>";
+              return '<button type="button" class="pill small" data-series="' + c[0] + '" aria-pressed="' + (series[c[0]] ? "true" : "false") + '">' +
+                '<span class="ov-swatch" style="background:' + c[2] + '"></span> ' + c[1] + "</button>";
             }).join("") +
             "</div>";
           $("ovBarChart").innerHTML =
-            '<svg viewBox="0 0 ' + W + " " + H + '" width="100%" role="img" aria-label="กราฟ GA เทียบรายคู่ CM">' +
-            svg + "</svg>" + legend;
+            '<div style="display:flex;align-items:flex-end;gap:14px;padding:6px 4px">' + groups + "</div>" + legend;
         }
 
         function renderOverview() {
