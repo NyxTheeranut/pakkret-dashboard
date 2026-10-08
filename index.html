@@ -6982,9 +6982,15 @@
             // Stores with no COM (outside the routing workbook's own cluster, or that file
             // temporarily missing) simply aren't part of this comparison -- not an error.
             if (!s.com) return;
-            // Picking a CM narrows this to that CM's own COMs. Picking a COM doesn't narrow
-            // further, so the selected COM is still compared against its CM's other COMs.
-            if (state.rtr.currentCM && s.cm !== state.rtr.currentCM) return;
+            // Picking a CM (from the CM buttons) narrows this to that CM's own COMs. Clicking a
+            // COM row also sets its CM, so with a COM selected the CM must NOT narrow this --
+            // otherwise the table shrinks to just the clicked COM and the others disappear.
+            if (
+              state.rtr.currentCM &&
+              !state.rtr.currentCOM &&
+              s.cm !== state.rtr.currentCM
+            )
+              return;
             var row =
               byCom[s.com] ||
               (byCom[s.com] = {
