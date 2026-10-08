@@ -373,7 +373,7 @@ def parse_target_blocks(header):
     return blocks
 
 
-def parse_kpi_setup_targets(rows2d, prefer_single_target_col=False):
+def parse_kpi_setup_targets(rows2d):
     """The 'KPI Set Up' sheet: a leadership-committed target per CM, laid out
     as a two-row header repeated once per month, at three granularities (PBH/
     CM/RSR) -- only the CM-level block, and only when its own 'Total' row's
@@ -382,15 +382,6 @@ def parse_kpi_setup_targets(rows2d, prefer_single_target_col=False):
     {total, massMigrant, tourist, m1Total, m1MassMigrant, m1Tourist,
     achM1Total, achM1MassMigrant, achM1Tourist}}}, or None if nothing usable
     was found.
-
-    prefer_single_target_col: opt-in only -- EXCLUSIVELY for the routing workbook's own
-    "Performance CM&PBH" fallback call site (see process_rtr_workbook), never the primary
-    "KPI Set Up" sheet's own call. Checked against the real primary sheet and confirmed
-    unsafe to enable there even with a same-month text match: its own May block (and
-    presumably others) has a column genuinely labeled "GA by RSR Target May" sitting right
-    there, but the VALUES under it are stale leftovers from an unrelated source (matched a
-    completely different, wrong total) -- text matching the right month doesn't guarantee
-    trustworthy values on this sheet, so the flag must stay off for it unconditionally.
 
     massMigrant/tourist: the same "Target GA (<Month>)" block also carries a
     2-way segment split immediately before its own "Total GA" column ("Mass +
@@ -457,25 +448,6 @@ def parse_kpi_setup_targets(rows2d, prefer_single_target_col=False):
         if not month_abbr or month_abbr in results:
             continue  # already have this month's CM-level block
 
-        # Opt-in only (see prefer_single_target_col's own docstring above) -- the routing
-        # workbook's "Performance CM&PBH" carries a second, cleaner single "GA by RSR/COM
-        # <Month> Target" column alongside this same block's own Mass+Migrant/Tourist/Total
-        # GA breakdown. Checked against every CM in the real file: for anyone with real
-        # Tourist-channel GA, that breakdown's own "Tourist" cell holds something else
-        # entirely (unclear what -- certainly not a Tourist target; values up to 10,800,
-        # inflating "Total GA" by 2x-10x), while CMs with ~0 Tourist GA show the two columns
-        # agreeing within a percent or two. The single column doesn't have this problem on
-        # THIS sheet -- it also matches (within a few percent, for every CM) the total this
-        # same workbook's own per-store target override sums to.
-        single_target_idx = -1
-        if prefer_single_target_col:
-            single_target_idx = next(
-                (c for c, h in enumerate(s_row)
-                 if norm_header(h).startswith("ga by") and "target" in norm_header(h)
-                 and month_abbr in norm_header(h)),
-                -1,
-            )
-
         m1_anchor = next(
             (a for a in anchors if a["text"].startswith("target m1") and month_abbr in a["text"]),
             None,
@@ -509,8 +481,7 @@ def parse_kpi_setup_targets(rows2d, prefer_single_target_col=False):
             cm_name = str(get(row, cm_idx) or "").strip()
             if not cm_name:
                 continue
-            single_val = num(get(row, single_target_idx)) if single_target_idx != -1 else 0
-            val = single_val if single_val > 0 else num(get(row, total_ga_idx))
+            val = num(get(row, total_ga_idx))
             if val > 0:
                 targets[cm_name] = {
                     "total": val,
@@ -1179,8 +1150,7 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
             wb_r = openpyxl.load_workbook(routing_path, read_only=True, data_only=True)
             kpi_setup_targets = kpi_setup_targets or {}
             for pname in [n for n in wb_r.sheetnames if PERF_CM_SHEET_RE.match(n.strip())]:
-                perf_targets = parse_kpi_setup_targets(
-                    sheet_to_rows(wb_r[pname]), prefer_single_target_col=True) or {}
+                perf_targets = parse_kpi_setup_targets(sheet_to_rows(wb_r[pname])) or {}
                 for mo, cms in perf_targets.items():
                     if mo not in kpi_setup_targets:
                         kpi_setup_targets[mo] = cms
