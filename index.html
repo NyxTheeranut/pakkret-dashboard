@@ -1044,10 +1044,14 @@
 
       .insights-grid {
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
+        /* minmax(0, ...) not plain 1fr: a 1fr track can't shrink below its content's
+           min-content width, so one long nowrap row (store name + LMTD + % + AE) pushed its
+           card past the right edge of the section. */
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
       }
       .insight-card {
+        min-width: 0;
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 14px;
@@ -1617,7 +1621,7 @@
           grid-template-columns: 1fr;
         }
         .insights-grid {
-          grid-template-columns: 1fr;
+          grid-template-columns: minmax(0, 1fr);
         }
         main {
           padding: 18px 14px 60px;
