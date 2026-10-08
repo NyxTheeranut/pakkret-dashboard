@@ -2111,25 +2111,15 @@
 
           <section><div class="kpi-grid" id="rtrKpiGrid"></div></section>
 
-          <section id="cmLeaderboardSection">
-            <div class="section-head">
-              <h2>เปรียบเทียบ CM</h2>
-              <button
-                class="pill small"
-                id="cmTargetModeBtn"
-                type="button"
-                title="สลับ Target/%Achieve ระหว่างฐาน GA กับฐาน M1 (%MOM/pace/forecast อิง GA เสมอ)"
-              ></button>
-              <span class="hint" id="cmLeaderboardHint"></span>
-            </div>
-            <div class="card">
-              <div id="cmLeaderboardWrap"></div>
-            </div>
-          </section>
-
           <section id="comLeaderboardSection">
             <div class="section-head">
               <h2>เปรียบเทียบ COM</h2>
+              <button
+                class="pill small"
+                id="comTargetModeBtn"
+                type="button"
+                title="สลับ Target/%Achieve ระหว่างฐาน GA กับฐาน M1 (%MOM/pace/forecast อิง GA เสมอ)"
+              ></button>
               <span class="hint" id="comLeaderboardHint"></span>
             </div>
             <div class="card">
@@ -2873,11 +2863,9 @@
             fileHandle: null,
             // Overview tab: months the user picked (null = default, the latest two)
             overviewMonths: null,
-            cmLbSortKey: "gap",
-            cmLbSortDir: "asc",
-            cmLbTargetMode: "ga", // "ga" | "m1" -- which committed target Target/%Achieve read
-            comLbSortKey: "ga",
-            comLbSortDir: "desc",
+            comLbSortKey: "gap",
+            comLbSortDir: "asc",
+            comLbTargetMode: "ga", // "ga" | "m1" -- which committed target Target/%Achieve read
           },
           sev: {
             loaded: false,
@@ -6132,7 +6120,6 @@
           renderRtrKpis();
           renderPerformance();
           renderApMix();
-          renderCmLeaderboard();
           renderComLeaderboard();
           renderRtrTrendAndSegment();
           renderQuadrant();
@@ -6910,49 +6897,6 @@
               : "ทุกร้านมีเป้าหมายเฉพาะบุคคล";
         }
 
-        // =====================================================================
-        // CM LEADERBOARD — side-by-side comparison across every CM in the file, so
-        // spotting who's leading/lagging doesn't require clicking into each CM tab
-        // one at a time. Built straight from the pre-computed m.cmRollup (same
-        // source the CM tabs use), plus the same pacing calc as the KPI card above.
-        // Not affected by the district/mallType filters (a leaderboard comparing
-        // CMs against each other should show each CM's own full numbers, not
-        // whatever district happens to be selected elsewhere) -- same convention
-        // renderRtrCmTabs already uses for its own counts.
-        // =====================================================================
-        var CM_LB_COLS = [
-          { key: "name", label: "CM", align: "left" },
-          { key: "stores", label: "ร้าน" },
-          { key: "ga", label: "GA" },
-          { key: "target", label: "Target" },
-          { key: "achieve", label: "%Achieve" },
-          { key: "pace", label: "%MTD" },
-          { key: "gap", label: "ขาด/เกิน" },
-          { key: "need", label: "ต้องได้อีก/วัน" },
-          { key: "mom", label: "%MOM" },
-          { key: "m1", label: "M1" },
-          { key: "arpu", label: "ARPU" },
-        ];
-        function cmLbSortValue(row, key) {
-          if (key === "name") return row.cm;
-          if (key === "stores") return row.storeCount;
-          if (key === "ga") return row.ga;
-          if (key === "target") return row.target == null ? -1 : row.target;
-          if (key === "achieve")
-            return row.achievePct == null ? -1 : row.achievePct;
-          if (key === "pace") return row.paceDelta == null ? -2 : row.paceDelta;
-          // Sorted ascending, the most negative surplus (biggest projected shortfall) comes first --
-          // which is the "who do I call today" order. A CM with no target sorts last, not first,
-          // since it has no gap to answer for.
-          if (key === "gap")
-            return row.surplus == null ? Infinity : row.surplus;
-          if (key === "need")
-            return row.needPerDay == null ? -1 : row.needPerDay;
-          if (key === "mom") return row.momPct == null ? -2 : row.momPct;
-          if (key === "m1") return row.m1;
-          if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
-          return 0;
-        }
         // Required daily rate for one CM, coloured by whether they're already running fast enough:
         // green = current pace already covers it, red = has to speed up. The bare number alone can't
         // be judged without knowing the rate they're actually achieving.
@@ -6984,60 +6928,142 @@
           );
         }
 
-        // Attached once here (not inside renderCmLeaderboard, which runs on every dashboard
-        // re-render) -- #cmTargetModeBtn is a static button, never regenerated via innerHTML,
-        // so attaching inside the render function would stack a fresh duplicate listener on
-        // every render instead of firing once per real click.
-        $("cmTargetModeBtn").addEventListener("click", function () {
-          state.rtr.cmLbTargetMode =
-            state.rtr.cmLbTargetMode === "m1" ? "ga" : "m1";
-          renderCmLeaderboard();
+        // RTR's "เปรียบเทียบ COM" -- COM is a real org layer, one level below CM, that only the
+        // routing workbook carries (see extract_routing_overrides). It replaced the old CM
+        // comparison table and has exactly the same columns, pacing, projection and Target
+        // GA/M1 toggle. There is no comRollup server-side, so each COM's totals are summed
+        // here from its stores into the same shape cmRollup has, which lets the CM helpers
+        // (rtrSegTargetInfo, rtrForecast, cmNeedCellHtml) be reused unchanged. A COM's
+        // committed target/Ach M1 ("Performance COM" sheet, m.comTargets) takes precedence
+        // over its summed store targets, the same way a CM's KPI Set Up target does.
+        var COM_LB_COLS = [
+          { key: "name", label: "COM", align: "left" },
+          { key: "stores", label: "ร้าน" },
+          { key: "ga", label: "GA" },
+          { key: "target", label: "Target" },
+          { key: "achieve", label: "%Achieve" },
+          { key: "pace", label: "%MTD" },
+          { key: "gap", label: "ขาด/เกิน" },
+          { key: "need", label: "ต้องได้อีก/วัน" },
+          { key: "mom", label: "%MOM" },
+          { key: "m1", label: "M1" },
+          { key: "arpu", label: "ARPU" },
+        ];
+        function comLbSortValue(row, key) {
+          if (key === "name") return row.com;
+          if (key === "stores") return row.storeCount;
+          if (key === "ga") return row.ga;
+          if (key === "target") return row.target == null ? -1 : row.target;
+          if (key === "achieve")
+            return row.achievePct == null ? -1 : row.achievePct;
+          if (key === "pace") return row.paceDelta == null ? -2 : row.paceDelta;
+          // Ascending puts the biggest projected shortfall first; no target sorts last.
+          if (key === "gap") return row.surplus == null ? Infinity : row.surplus;
+          if (key === "need")
+            return row.needPerDay == null ? -1 : row.needPerDay;
+          if (key === "mom") return row.momPct == null ? -2 : row.momPct;
+          if (key === "m1") return row.m1;
+          if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
+          return 0;
+        }
+        $("comTargetModeBtn").addEventListener("click", function () {
+          state.rtr.comLbTargetMode =
+            state.rtr.comLbTargetMode === "m1" ? "ga" : "m1";
+          renderComLeaderboard();
         });
-        function renderCmLeaderboard() {
-          var wrap = $("cmLeaderboardWrap");
-          $("cmTargetModeBtn").textContent =
-            "Target: " + (state.rtr.cmLbTargetMode === "m1" ? "M1" : "GA");
+        function renderComLeaderboard() {
+          var wrap = $("comLeaderboardWrap");
+          var targetMode = state.rtr.comLbTargetMode;
+          $("comTargetModeBtn").textContent =
+            "Target: " + (targetMode === "m1" ? "M1" : "GA");
           var m = rtrCurrentMonth();
-          var cmNames = Object.keys(m.cmRollup);
-          if (cmNames.length <= 1) {
-            $("cmLeaderboardHint").textContent = "";
+          var byCom = {};
+          m.stores.forEach(function (s) {
+            // Stores with no COM (outside the routing workbook's own cluster, or that file
+            // temporarily missing) simply aren't part of this comparison -- not an error.
+            if (!s.com) return;
+            // Picking a CM narrows this to that CM's own COMs. Picking a COM doesn't narrow
+            // further, so the selected COM is still compared against its CM's other COMs.
+            if (state.rtr.currentCM && s.cm !== state.rtr.currentCM) return;
+            var row =
+              byCom[s.com] ||
+              (byCom[s.com] = {
+                com: s.com,
+                storeCount: 0,
+                ga: 0,
+                mass: 0,
+                migrant: 0,
+                tourist: 0,
+                m1: 0,
+                revGa: 0,
+                targetedGA: 0,
+                target: 0,
+                hasAnyTarget: false,
+                lmtdSum: 0,
+                hasLmtd: false,
+              });
+            row.storeCount++;
+            row.ga += s.ga;
+            row.mass += s.mass || 0;
+            row.migrant += s.migrant || 0;
+            row.tourist += s.tourist || 0;
+            row.m1 += s.m1;
+            row.revGa += revGaOf(s);
+            if (s.hasTarget) {
+              row.targetedGA += s.ga;
+              row.target += s.target;
+              row.hasAnyTarget = true;
+            }
+            if (s.lmtdGa != null) {
+              row.lmtdSum += s.lmtdGa;
+              row.hasLmtd = true;
+            }
+          });
+          var comNames = Object.keys(byCom);
+          // With a CM picked, one COM is a real answer ("this CM's COM"), not a pointless
+          // one-row comparison -- only an unfiltered single-COM file has nothing to show.
+          if (
+            comNames.length === 0 ||
+            (comNames.length === 1 && !state.rtr.currentCM)
+          ) {
+            $("comLeaderboardHint").textContent = "";
             wrap.innerHTML =
-              '<div class="insight-empty">มีแค่ 1 CM ในไฟล์นี้ ไม่มีอะไรให้เปรียบเทียบ</div>';
+              '<div class="insight-empty">มีแค่ 1 COM ในไฟล์นี้ ไม่มีอะไรให้เปรียบเทียบ</div>';
             return;
           }
           var mIdx = state.rtr.currentMonthIdx;
           var prevMonth = mIdx > 0 ? state.rtr.months[mIdx - 1] : null;
           var pacing = rtrMonthPacing(m, prevMonth);
-          var targetMode = state.rtr.cmLbTargetMode;
-          var rows = cmNames.map(function (cm) {
-            var cr = m.cmRollup[cm];
-            // Same rtrSegTargetInfo the KPI cards use, applied per CM row instead of once for
-            // the cluster total -- cr already carries the same mass/migrant/tourist/target/
-            // targetMassMigrant/targetTourist fields m.totals does. GA/Target/%Achieve (and
-            // everything the forecast derives from them) now follow the trend-chart toggles
-            // per CM. M1/ARPU stay on the FULL cr (unfiltered) -- revenue isn't tracked per
-            // segment at all, so there's no real "segment ARPU" to show; %MOM also stays on
-            // the full cr for now (a genuine like-for-like segment MOM needs per-day segment
-            // history threaded in here, not just this render-time totals object).
+          var committed = m.comTargets || {};
+          var rows = comNames.map(function (com) {
+            var r = byCom[com];
+            var c = committed[com];
+            var hasCommitted = !!(c && c.total > 0);
+            // Same shape as a cmRollup entry, so the CM helpers apply unchanged.
+            var cr = {
+              ga: r.ga,
+              mass: r.mass,
+              migrant: r.migrant,
+              tourist: r.tourist,
+              m1: hasCommitted && c.achM1Total > 0 ? c.achM1Total : r.m1,
+              revGa: r.revGa,
+              target: hasCommitted ? c.total : r.hasAnyTarget ? r.target : 0,
+              targetMassMigrant: hasCommitted ? c.massMigrant || 0 : 0,
+              targetTourist: hasCommitted ? c.tourist || 0 : 0,
+              targetM1: hasCommitted ? c.m1Total || 0 : 0,
+              targetedGA: hasCommitted ? r.ga : r.targetedGA,
+              targetOverridden: hasCommitted,
+            };
+            cr.achievePct = cr.target > 0 ? cr.targetedGA / cr.target : null;
             var segInfo = rtrSegTargetInfo(cr, state.rtr.segToggle);
             var arpu = arpuOf(cr.m1, cr.targetedGA, cr.ga, cr.revGa);
-            // Target/%Achieve ALONE switch to the M1 basis when toggled -- cr.targetM1 is a
-            // real committed figure (KPI Set Up's own "Target M1 (<Month>)" block, same sheet
-            // and same trust rule as the GA target), compared against the CM's full actual M1
-            // (not a segment- or per-store-target-gated subset, since M1 has neither). Pace/
-            // gap/need/forecast stay GA-based always -- those are inherently tied to the daily-
-            // tracked GA pace, which M1 has no equivalent of (RTR's own M1 has no day-level
-            // breakdown anywhere, unlike GA/revAmt). %MOM also stays GA-based for the same
-            // reason: a trustworthy cutoff-day M1 comparison isn't possible without daily M1
-            // data, and a cruder full-month one would silently be less reliable while looking
-            // identical to the GA version.
             var target, achievePct, segSupported;
             if (targetMode === "m1") {
               target = cr.targetM1 > 0 ? cr.targetM1 : null;
               achievePct = cr.targetM1 > 0 ? cr.m1 / cr.targetM1 : null;
               segSupported = true;
             } else {
-              target = segInfo.target;
+              target = segInfo.target > 0 ? segInfo.target : null;
               achievePct = segInfo.achievePct;
               segSupported = segInfo.supported;
             }
@@ -7045,10 +7071,6 @@
               pacing && segInfo.achievePct != null
                 ? segInfo.achievePct - pacing.expectedPct
                 : null;
-            // Same projection as the headline forecast card, applied per CM -- so the leaderboard can
-            // rank by who is projected to be short the most GA in absolute units. %Achieve alone hides
-            // this: a 3-store CM at 60% is a much smaller problem than a 40-store CM at 92%. Always
-            // GA-based (see comment above) regardless of targetMode.
             var fc = segInfo.supported
               ? rtrForecast(
                   {
@@ -7061,13 +7083,16 @@
                 )
               : null;
             return {
-              cm: cm,
-              storeCount: cr.storeCount,
+              com: com,
+              storeCount: r.storeCount,
               ga: segInfo.ga,
               target: target,
               achievePct: achievePct,
               segSupported: segSupported,
-              momPct: cr.momPct,
+              momPct:
+                r.hasLmtd && r.lmtdSum > 0
+                  ? (r.ga - r.lmtdSum) / r.lmtdSum
+                  : null,
               m1: cr.m1,
               arpu: arpu,
               paceDelta: paceDelta,
@@ -7078,17 +7103,17 @@
             };
           });
 
-          var sortKey = state.rtr.cmLbSortKey,
-            mult = state.rtr.cmLbSortDir === "asc" ? 1 : -1;
+          var sortKey = state.rtr.comLbSortKey,
+            mult = state.rtr.comLbSortDir === "asc" ? 1 : -1;
           rows.sort(function (a, b) {
-            var av = cmLbSortValue(a, sortKey),
-              bv = cmLbSortValue(b, sortKey);
+            var av = comLbSortValue(a, sortKey),
+              bv = comLbSortValue(b, sortKey);
             if (sortKey === "name")
               return mult * String(av).localeCompare(String(bv));
             return mult * (av - bv);
           });
 
-          $("cmLeaderboardHint").textContent =
+          $("comLeaderboardHint").textContent =
             (pacing
               ? "ผ่านมา " +
                 pacing.daysElapsed +
@@ -7100,28 +7125,28 @@
               : "") +
             "เรียงจากคนที่คาดว่าจะขาดเป้ามากที่สุด" +
             revInfoNote(m.revInfo) +
-            " · คลิกแถวเพื่อดูเฉพาะ CM นั้น";
+            " · คลิกแถวเพื่อดูเฉพาะ COM นั้น";
 
           // In M1 mode the Target column moves to sit right behind M1 (header and body share
           // this one ordering, so they can't drift apart).
-          var cmLbKeys = CM_LB_COLS.map(function (c) {
+          var comLbKeys = COM_LB_COLS.map(function (c) {
             return c.key;
           });
           if (targetMode === "m1") {
-            cmLbKeys.splice(cmLbKeys.indexOf("target"), 1);
-            cmLbKeys.splice(cmLbKeys.indexOf("m1") + 1, 0, "target");
-            cmLbKeys.splice(cmLbKeys.indexOf("achieve"), 1);
-            cmLbKeys.splice(cmLbKeys.indexOf("target") + 1, 0, "achieve");
+            comLbKeys.splice(comLbKeys.indexOf("target"), 1);
+            comLbKeys.splice(comLbKeys.indexOf("m1") + 1, 0, "target");
+            comLbKeys.splice(comLbKeys.indexOf("achieve"), 1);
+            comLbKeys.splice(comLbKeys.indexOf("target") + 1, 0, "achieve");
           }
 
-          var headerHtml = cmLbKeys
+          var headerHtml = comLbKeys
             .map(function (key) {
-              var col = CM_LB_COLS.find(function (c) {
+              var col = COM_LB_COLS.find(function (c) {
                 return c.key === key;
               });
-              var isActive = state.rtr.cmLbSortKey === col.key;
+              var isActive = state.rtr.comLbSortKey === col.key;
               var arrow = isActive
-                ? state.rtr.cmLbSortDir === "asc"
+                ? state.rtr.comLbSortDir === "asc"
                   ? " ▲"
                   : " ▼"
                 : "";
@@ -7146,13 +7171,13 @@
 
           var bodyHtml = rows
             .map(function (r) {
-              var isCurrent = state.rtr.currentCM === r.cm;
+              var isCurrent = state.rtr.currentCOM === r.com;
               var paceHtml =
                 r.paceDelta == null
                   ? '<span class="pct-badge pct-badge-muted">—</span>'
                   : pctColored(r.paceDelta);
               var cellByKey = {
-                name: "<td>" + esc(r.cm) + "</td>",
+                name: "<td>" + esc(r.com) + "</td>",
                 stores: '<td class="num-cell">' + fmt(r.storeCount) + "</td>",
                 ga: '<td class="num-cell">' + fmt(r.ga) + "</td>",
                 target:
@@ -7179,267 +7204,16 @@
                   "</td>",
               };
               return (
-                '<tr class="clickable" tabindex="0" role="button" data-cm="' +
-                esc(r.cm) +
-                '"' +
-                (isCurrent ? ' style="background:var(--paper);"' : "") +
-                ">" +
-                cmLbKeys
-                  .map(function (key) {
-                    return cellByKey[key];
-                  })
-                  .join("") +
-                "</tr>"
-              );
-            })
-            .join("");
-
-          wrap.innerHTML =
-            '<div class="table-scroll-box"><table><thead><tr>' +
-            headerHtml +
-            "</tr></thead><tbody>" +
-            bodyHtml +
-            "</tbody></table></div>";
-
-          Array.prototype.forEach.call(
-            wrap.querySelectorAll("tbody tr"),
-            function (tr) {
-              tr.addEventListener("click", function () {
-                var cm = tr.getAttribute("data-cm");
-                state.rtr.currentCM = state.rtr.currentCM === cm ? null : cm;
-                state.rtr.currentCOM = null;
-                state.rtr.currentDistrict = null;
-                state.rtr.currentMallType = null;
-                state.rtr.visibleCount = 20;
-                renderRtrDashboard();
-              });
-            },
-          );
-          Array.prototype.forEach.call(
-            wrap.querySelectorAll("thead th.sortable-th"),
-            function (th) {
-              function doSort() {
-                var key = th.getAttribute("data-sort-key");
-                if (state.rtr.cmLbSortKey === key) {
-                  state.rtr.cmLbSortDir =
-                    state.rtr.cmLbSortDir === "asc" ? "desc" : "asc";
-                } else {
-                  state.rtr.cmLbSortKey = key;
-                  state.rtr.cmLbSortDir = "desc";
-                }
-                renderCmLeaderboard();
-              }
-              th.addEventListener("click", doSort);
-              th.addEventListener("keydown", function (e) {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  doSort();
-                }
-              });
-            },
-          );
-        }
-
-        // RTR's own "เปรียบเทียบ COM" -- COM is a real org layer the primary RTR workbook's
-        // mapping sheets never carried at all (only the newer "routing" workbook does, see
-        // extract_routing_overrides on the Python side): one level below CM, confirmed by
-        // checking actual cardinality rather than assuming -- "RS Name"/"PBH Name" turned out
-        // to be constant across the whole territory (not a real per-store dimension), but
-        // "COM" genuinely varies, 4 distinct people each running a real subset of stores under
-        // one of the 2 CMs. No comRollup exists server-side (unlike cmRollup) since this is a
-        // newly-discovered grouping, so it's computed here from the stores list directly --
-        // target/achieve use targetedGA the same way CM's own does (summed only across stores
-        // that HAVE a target, never fabricated for the rest), and %MOM/ARPU are derived from
-        // each store's own lmtdGa/m1 rather than a precomputed per-COM daily bucket (which
-        // doesn't exist) -- genuinely equivalent math, just summed at render time instead of
-        // during Python aggregation. GA is segment-toggle-aware (rtrStoreSegGA, same as the
-        // store table); target/achieve/mom/m1/arpu are NOT, since there's no per-COM or
-        // per-store segment-scoped target/M1 source to filter them against honestly.
-        var COM_LB_COLS = [
-          { key: "name", label: "COM", align: "left" },
-          { key: "stores", label: "ร้าน" },
-          { key: "ga", label: "GA" },
-          { key: "target", label: "Target" },
-          { key: "achieve", label: "%Achieve" },
-          { key: "mom", label: "%MOM" },
-          { key: "m1", label: "M1" },
-          { key: "arpu", label: "ARPU" },
-        ];
-        function comLbSortValue(row, key) {
-          if (key === "name") return row.com;
-          if (key === "stores") return row.storeCount;
-          if (key === "ga") return row.ga;
-          if (key === "target") return row.target == null ? -1 : row.target;
-          if (key === "achieve")
-            return row.achievePct == null ? -1 : row.achievePct;
-          if (key === "mom") return row.momPct == null ? -2 : row.momPct;
-          if (key === "m1") return row.m1;
-          if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
-          return 0;
-        }
-        function renderComLeaderboard() {
-          var wrap = $("comLeaderboardWrap");
-          var m = rtrCurrentMonth();
-          var byCom = {};
-          m.stores.forEach(function (s) {
-            // Stores with no COM (outside the routing workbook's own cluster, or that file
-            // temporarily missing) simply aren't part of this comparison -- not an error.
-            if (!s.com) return;
-            // Picking a CM narrows this to that CM's own COMs (same as the 7-11 tab's AE
-            // comparison does for its CM). Picking a COM doesn't narrow further, so the
-            // selected COM is still compared against its CM's other COMs.
-            if (state.rtr.currentCM && s.cm !== state.rtr.currentCM) return;
-            var row =
-              byCom[s.com] ||
-              (byCom[s.com] = {
-                com: s.com,
-                storeCount: 0,
-                ga: 0,
-                targetedGA: 0,
-                target: 0,
-                hasAnyTarget: false,
-                m1: 0,
-                lmtdSum: 0,
-                hasLmtd: false,
-                rawGa: 0,
-                revGa: 0,
-              });
-            row.storeCount++;
-            row.ga += rtrStoreSegGA(s);
-            row.m1 += s.m1;
-            row.rawGa += s.ga;
-            row.revGa += revGaOf(s);
-            if (s.hasTarget) {
-              row.targetedGA += s.ga;
-              row.target += s.target;
-              row.hasAnyTarget = true;
-            }
-            if (s.lmtdGa != null) {
-              row.lmtdSum += s.lmtdGa;
-              row.hasLmtd = true;
-            }
-          });
-          var comNames = Object.keys(byCom);
-          // With a CM picked, one COM is a real answer ("this CM's COM"), not a pointless
-          // one-row comparison -- only an unfiltered single-COM file has nothing to show.
-          if (comNames.length === 0 || (comNames.length === 1 && !state.rtr.currentCM)) {
-            $("comLeaderboardHint").textContent = "";
-            wrap.innerHTML =
-              '<div class="insight-empty">มีแค่ 1 COM ในไฟล์นี้ ไม่มีอะไรให้เปรียบเทียบ</div>';
-            return;
-          }
-          var committed = m.comTargets || {};
-          var rows = comNames.map(function (com) {
-            var r = byCom[com];
-            // The routing workbook's own committed COM target ("Performance COM" sheet,
-            // Target GA Total incl. Tourist) and Ach M1, when published for this month --
-            // same precedence as a CM's KPI Set Up target over its summed store targets.
-            var c = committed[com];
-            if (c && c.total > 0) {
-              var m1 = c.achM1Total > 0 ? c.achM1Total : r.m1;
-              return {
-                com: com,
-                storeCount: r.storeCount,
-                ga: r.ga,
-                target: c.total,
-                achievePct: r.ga / c.total,
-                momPct:
-                  r.hasLmtd && r.lmtdSum > 0
-                    ? (r.ga - r.lmtdSum) / r.lmtdSum
-                    : null,
-                m1: m1,
-                arpu: m1 > 0 ? arpuOf(m1, r.rawGa, r.rawGa, r.revGa) : null,
-              };
-            }
-            return {
-              com: com,
-              storeCount: r.storeCount,
-              ga: r.ga,
-              target: r.hasAnyTarget ? r.target : null,
-              achievePct:
-                r.hasAnyTarget && r.target > 0 ? r.targetedGA / r.target : null,
-              momPct:
-                r.hasLmtd && r.lmtdSum > 0
-                  ? (r.ga - r.lmtdSum) / r.lmtdSum
-                  : null,
-              m1: r.m1,
-              arpu: arpuOf(r.m1, r.targetedGA, r.rawGa, r.revGa),
-            };
-          });
-
-          var sortKey = state.rtr.comLbSortKey,
-            mult = state.rtr.comLbSortDir === "asc" ? 1 : -1;
-          rows.sort(function (a, b) {
-            var av = comLbSortValue(a, sortKey),
-              bv = comLbSortValue(b, sortKey);
-            if (sortKey === "name")
-              return mult * String(av).localeCompare(String(bv));
-            return mult * (av - bv);
-          });
-
-          $("comLeaderboardHint").textContent =
-            "คลิกหัวตารางเพื่อเรียงลำดับ" +
-            revInfoNote(m.revInfo) +
-            " · คลิกแถวเพื่อดูเฉพาะ COM นั้น";
-
-          var headerHtml = COM_LB_COLS.map(function (col) {
-            var isActive = state.rtr.comLbSortKey === col.key;
-            var arrow = isActive
-              ? state.rtr.comLbSortDir === "asc"
-                ? " ▲"
-                : " ▼"
-              : "";
-            var alignStyle =
-              col.align === "left" ? "" : ' style="text-align:right"';
-            return (
-              '<th class="sortable-th' +
-              (isActive ? " active-sort" : "") +
-              '" data-sort-key="' +
-              col.key +
-              '" tabindex="0" role="button" aria-label="เรียงตาม ' +
-              esc(col.label) +
-              '"' +
-              alignStyle +
-              ">" +
-              esc(col.label) +
-              arrow +
-              "</th>"
-            );
-          }).join("");
-
-          var bodyHtml = rows
-            .map(function (r) {
-              var isCurrent = state.rtr.currentCOM === r.com;
-              return (
                 '<tr class="clickable" tabindex="0" role="button" data-com="' +
                 esc(r.com) +
                 '"' +
                 (isCurrent ? ' style="background:var(--paper);"' : "") +
                 ">" +
-                "<td>" +
-                esc(r.com) +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmt(r.storeCount) +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmt(r.ga) +
-                "</td>" +
-                '<td class="num-cell">' +
-                (r.target != null ? fmt(r.target) : "—") +
-                "</td>" +
-                '<td class="num-cell">' +
-                pctBadge(r.achievePct, "achieve") +
-                "</td>" +
-                '<td class="num-cell">' +
-                pctBadge(r.momPct, "mom") +
-                "</td>" +
-                '<td class="num-cell">' +
-                fmtBaht(r.m1) +
-                "</td>" +
-                '<td class="num-cell">' +
-                (r.arpu != null ? fmtBaht(r.arpu) : "—") +
-                "</td>" +
+                comLbKeys
+                  .map(function (key) {
+                    return cellByKey[key];
+                  })
+                  .join("") +
                 "</tr>"
               );
             })
@@ -7463,9 +7237,8 @@
                 } else {
                   // Selecting a COM also selects ITS OWN CM (not clears it) -- a COM belongs to
                   // exactly one CM, so the rest of the page (store table, district/mall tabs)
-                  // should scope to that real CM/COM pair, same as picking that CM from the CM
-                  // tabs would, rather than leaving the CM tabs showing "ภาพรวม" while the table
-                  // is actually narrowed to one COM's stores.
+                  // should scope to that real CM/COM pair rather than leaving the CM tabs
+                  // showing "ภาพรวม" while the table is narrowed to one COM's stores.
                   var owner = rtrCurrentMonth().stores.find(function (s) {
                     return s.com === com;
                   });
@@ -11772,8 +11545,8 @@
           if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
           return 0;
         }
-        // BUGFIX: previously named CM_LB_COLS/cmLbSortValue -- RTR's own "เปรียบเทียบ CM"
-        // leaderboard (renderCmLeaderboard, above) already uses those exact global names for its
+        // BUGFIX: previously named CM_LB_COLS/cmLbSortValue -- the RTR tab's comparison table
+        // used to share those exact global names, and the later declaration silently replaced the earlier one for its
         // own, differently-shaped columns. Both are plain `var`/`function` declarations in the
         // same top-level scope, so this one being LATER in the file silently overwrote RTR's,
         // leaving RTR's header row driven by these 7-11-shaped columns while its <td> markup was
@@ -16643,6 +16416,8 @@
             parts[5].rows.forEach(function (r) {
               comTargets[r[0]] = {
                 total: Number(r[1]) || 0,
+                massMigrant: Number(r[2]) || 0,
+                tourist: Number(r[3]) || 0,
                 m1Total: Number(r[4]) || 0,
                 achM1Total: Number(r[5]) || 0,
               };
