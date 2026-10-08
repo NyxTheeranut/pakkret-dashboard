@@ -16688,6 +16688,7 @@
                   name: s.name,
                   cm: s.cm,
                   ae: s.ae,
+                  cmAeMonthKey: p.monthKey,
                   khet: s.khet,
                   fyai: s.fyai,
                   gm: s.gm,
@@ -16714,6 +16715,14 @@
                   hasTarget: false,
                   targetMonthKey: null,
                 };
+              } else if (!t.cmAeMonthKey || p.monthKey >= t.cmAeMonthKey) {
+                // A store's CM/AE can genuinely change between months (a real org
+                // reassignment, not just stale data) -- always prefer the newest month's
+                // own value, not whichever month happened to be merged first. Mirrors the
+                // publisher's own aeMonthKey/cmMonthKey "latest wins" resolution.
+                t.cm = s.cm;
+                t.ae = s.ae;
+                t.cmAeMonthKey = p.monthKey;
               }
               Object.keys(s.byMonth || {}).forEach(function (mk) {
                 t.byMonth[mk] = s.byMonth[mk];

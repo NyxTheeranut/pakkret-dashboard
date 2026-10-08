@@ -656,32 +656,44 @@ def extract_routing_overrides(path, code_to_canonical):
     RSR <Month> Target' anchor in the primary workbook's own mapping sheets -- no month name
     is ever hardcoded, so this keeps working whichever month the file currently carries.
 
-    Returns (target_overrides, canonical_to_com):
+    Also reads each store's CM from this same sheet (the column after COM -- two columns in
+    this sheet's header both normalize to "cm"; dict constructor below keeps the later/finer
+    one as idx["cm"]). The primary workbook's own roster-mapping sheets are a point-in-time
+    snapshot too (just an older one), so when the org chart changes -- a CM's book splitting
+    into two new CMs, say -- the routing workbook catches up first. Call sites apply this CM
+    override only to the month(s) this routing workbook is already the data source for (see
+    process_rtr_workbook), never retroactively to older months the primary workbook still
+    correctly covers, since this file has no way to say what was true in an earlier month.
+
+    Returns (target_overrides, canonical_to_com, canonical_to_cm):
       target_overrides: {monthAbbr: {canonicalCode: target}}
       canonical_to_com: {canonicalCode: comName}
-    Both {} if the sheet isn't shaped as expected -- this is optional extra data, a publish
+      canonical_to_cm: {canonicalCode: cmName}
+    All {} if the sheet isn't shaped as expected -- this is optional extra data, a publish
     must still succeed without it (e.g. the file briefly missing between quarters)."""
     target_overrides = {}
     canonical_to_com = {}
+    canonical_to_cm = {}
     try:
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         route_names = [n for n in wb.sheetnames if ROUTING_ROUTE_SHEET_RE.match(n.strip())]
         if not route_names:
             wb.close()
-            return target_overrides, canonical_to_com
+            return target_overrides, canonical_to_com, canonical_to_cm
         rows2d = sheet_to_rows(wb[route_names[0]])
         wb.close()
     except Exception as e:
         print(f"  (could not read routing workbook, non-fatal: {e})")
-        return target_overrides, canonical_to_com
+        return target_overrides, canonical_to_com, canonical_to_cm
 
     h_idx = find_header_row(rows2d, MAP_REQUIRED_NORM, 20)
     if h_idx < 0:
-        return target_overrides, canonical_to_com
+        return target_overrides, canonical_to_com, canonical_to_cm
     header = rows2d[h_idx]
     idx = {norm_header(h): i for i, h in enumerate(header)}
     cluster_col = idx.get("cluster")
     com_col = idx.get("com")
+    cm_col = idx.get("cm")
     blocks = parse_target_blocks(header)
 
     for r in range(h_idx + 1, len(rows2d)):
@@ -701,13 +713,17 @@ def extract_routing_overrides(path, code_to_canonical):
             com = str(get(row, com_col) or "").strip()
             if com:
                 canonical_to_com[canonical] = com
+        if cm_col is not None:
+            cm = str(get(row, cm_col) or "").strip()
+            if cm:
+                canonical_to_cm[canonical] = cm
 
         for b in blocks:
             tgt = num(get(row, b["targetIdx"])) if b["targetIdx"] >= 0 else 0
             if tgt > 0:
                 target_overrides.setdefault(b["month"], {})[canonical] = tgt
 
-    return target_overrides, canonical_to_com
+    return target_overrides, canonical_to_com, canonical_to_cm
 
 
 def new_daily_bucket():
@@ -1111,9 +1127,21 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
 
     routing_target_overrides = {}
     canonical_to_com = {}
+    canonical_to_cm_override = {}
+    # Month sheet NAMES the routing workbook's CM override is trusted for -- deliberately
+    # NARROWER than "months whose raw rows came from the routing workbook". A month the
+    # routing workbook merely has a row-count-fresher copy of (its own "Sep" outscoring the
+    # primary workbook's "Sep.26") still had ITS org chart correctly described by the
+    # primary workbook's own roster -- the routing file being a better source of that
+    # month's SALES total doesn't make its (now-updated-for-the-newest-month) org chart
+    # correct for that same month retroactively. Only a month the primary workbook doesn't
+    # carry AT ALL can unambiguously only mean "right now", so routing's current org chart
+    # is only trusted there.
+    routing_cm_months = set()
     if routing_path:
         print(f"  routing workbook: {routing_path.name}")
-        routing_target_overrides, canonical_to_com = extract_routing_overrides(routing_path, code_to_canonical)
+        routing_target_overrides, canonical_to_com, canonical_to_cm_override = extract_routing_overrides(
+            routing_path, code_to_canonical)
         if canonical_to_com:
             print(f"    {len(canonical_to_com)} stores have a COM assignment")
         if routing_target_overrides:
@@ -1142,6 +1170,7 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
                           f"doesn't have yet -- adding it")
                     month_candidates.append(rname)
                     sheet_overrides[rname] = r_rows
+                    routing_cm_months.add(rname)
                     continue
                 if len(r_rows) > wb[match].max_row:
                     print(f"    {rname} ({len(r_rows)} rows) is fresher than {match} "
@@ -1151,6 +1180,12 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
         except Exception as e:
             print(f"  (could not read routing workbook's monthly sheets, non-fatal: {e})")
 
+    canonical_to_cm_routing = dict(canonical_to_cm)
+    canonical_to_cm_routing.update(canonical_to_cm_override)
+    if routing_cm_months and canonical_to_cm_override:
+        print(f"    {len(canonical_to_cm_override)} stores' CM resolved from the routing workbook "
+              f"for {sorted(routing_cm_months)} (primary roster still used for every other month)")
+
     months = []
     for name in month_candidates:
         # Each sheet is thousands of rows read via openpyxl read_only -- the slow part of this
@@ -1158,12 +1193,13 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
         # every sheet is done and dumping the results all at once.
         print(f"  reading {name}...", end="", flush=True)
         rows2d = sheet_overrides[name] if name in sheet_overrides else sheet_to_rows(wb[name])
-        result = aggregate_rtr_sheet(rows2d, code_to_canonical, canonical_to_cm, canonical_to_mall_type, canonical_to_stock, canonical_to_name)
+        cm_map = canonical_to_cm_routing if name in routing_cm_months else canonical_to_cm
+        result = aggregate_rtr_sheet(rows2d, code_to_canonical, cm_map, canonical_to_mall_type, canonical_to_stock, canonical_to_name)
         if result is None:
             print(f" skipped (missing required columns: {', '.join(REQUIRED_COLS)})")
             continue
         active_count = len(result["stores"])
-        fill_dormant_roster_stores(result, canonical_to_cm, canonical_to_name, canonical_to_district,
+        fill_dormant_roster_stores(result, cm_map, canonical_to_name, canonical_to_district,
                                     canonical_to_mall_type, canonical_to_stock)
         print(f" done ({result['rowCount']} rows, {active_count} active + "
               f"{len(result['stores']) - active_count} dormant = {len(result['stores'])} roster stores)")
@@ -1305,7 +1341,13 @@ def sev_months_touched(ws, day_col_idx):
     for row in ws.iter_rows(min_row=2, min_col=day_col_idx + 1, max_col=day_col_idx + 1, values_only=True):
         val = row[0] if row else None
         day = str(val).strip() if val is not None else ""
-        if len(day) >= 6:
+        # Require an actual 8-digit YYYYMMDD, not just "6+ characters" -- a pivot/summary
+        # sheet can have a column literally named TM_KEY_DAY (inherited from a copied
+        # pivot field) whose cells hold text like "BKK : ..." or "Row Labels" instead of
+        # real dates. str(text)[:6] used to pass the old length check and get treated as a
+        # bogus "month", which (being all-letters) sorts after every real YYYYMM string and
+        # can hijack the newest-6-months window, starving out every sheet with real data.
+        if len(day) == 8 and day.isdigit():
             months.add(day[:6])
     return months
 
@@ -2087,10 +2129,16 @@ def process_sev_files(paths):
     # he's a legitimate CM for it.
     in_cluster_codes = set(stores_map.keys())
     known_cms = {cm for code, cm in code_to_cm.items() if code in in_cluster_codes}
+    # Company-wide (not cluster-scoped): a per-row CM name the roster recognizes for SOME
+    # other territory is "นุกูล พรมศร" below. A name the roster doesn't recognize ANYWHERE,
+    # though, isn't that signal at all -- it's a CM the roster file simply hasn't caught up
+    # to yet (e.g. a just-announced reorg splitting one CM's book into two new CMs). That
+    # case should keep the fresh per-row value, not discard it to UNMAPPED_CM.
+    company_wide_cms = set(code_to_cm.values())
     for s in all_stores:
         if s["cm"] is None:
             s["cm"] = code_to_cm.get(s["code"]) or UNMAPPED_CM
-        elif s["cm"] not in known_cms:
+        elif s["cm"] not in known_cms and s["cm"] in company_wide_cms:
             s["cm"] = UNMAPPED_CM
 
     unmapped_count = unmapped_ga = 0
