@@ -729,6 +729,38 @@ def extract_routing_overrides(path, code_to_canonical):
     return target_overrides, canonical_to_com, canonical_to_cm
 
 
+def company_day_key(company, day):
+    """Key for revenue-maturity tracking: one bucket per company per calendar day."""
+    co = str(company or "").strip().upper() or "OTHER"
+    return co + "|" + str(day)
+
+
+def revenue_maturity(co_day_rev):
+    """REV_AMT for a company lands days after its GA -- confirmed in Oct'26 data: TRUE rows
+    carry revenue only through Oct 1 while their GA runs to Oct 5, and DTAC rows have
+    revenue every day. A company-day (summed over the whole cluster) with GA but zero
+    revenue is therefore "not reported yet", not a real ฿0 day. ARPU divides revenue only
+    by GA from reported company-days, so those unreported days stop dragging it down.
+
+    co_day_rev: {"COMPANY|YYYYMMDD": [ga, rev]}. Returns (reported_keys, info) where info
+    is {YYYYMM: [[company, lastReportedDay or "", unreportedGa], ...]} listing only the
+    companies that still have unreported GA that month (empty once revenue catches up)."""
+    reported = {k for k, (_, rev) in co_day_rev.items() if rev > 0}
+    per = {}
+    for k, (ga, rev) in co_day_rev.items():
+        co, day = k.split("|", 1)
+        e = per.setdefault((day[:6], co), {"last": "", "unreported": 0})
+        if rev > 0:
+            e["last"] = max(e["last"], day)
+        else:
+            e["unreported"] += ga
+    info = {}
+    for (mk, co), e in sorted(per.items()):
+        if e["unreported"] > 0:
+            info.setdefault(mk, []).append([co, e["last"], e["unreported"]])
+    return reported, info
+
+
 def new_daily_bucket():
     return {"ga": 0, "revAmt": 0, "mass": 0, "migrant": 0, "tourist": 0}
 
@@ -754,6 +786,7 @@ def aggregate_rtr_sheet(rows2d, code_to_canonical, canonical_to_cm, canonical_to
     row_count = 0
     unmapped_codes = set()
     unmapped_ga = 0
+    co_day_rev = {}  # see revenue_maturity
 
     for r in range(1, len(rows2d)):
         row = rows2d[r]
@@ -876,6 +909,12 @@ def aggregate_rtr_sheet(rows2d, code_to_canonical, canonical_to_cm, canonical_to
         s_d = s["daily"].setdefault(day, new_daily_bucket())
         s_d["ga"] += ga
         s_d["revAmt"] += rev_amt
+        ck = company_day_key(get(row, idx.get("COMPANY", -1)), day)
+        cd = co_day_rev.setdefault(ck, [0, 0])
+        cd[0] += ga
+        cd[1] += rev_amt
+        co_ga = s.setdefault("_coDayGa", {})
+        co_ga[ck] = co_ga.get(ck, 0) + ga
         if seg == "MASS":
             s_d["mass"] += ga
         elif seg == "MIGRANT":
@@ -904,6 +943,16 @@ def aggregate_rtr_sheet(rows2d, code_to_canonical, canonical_to_cm, canonical_to
         cr["storeCount"] = len(cr["storeCodes"])
         del cr["storeCodes"]
 
+    reported, rev_info = revenue_maturity(co_day_rev)
+    for s in stores.values():
+        s["revGa"] = 0
+        for d in s["daily"].values():
+            d["revGa"] = 0
+        for ck, g in s.pop("_coDayGa", {}).items():
+            if ck in reported:
+                s["revGa"] += g
+                s["daily"][ck.split("|", 1)[1]]["revGa"] += g
+
     return {
         "rowCount": row_count,
         "totals": totals,
@@ -912,6 +961,7 @@ def aggregate_rtr_sheet(rows2d, code_to_canonical, canonical_to_cm, canonical_to
         "stores": list(stores.values()),
         "unmappedCount": len(unmapped_codes),
         "unmappedGA": unmapped_ga,
+        "revInfo": [r for rows in rev_info.values() for r in rows],
     }
 
 
@@ -1046,10 +1096,12 @@ def build_rtr_month_tables(m):
             1 if s["hasStock"] else 0,
             s["tStock"], s["dStock"], s["stock"], s["coverMth"],
             s.get("com", ""),
+            s.get("revGa", s["ga"]),  # GA whose revenue has been reported -- see revenue_maturity
         ])
         for day in sorted(s["daily"].keys(), key=str):
             d = s["daily"][day]
-            daily_rows.append([s["code"], day, d["ga"], d["revAmt"], d["mass"], d["migrant"], d["tourist"]])
+            daily_rows.append([s["code"], day, d["ga"], d["revAmt"], d["mass"], d["migrant"], d["tourist"],
+                               d.get("revGa", d["ga"])])
         for st, v in s["simTypes"].items():
             sim_rows.append([s["code"], st, v])
 
@@ -1071,12 +1123,18 @@ def build_rtr_month_tables(m):
             "headers": ["code", "name", "cm", "district", "mallType", "ga", "ap1d", "ap1dAmt",
                         "ap30d", "revAmt", "mass", "migrant", "tourist", "target", "m1"]
                        + ["tier_" + l for l in TIER_LABELS]
-                       + ["hasStock", "tStock", "dStock", "stock", "coverMth", "com"],
+                       + ["hasStock", "tStock", "dStock", "stock", "coverMth", "com", "revGa"],
             "rows": stores_rows,
         },
         "daily": {
-            "headers": ["code", "date", "ga", "revAmt", "mass", "migrant", "tourist"],
+            "headers": ["code", "date", "ga", "revAmt", "mass", "migrant", "tourist", "revGa"],
             "rows": daily_rows,
+        },
+        # Companies whose revenue hasn't caught up with their GA yet this month (see
+        # revenue_maturity) -- empty once it has.
+        "revinfo": {
+            "headers": ["company", "lastRevDay", "unreportedGa"],
+            "rows": m.get("revInfo") or [],
         },
         "simtypes": {"headers": ["code", "simType", "ga"], "rows": sim_rows},
         "cmtargets": {
@@ -1229,6 +1287,14 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
         raise SystemExit(f"No usable monthly sheets in {path.name}")
     sort_months_chronologically(months)
     resolve_rtr_targets(months, target_by_month, kpi_setup_targets)
+    # A month the mapping sheets carry no per-store "M1 <Month>" column for at all (e.g. a
+    # month only the routing workbook has) would show every store at ฿0 M1. Its own
+    # REV_AMT is the same measure the CM-level "Ach M1" reports (they match exactly for
+    # Oct'26), so use that instead. Months that DO have per-store M1 are left as they are.
+    for m in months:
+        if m["stores"] and not any(s.get("m1") for s in m["stores"]):
+            for s in m["stores"]:
+                s["m1"] = s.get("revAmt", 0)
 
     for m in months:
         for s in m["stores"]:
@@ -1512,6 +1578,12 @@ def aggregate_sev_rows(rows2d, stores_map, stats, day_owner, sheet_idx):
                                          "mass": 0, "migrant": 0, "tourist": 0})
         d["ga"] += ga
         d["revAmt"] += rev_amt
+        ck = company_day_key(company, day)
+        cd = stats.setdefault("coDayRev", {}).setdefault(ck, [0, 0])
+        cd[0] += ga
+        cd[1] += rev_amt
+        co_ga = s.setdefault("_coDayGa", {})
+        co_ga[ck] = co_ga.get(ck, 0) + ga
         if is_dtac:
             d["dtacGa"] += ga
         elif is_true:
@@ -1942,11 +2014,11 @@ def aggregate_sev_cm_ga_summary_rows(rows2d, cm_to_target, stats):
 
 ZERO_SEV_MONTH = {
     "ga": 0, "revAmt": 0, "ap100": 0, "ap49": 0, "ap99": 0, "ap199": 0, "apOver199": 0,
-    "mass": 0, "migrant": 0, "tourist": 0, "dtacGa": 0, "trueGa": 0, "simTypes": {},
+    "mass": 0, "migrant": 0, "tourist": 0, "dtacGa": 0, "trueGa": 0, "simTypes": {}, "revGa": 0,
 }
 
 
-def build_sev_month_tables(month_key, all_stores, cm_targets_by_month=None):
+def build_sev_month_tables(month_key, all_stores, cm_targets_by_month=None, rev_info=None):
     """Output contract -- exact column order ported from buildSevMonthTables. cm_targets_by_month
     is keyed by month (same convention as the per-store target column below it, and as
     RTR's own cmtargets sub-table) so two independent CM-target sources covering different
@@ -1968,6 +2040,7 @@ def build_sev_month_tables(month_key, all_stores, cm_targets_by_month=None):
             s["code"], s["name"], s["cm"], s["ae"], s["khet"], s["fyai"], s["gm"], s["district"],
             bm["ga"], bm["revAmt"], bm["ap100"], bm["ap49"], bm["ap99"], bm["ap199"], bm["apOver199"],
             bm["mass"], bm["migrant"], bm["tourist"], bm["dtacGa"], bm["trueGa"], target_val,
+            bm.get("revGa", bm["ga"]),  # GA whose revenue has been reported -- see revenue_maturity
         ])
         for st, v in bm["simTypes"].items():
             sim_rows.append([s["code"], st, v])
@@ -1975,18 +2048,18 @@ def build_sev_month_tables(month_key, all_stores, cm_targets_by_month=None):
             d = s["daily"][dk]
             daily_rows.append([s["code"], dk, d["ga"], d["revAmt"], d["dtacGa"], d["trueGa"],
                                 d["ap49"], d["ap99"], d["ap199"], d["apOver199"],
-                                d["mass"], d["migrant"], d["tourist"]])
+                                d["mass"], d["migrant"], d["tourist"], d.get("revGa", d["ga"])])
 
     return {
         "stores": {
             "headers": ["code", "name", "cm", "ae", "khet", "fyai", "gm", "district", "ga", "revAmt",
                         "ap100", "ap49", "ap99", "ap199", "apOver199", "mass", "migrant", "tourist",
-                        "dtacGa", "trueGa", "target"],
+                        "dtacGa", "trueGa", "target", "revGa"],
             "rows": stores_rows,
         },
         "daily": {
             "headers": ["code", "date", "ga", "revAmt", "dtacGa", "trueGa", "ap49", "ap99", "ap199",
-                        "apOver199", "mass", "migrant", "tourist"],
+                        "apOver199", "mass", "migrant", "tourist", "revGa"],
             "rows": daily_rows,
         },
         "simtypes": {"headers": ["code", "simType", "ga"], "rows": sim_rows},
@@ -1996,6 +2069,12 @@ def build_sev_month_tables(month_key, all_stores, cm_targets_by_month=None):
                 [cm, v.get("ga", 0), v.get("m1", 0)]
                 for cm, v in (cm_targets_by_month or {}).get(month_key, {}).items()
             ),
+        },
+        # Companies whose revenue hasn't caught up with their GA yet this month (see
+        # revenue_maturity) -- empty once it has.
+        "revinfo": {
+            "headers": ["company", "lastRevDay", "unreportedGa"],
+            "rows": (rev_info or {}).get(month_key, []),
         },
     }
 
@@ -2290,6 +2369,26 @@ def process_sev_files(paths):
             continue
         stores.append(s)
 
+    reported, rev_info = revenue_maturity(stats.get("coDayRev", {}))
+    for s in all_stores:
+        co_ga = s.pop("_coDayGa", {})
+        for d in s["daily"].values():
+            d["revGa"] = 0
+        for bm in s["byMonth"].values():
+            bm["revGa"] = 0
+        for ck, g in co_ga.items():
+            if ck not in reported:
+                continue
+            day = ck.split("|", 1)[1]
+            if day in s["daily"]:
+                s["daily"][day]["revGa"] += g
+            if day[:6] in s["byMonth"]:
+                s["byMonth"][day[:6]]["revGa"] += g
+    for mk, rows in sorted(rev_info.items()):
+        for co, last, unrep in rows:
+            print(f"  {mk}: {co} revenue reported through {last or '(none yet)'} -- "
+                  f"{unrep:.0f} GA not yet carrying revenue (left out of ARPU)")
+
     months_available = sorted({mk for s in stores for mk in s["byMonth"].keys()})
     # The target file's OWN month (parsed from its filename), not just "whichever loaded
     # month happens to be newest" -- that assumption broke the moment a newer month's sales
@@ -2381,7 +2480,7 @@ def process_sev_files(paths):
         total_ga = sum(s["byMonth"][mk]["ga"] for s in stores if mk in s["byMonth"])
         print(f"    {mk}: GA {total_ga:.0f}")
 
-    return stores, months_available, cm_target_by_month
+    return stores, months_available, cm_target_by_month, rev_info
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -2389,7 +2488,7 @@ def process_sev_files(paths):
 # ═════════════════════════════════════════════════════════════════════════
 
 def build_payload(rtr_months, sev_stores, sev_months_available, cm_targets_by_month=None,
-                   existing_tables=None, existing_meta=None):
+                   existing_tables=None, existing_meta=None, sev_rev_info=None):
     """Builds the publish payload, merging this run's freshly-computed local months with
     whatever the Sheet already has (existing_tables/existing_meta, from fetch_sync_data) --
     local data always wins for a month it actually covers ("is there something new for this
@@ -2423,7 +2522,8 @@ def build_payload(rtr_months, sev_stores, sev_months_available, cm_targets_by_mo
     for mk in sev_months_available:
         key = f"sev-{mk[:4]}-{mk[4:6]}"
         sev_keys.append(key)
-        for suffix, table in build_sev_month_tables(mk, sev_stores, cm_targets_by_month).items():
+        for suffix, table in build_sev_month_tables(mk, sev_stores, cm_targets_by_month,
+                                                    sev_rev_info).items():
             tables[f"{key}-{suffix}"] = table
 
     def group_key_of(tab):
@@ -2660,11 +2760,13 @@ def main():
         sev_stores = cache["sev"]["stores"]
         sev_months = cache["sev"]["months_available"]
         cm_target_by_month = cache["sev"]["cm_target_by_month"]
+        sev_rev_info = cache["sev"].get("rev_info", {})
     else:
-        sev_stores, sev_months, cm_target_by_month = process_sev_files(SEV_PATHS)
+        sev_stores, sev_months, cm_target_by_month, sev_rev_info = process_sev_files(SEV_PATHS)
         cache["sev"] = {
             "signature": sev_sig, "stores": sev_stores,
             "months_available": sev_months, "cm_target_by_month": cm_target_by_month,
+            "rev_info": sev_rev_info,
         }
         save_pipeline_cache(cache)
 
@@ -2681,7 +2783,7 @@ def main():
 
     progress(4, "Preparing tables to publish")
     payload = build_payload(rtr_months, sev_stores, sev_months, cm_target_by_month,
-                             existing_tables, existing_meta)
+                             existing_tables, existing_meta, sev_rev_info=sev_rev_info)
     print(f"Will publish: rtr {payload['meta']['rtr_months']}, sev {payload['meta']['sev_months']}")
     if payload["deleteTabs"]:
         print(f"  will delete {len(payload['deleteTabs'])} old tab(s) that fell out of the "

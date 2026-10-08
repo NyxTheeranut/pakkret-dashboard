@@ -2906,6 +2906,7 @@
             cmTargets: {}, // CM name -> {ga, m1} committed target, from the "TG CM" sheet
             cmTargetMonthKey: null,
             cmTargetsByMonth: {}, // "YYYYMM" -> {cm: {ga, m1}}, every month's 7-11 CM target (Overview tab)
+            revInfoByMonth: {}, // "YYYYMM" -> [[company, lastRevDay, unreportedGa]] -- see revGaOf
             visibleCount: 20,
           },
         };
@@ -3169,6 +3170,45 @@
             cut--;
           }
           return cut || maxDay;
+        }
+
+        // The heuristic above misses a company whose revenue lags its GA by several days (Oct'26:
+        // TRUE carries revenue only for Oct 1 while DTAC has every day -- the daily mix still
+        // looks plausible). The publisher detects that per company (revenue_maturity) and sends
+        // revGa (GA that already carries revenue) plus a per-month revinfo list
+        // [[company, lastRevDay, unreportedGa], ...]. A missing revGa (older Sheet, or files
+        // loaded straight into the browser) means "assume every GA has revenue".
+        function revGaOf(o) {
+          return o && o.revGa != null ? o.revGa : (o && o.ga) || 0;
+        }
+        // ARPU over GA that already carries revenue. targetedGA is each view's existing
+        // denominator; it's scaled by the same share of GA whose revenue has been reported.
+        function arpuOf(m1, targetedGA, ga, revGa) {
+          if (!(targetedGA > 0)) return null;
+          var denom = ga > 0 && revGa != null ? (targetedGA * revGa) / ga : targetedGA;
+          return denom > 0 ? m1 / denom : null;
+        }
+        // Last day every company has revenue for -- caps a revenue comparison's cutoff day.
+        function revInfoCutoff(rows, cut) {
+          (rows || []).forEach(function (r) {
+            var n = r[1] ? dayOfMonth(r[1]) : 0;
+            if (cut == null || n < cut) cut = n;
+          });
+          return cut;
+        }
+        // e.g. " · ARPU คิดเฉพาะ GA ที่มีรายได้แล้ว (รายได้ TRUE ถึงวันที่ 1)"
+        function revInfoNote(rows) {
+          if (!rows || !rows.length) return "";
+          return (
+            " · ARPU คิดเฉพาะ GA ที่มีรายได้แล้ว (รายได้ " +
+            rows
+              .map(function (r) {
+                var co = r[0] === "OTHER" ? "อื่นๆ" : r[0];
+                return co + (r[1] ? " ถึงวันที่ " + dayOfMonth(r[1]) : " ยังไม่เข้า");
+              })
+              .join(", ") +
+            ")"
+          );
         }
 
         // Sum GA from a {dayKey: {ga}} map, counting only days up to maxDay.
@@ -5395,6 +5435,7 @@
               var cr = m.cmRollup[cmName];
               cr.target = 0;
               cr.m1 = 0;
+              cr.revGa = 0;
               cr.targetedGA = 0;
               cr.noTargetGA = 0;
               cr.noTargetCount = 0;
@@ -5412,6 +5453,7 @@
               var cr = m.cmRollup[s.cm];
               if (!cr) return;
               cr.m1 += s.m1;
+              cr.revGa += revGaOf(s);
               if (!s.hasTarget) {
                 cr.noTargetGA += s.ga;
                 cr.noTargetCount++;
@@ -5482,6 +5524,12 @@
               cmName,
             ) {
               return a + (m.cmRollup[cmName].targetedGA || 0);
+            }, 0);
+            m.totals.revGa = Object.keys(m.cmRollup).reduce(function (
+              a,
+              cmName,
+            ) {
+              return a + (m.cmRollup[cmName].revGa || 0);
             }, 0);
             // From cmRollup (post Ach-M1 override), not independently from stores -- a CM with
             // a real "Ach M1" figure has already had cr.m1 replaced with it above, and the
@@ -5725,7 +5773,7 @@
             if (n > mx) mx = n;
             perDay[n] = [m.daily[d].ga || 0, m.daily[d].revAmt || 0];
           });
-          var revCut = revenueMatureCutoff(perDay, mx);
+          var revCut = revInfoCutoff(m.revInfo, revenueMatureCutoff(perDay, mx));
           if (revCut < mx) {
             items.push({
               level: "warn",
@@ -5734,7 +5782,8 @@
                 (revCut + 1) +
                 "-" +
                 mx +
-                "</b> ยังเข้าไม่ครบ (ระบบต้นทางทยอยลงรายได้ทีหลัง) — ยอด <b>รายได้รวม</b> จึงต่ำกว่าความเป็นจริง",
+                "</b> ยังเข้าไม่ครบ (ระบบต้นทางทยอยลงรายได้ทีหลัง) — ยอด <b>รายได้รวม</b> จึงต่ำกว่าความเป็นจริง" +
+                esc(revInfoNote(m.revInfo)),
             });
           }
 
@@ -5898,10 +5947,12 @@
             target: 0,
             targetedGA: 0,
             m1: 0,
+            revGa: 0,
             daily: {},
           };
           stores.forEach(function (s) {
             t.ga += s.ga;
+            t.revGa += revGaOf(s);
             t.ap1d += s.ap1d;
             t.ap1dAmt += s.ap1dAmt;
             t.ap30d += s.ap30d;
@@ -6552,7 +6603,7 @@
           // forecast, need/day) reads segInfo instead of t directly from here on, so they
           // all move together instead of Target changing while %Achieve/forecast don't.
           var segInfo = rtrSegTargetInfo(t, state.rtr.segToggle);
-          var arpu = t.targetedGA > 0 ? t.m1 / t.targetedGA : null;
+          var arpu = arpuOf(t.m1, t.targetedGA, t.ga, t.revGa);
           var momTxt =
             t.momPct == null
               ? rtrCurrentMonth().hasPrevMonth
@@ -6946,7 +6997,7 @@
             // the full cr for now (a genuine like-for-like segment MOM needs per-day segment
             // history threaded in here, not just this render-time totals object).
             var segInfo = rtrSegTargetInfo(cr, state.rtr.segToggle);
-            var arpu = cr.targetedGA > 0 ? cr.m1 / cr.targetedGA : null;
+            var arpu = arpuOf(cr.m1, cr.targetedGA, cr.ga, cr.revGa);
             // Target/%Achieve ALONE switch to the M1 basis when toggled -- cr.targetM1 is a
             // real committed figure (KPI Set Up's own "Target M1 (<Month>)" block, same sheet
             // and same trust rule as the GA target), compared against the CM's full actual M1
@@ -7024,7 +7075,9 @@
                 pacing.daysLeft +
                 " วัน · "
               : "") +
-            "เรียงจากคนที่คาดว่าจะขาดเป้ามากที่สุด · คลิกแถวเพื่อดูเฉพาะ CM นั้น";
+            "เรียงจากคนที่คาดว่าจะขาดเป้ามากที่สุด" +
+            revInfoNote(m.revInfo) +
+            " · คลิกแถวเพื่อดูเฉพาะ CM นั้น";
 
           // In M1 mode the Target column moves to sit right behind M1 (header and body share
           // this one ordering, so they can't drift apart).
@@ -7225,10 +7278,14 @@
                 m1: 0,
                 lmtdSum: 0,
                 hasLmtd: false,
+                rawGa: 0,
+                revGa: 0,
               });
             row.storeCount++;
             row.ga += rtrStoreSegGA(s);
             row.m1 += s.m1;
+            row.rawGa += s.ga;
+            row.revGa += revGaOf(s);
             if (s.hasTarget) {
               row.targetedGA += s.ga;
               row.target += s.target;
@@ -7268,7 +7325,7 @@
                     ? (r.ga - r.lmtdSum) / r.lmtdSum
                     : null,
                 m1: m1,
-                arpu: r.ga > 0 && m1 > 0 ? m1 / r.ga : null,
+                arpu: m1 > 0 ? arpuOf(m1, r.rawGa, r.rawGa, r.revGa) : null,
               };
             }
             return {
@@ -7283,7 +7340,7 @@
                   ? (r.ga - r.lmtdSum) / r.lmtdSum
                   : null,
               m1: r.m1,
-              arpu: r.targetedGA > 0 ? r.m1 / r.targetedGA : null,
+              arpu: arpuOf(r.m1, r.targetedGA, r.rawGa, r.revGa),
             };
           });
 
@@ -7298,7 +7355,9 @@
           });
 
           $("comLeaderboardHint").textContent =
-            "คลิกหัวตารางเพื่อเรียงลำดับ · คลิกแถวเพื่อดูเฉพาะ COM นั้น";
+            "คลิกหัวตารางเพื่อเรียงลำดับ" +
+            revInfoNote(m.revInfo) +
+            " · คลิกแถวเพื่อดูเฉพาะ COM นั้น";
 
           var headerHtml = COM_LB_COLS.map(function (col) {
             var isActive = state.rtr.comLbSortKey === col.key;
@@ -8634,7 +8693,7 @@
           if (k === "m1")
             return '<td class="num-cell">' + fmtBaht(s.m1) + "</td>";
           if (k === "arpu") {
-            var a = s.ga > 0 ? s.m1 / s.ga : null;
+            var a = arpuOf(s.m1, s.ga, s.ga, revGaOf(s));
             return (
               '<td class="num-cell">' + (a != null ? fmtBaht(a) : "—") + "</td>"
             );
@@ -8669,7 +8728,10 @@
           if (key === "ap30dSubs") return s.ap30d;
           if (key === "ap1dConv") return s.ga > 0 ? s.ap1d / s.ga : 0;
           if (key === "m1") return s.m1;
-          if (key === "arpu") return s.ga > 0 ? s.m1 / s.ga : -1;
+          if (key === "arpu") {
+            var sa = arpuOf(s.m1, s.ga, s.ga, revGaOf(s));
+            return sa == null ? -1 : sa;
+          }
           if (key === "conv") return s.ga > 0 ? s.ap30d / s.ga : 0;
           return 0;
         }
@@ -8912,7 +8974,10 @@
           if (col.key === "ap1dConv")
             return s.ga > 0 ? pct(s.ap1d / s.ga) : "—";
           if (col.key === "m1") return fmtBaht(s.m1);
-          if (col.key === "arpu") return s.ga > 0 ? fmtBaht(s.m1 / s.ga) : "—";
+          if (col.key === "arpu") {
+            var pa = arpuOf(s.m1, s.ga, s.ga, revGaOf(s));
+            return pa != null ? fmtBaht(pa) : "—";
+          }
           if (col.key === "conv") return s.ga > 0 ? pct(s.ap30d / s.ga) : "—";
           return "";
         }
@@ -8936,7 +9001,10 @@
           if (col.key === "ap1dSubs") return plainNum(s.ap1d);
           if (col.key === "ap30dSubs") return plainNum(s.ap30d);
           if (col.key === "m1") return plainNum(s.m1);
-          if (col.key === "arpu") return s.ga > 0 ? plainNum(s.m1 / s.ga) : "—";
+          if (col.key === "arpu") {
+            var ca = arpuOf(s.m1, s.ga, s.ga, revGaOf(s));
+            return ca != null ? plainNum(ca) : "—";
+          }
           return rtrExportCellText(col, s);
         }
 
@@ -9759,7 +9827,9 @@
             fmtBaht(s.m1) +
             "</div></div>" +
             '<div class="dd-kpi"><div class="l">ARPU</div><div class="v">' +
-            (s.ga > 0 ? fmtBaht(s.m1 / s.ga) : "—") +
+            (arpuOf(s.m1, s.ga, s.ga, revGaOf(s)) != null
+              ? fmtBaht(arpuOf(s.m1, s.ga, s.ga, revGaOf(s)))
+              : "—") +
             "</div></div>" +
             '<div class="dd-kpi"><div class="l">%AP30D</div><div class="v">' +
             pct(conv) +
@@ -11249,6 +11319,7 @@
           return {
             ga: d.ga || 0,
             revAmt: d.revAmt || 0,
+            revGa: revGaOf(d),
             ap100: d.ap100 || 0,
             ap49: d.ap49 || 0,
             ap99: d.ap99 || 0,
@@ -11299,6 +11370,11 @@
           });
           sevMomCutoffDay = mx || null;
           sevRevCutoffDay = revenueMatureCutoff(perDay, mx) || sevMomCutoffDay;
+          // A company still missing revenue (see revGaOf) caps this at the last day every
+          // company has it -- otherwise October compared Oct 1-5 revenue that was really only
+          // DTAC for Oct 2-5 against a fully-reported September.
+          sevRevCutoffDay =
+            revInfoCutoff((state.sev.revInfoByMonth || {})[mk], sevRevCutoffDay) || null;
         }
 
         // 7-11's run-rate/forecast, mirroring RTR's rtrPacingCurveFrac/rtrMonthPacing/rtrForecast
@@ -11777,6 +11853,7 @@
             row.storeCount++;
             row.ga += v.ga;
             row.revAmt += v.revAmt;
+            row.revGa = (row.revGa || 0) + v.revGa;
             row.ap49 += v.ap49;
             row.ap99 += v.ap99;
             row.ap199 += v.ap199;
@@ -11817,7 +11894,7 @@
                 ? (r.curRevMature - r.prevRev) / r.prevRev
                 : null;
             r.momPct = mode === "m1" ? m1MomPct : gaMomPct;
-            r.arpu = r.ga > 0 ? r.revAmt / r.ga : null;
+            r.arpu = arpuOf(r.revAmt, r.ga, r.ga, r.revGa);
             var tgt = targetActive ? state.sev.cmTargets[cm] : null;
             r.target = tgt ? (mode === "m1" ? tgt.m1 : tgt.ga) || null : null;
             var achieveBasis = mode === "m1" ? r.revAmt : r.ga;
@@ -11850,6 +11927,7 @@
                       " (ตัดวันท้ายที่รายได้ยังเข้าไม่ครบ)"
                     : "")
                 : " · เลือกเดือนใดเดือนหนึ่งเพื่อดู %MOM") +
+            (mk ? revInfoNote(state.sev.revInfoByMonth[mk]) : "") +
             " · คลิกแถวเพื่อดูเฉพาะ CM นั้น";
 
           // In M1 mode the Target column moves to sit right behind M1 (header and body share
@@ -12052,6 +12130,7 @@
             if (v.ga > 0) row.activeStoreCount++;
             row.ga += v.ga;
             row.revAmt += v.revAmt;
+            row.revGa = (row.revGa || 0) + v.revGa;
             row.ap49 += v.ap49;
             row.ap99 += v.ap99;
             row.ap199 += v.ap199;
@@ -12109,7 +12188,7 @@
               mk && !day && r.hasPrevRev && r.prevRev > 0
                 ? (r.curRevMature - r.prevRev) / r.prevRev
                 : null;
-            r.arpu = r.ga > 0 ? r.revAmt / r.ga : null;
+            r.arpu = arpuOf(r.revAmt, r.ga, r.ga, r.revGa);
             r.productivity =
               r.activeStoreCount > 0 && r.runrateGA != null
                 ? r.runrateGA / r.activeStoreCount
@@ -12157,6 +12236,7 @@
                       " (ตัดวันท้ายที่รายได้ยังเข้าไม่ครบ)"
                     : "")
                 : " · เลือกเดือนใดเดือนหนึ่งเพื่อดู %MOM") +
+            (mk ? revInfoNote(state.sev.revInfoByMonth[mk]) : "") +
             " · คลิกแถวเพื่อดูเฉพาะ AE นั้น";
 
           var headerHtml = AE_LB_COLS.map(function (col) {
@@ -13701,7 +13781,7 @@
             revMomPct: revMomPct,
             prevRevAmt: prevRevAmt, // last month's revenue up to the same cutoff day -- รายได้ (LMTD)
             lmtdGa: prevGA, // last month's GA up to the same cutoff day -- GA (LMTD)
-            m1ga: v.ga > 0 ? v.revAmt / v.ga : null,
+            m1ga: arpuOf(v.revAmt, v.ga, v.ga, v.revGa),
             target: targetActive ? s.target : null,
             achievePct: targetActive && s.target > 0 ? v.ga / s.target : null,
             // Share of this store's GA priced under 100 -- ap49 (<=49) + ap99 (50-99) are the
@@ -16453,6 +16533,9 @@
             scriptReadTable(key + "-comtargets").catch(function () {
               return { headers: [], rows: [] };
             }),
+            scriptReadTable(key + "-revinfo").catch(function () {
+              return { headers: [], rows: [] };
+            }),
           ]).then(function (parts) {
             var meta = {};
             parts[0].rows.forEach(function (r) {
@@ -16492,6 +16575,8 @@
                 // r[28] added later still (the routing workbook's COM, one rep level below
                 // cm) -- same degrade-gracefully reasoning as hasStock/etc above.
                 com: r[28] || "",
+                // r[29] newer still -- GA that already carries revenue. Absent = assume all.
+                revGa: r.length > 29 && r[29] !== "" ? Number(r[29]) || 0 : Number(r[5]) || 0,
                 simTypes: {},
                 daily: {},
               };
@@ -16505,6 +16590,7 @@
                 mass: Number(r[4]) || 0,
                 migrant: Number(r[5]) || 0,
                 tourist: Number(r[6]) || 0,
+                revGa: r.length > 7 && r[7] !== "" ? Number(r[7]) || 0 : Number(r[2]) || 0,
               };
             });
             parts[3].rows.forEach(function (r) {
@@ -16548,6 +16634,7 @@
               }),
               cmTargetMap: cmTargetMap,
               comTargets: comTargets,
+              revInfo: parts[6].rows,
             };
           });
         }
@@ -16567,6 +16654,9 @@
             scriptReadTable(key + "-cmtargets").catch(function () {
               return { headers: [], rows: [] };
             }),
+            scriptReadTable(key + "-revinfo").catch(function () {
+              return { headers: [], rows: [] };
+            }),
           ]).then(function (parts) {
             var byCode = {};
             parts[0].rows.forEach(function (r) {
@@ -16583,6 +16673,8 @@
                 tourist: Number(r[17]) || 0,
                 dtacGa: Number(r[18]) || 0,
                 trueGa: Number(r[19]) || 0,
+                // r[21] newer -- GA that already carries revenue. Absent = assume all.
+                revGa: r.length > 21 && r[21] !== "" ? Number(r[21]) || 0 : Number(r[8]) || 0,
                 simTypes: {},
               };
               var target = Number(r[20]) || 0;
@@ -16619,6 +16711,7 @@
                 mass: Number(r[10]) || 0,
                 migrant: Number(r[11]) || 0,
                 tourist: Number(r[12]) || 0,
+                revGa: r.length > 13 && r[13] !== "" ? Number(r[13]) || 0 : Number(r[2]) || 0,
               };
             });
             parts[2].rows.forEach(function (r) {
@@ -16641,6 +16734,7 @@
                 return byCode[c];
               }),
               cmTargets: cmTargets,
+              revInfo: parts[4].rows,
             };
           });
         }
@@ -16662,6 +16756,7 @@
               cmRollup: agg.cmRollup,
               stores: g.stores,
               comTargets: g.comTargets || {},
+              revInfo: g.revInfo || [],
               sevTxByCode: new Map(), // 7-11 rows mixed into RTR sheets — not published, not needed here
               sevRowCount: 0,
             };
@@ -16713,9 +16808,11 @@
           var cmTargets = {};
           var cmTargetMonthKey = null;
           var cmTargetsByMonth = {};
+          var revInfoByMonth = {};
           monthPayloads.forEach(function (p) {
             if (!p || !p.stores) return;
             months.push(p.monthKey);
+            revInfoByMonth[p.monthKey] = p.revInfo || [];
             // The target commit file (and its CM rollup) is scoped to one month -- whichever
             // month's group actually carries cmTargets rows is that month, same convention as
             // each store's own target/targetMonthKey below.
@@ -16752,6 +16849,7 @@
                   tourist: 0,
                   dtacGa: 0,
                   trueGa: 0,
+                  revGa: 0,
                   byMonth: {},
                   daily: {},
                   simTypes: {},
@@ -16799,6 +16897,7 @@
                 "tourist",
                 "dtacGa",
                 "trueGa",
+                "revGa",
               ].forEach(function (k) {
                 t[k] += b[k] || 0;
               });
@@ -16827,6 +16926,7 @@
           state.sev.cmTargets = cmTargets;
           state.sev.cmTargetMonthKey = cmTargetMonthKey;
           state.sev.cmTargetsByMonth = cmTargetsByMonth;
+          state.sev.revInfoByMonth = revInfoByMonth;
           $("tabBtnSev").classList.add("ready");
         }
 
@@ -16976,14 +17076,14 @@
               function tabsFor(rtrKeys, sevKeys) {
                 var out = [];
                 rtrKeys.forEach(function (t) {
-                  ["meta", "stores", "daily", "simtypes", "cmtargets", "comtargets"].forEach(
+                  ["meta", "stores", "daily", "simtypes", "cmtargets", "comtargets", "revinfo"].forEach(
                     function (suffix) {
                       out.push(t + "-" + suffix);
                     },
                   );
                 });
                 sevKeys.forEach(function (t) {
-                  ["stores", "daily", "simtypes", "cmtargets"].forEach(
+                  ["stores", "daily", "simtypes", "cmtargets", "revinfo"].forEach(
                     function (suffix) {
                       out.push(t + "-" + suffix);
                     },
