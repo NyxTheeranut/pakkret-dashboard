@@ -1784,7 +1784,7 @@
         }
       }
 
-      #panelOverview button { min-height: 44px; }
+      #panelOverview .ov-row, #panelOverview .ov-month { min-height: 44px; }
       #panelOverview :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       #panelOverview .ov-legend button[aria-pressed="false"] { opacity: 0.45; }
       #panelOverview .ov-legend button { display: inline-flex; align-items: center; gap: 6px; }
@@ -1808,7 +1808,6 @@
         #panelOverview .ov-row { grid-template-columns: 1fr; gap: 6px; }
         #panelOverview .ov-barline { grid-template-columns: 110px 56px 1fr 72px; }
       }
-      #panelOverview .ov-filter-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
       #panelOverview .ov-barpct { text-align: left; }
       #panelOverview .ov-month { background: none; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
       #panelOverview .ov-month[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
@@ -2001,13 +2000,20 @@
           <h2>ภาพรวม RTR + 7-11</h2>
           <span class="hint" id="ovHint"></span>
         </div>
-        <div class="card">
-          <div id="ovViewSwitch"></div>
-          <div id="ovFilters" style="margin-top:10px"></div>
-          <div id="ovMonthPicker" style="margin-top:10px"></div>
-          <div id="ovCoverage"></div>
-        </div>
-        <div id="ovKpis" style="margin-top:12px"></div>
+        <!-- Same control layout as the RTR / 7-11 tabs: month pills, then CM tabs, then the
+             smaller filter rows. -->
+        <div class="pill-row" id="ovMonthPicker"></div>
+        <div id="ovCoverage" style="margin: -8px 0 20px"></div>
+        <section>
+          <div class="section-head">
+            <h2>เลือกมุมมอง</h2>
+            <span class="hint">ภาพรวม = รวมทุก CM</span>
+          </div>
+          <div class="cm-tabs" id="ovFilters"></div>
+          <div class="ae-row" id="ovViewSwitch"></div>
+          <div class="ae-row" id="ovSortRow"></div>
+        </section>
+        <section><div id="ovKpis"></div></section>
         <section>
           <div class="section-head"><h2 id="ovBarsTitle">GA รายคู่ CM</h2><span class="hint">คลิกชื่อเพื่อเปิดแท็บ RTR</span></div>
           <div class="card"><div id="ovBarChart"></div></div>
@@ -3961,11 +3967,10 @@
 
         function renderOvPicker(keys, sel) {
           $("ovMonthPicker").innerHTML =
-            '<span class="lbl">เดือน</span> ' +
             keys
               .map(function (k) {
                 return (
-                  '<button class="pill small' +
+                  '<button class="pill' +
                   (sel.indexOf(k) !== -1 ? " active" : "") +
                   '" data-ov-month="' + k + '">' +
                   esc(ovLabel(k)) +
@@ -4257,30 +4262,42 @@
         function renderOvViewSwitch() {
           var v = ovView();
           $("ovViewSwitch").innerHTML =
-            '<span class="lbl">มุมมอง</span> ' +
+            '<span class="lbl">มุมมอง</span>' +
             [["cm", "ตาม CM"], ["ae", "ตาม AE / COM"]].map(function (o) {
               var on = v === o[0];
               return '<button type="button" class="pill small' + (on ? " active" : "") +
                 '" data-ov-view="' + o[0] + '" aria-pressed="' + (on ? "true" : "false") + '">' + o[1] + "</button>";
             }).join("");
         }
-        function renderOvFilters() {
+        // RTR stores in that month + 7-11 stores, for the CM tabs' "N ร้าน" (same as the
+        // other tabs' CM tabs show).
+        function ovStoreCount(cm, key) {
+          var n = 0;
+          var rm = key ? ovRtrMonth(key) : null;
+          if (rm) (rm.stores || []).forEach(function (s) { if (!cm || s.cm === cm) n++; });
+          state.sev.stores.forEach(function (s) {
+            if (s.cm && s.cm !== UNMAPPED_CM && (!cm || s.cm === cm)) n++;
+          });
+          return n;
+        }
+        function renderOvFilters(latestKey) {
           var f = ovCmFilter() || "";
           var by = ovSortBy();
-          function pill(attr, val, label, on) {
-            return '<button type="button" class="pill small' + (on ? " active" : "") + '" ' + attr + '="' + esc(val) +
-              '" aria-pressed="' + (on ? "true" : "false") + '">' + esc(label) + "</button>";
+          function tab(val, label, on) {
+            return '<button type="button" class="cm-tab' + (on ? " active" : "") + '" data-ov-cm="' + esc(val) +
+              '" aria-pressed="' + (on ? "true" : "false") + '"><span>' + esc(label) +
+              '</span><span class="count">' + fmt(ovStoreCount(val, latestKey)) + " ร้าน</span></button>";
           }
           $("ovFilters").innerHTML =
-            '<div class="ov-filter-row"><span class="lbl">CM</span>' +
-            pill("data-ov-cm", "", "ทุก CM", f === "") +
-            ovCms().map(function (c) { return pill("data-ov-cm", c, c, f === c); }).join("") +
-            "</div>" +
-            '<div class="ov-filter-row"><span class="lbl">เรียงตาม</span>' +
+            tab("", "ภาพรวม", f === "") +
+            ovCms().map(function (c) { return tab(c, c, f === c); }).join("");
+          $("ovSortRow").innerHTML =
+            '<span class="lbl">เรียงตาม</span>' +
             [["name", "ชื่อ"], ["sales", "ยอด GA"], ["pct", "%Ach"]].map(function (o) {
-              return pill("data-ov-sort", o[0], o[1], by === o[0]);
-            }).join("") +
-            "</div>";
+              var on = by === o[0];
+              return '<button type="button" class="pill small' + (on ? " active" : "") + '" data-ov-sort="' + o[0] +
+                '" aria-pressed="' + (on ? "true" : "false") + '">' + o[1] + "</button>";
+            }).join("");
         }
         function renderOvKpis(show) {
           var f = ovCmFilter();
@@ -4415,6 +4432,7 @@
           if (!keys.length) {
             $("ovViewSwitch").innerHTML = "";
             $("ovFilters").innerHTML = "";
+            $("ovSortRow").innerHTML = "";
             $("ovKpis").innerHTML = "";
             $("ovCmTable").innerHTML = '<div class="insight-empty">ยังไม่มีข้อมูล — โหลดไฟล์ RTR หรือ 7-11 ก่อน</div>';
             $("ovM1Table").innerHTML = "";
@@ -4434,7 +4452,7 @@
           var ae = ovView() === "ae";
           $("ovHint").textContent = "รวม GA จากทั้งสองช่องทาง · เป้ารวมแสดงเฉพาะเมื่อทั้งสองช่องทางมีเป้า · เลือกได้ 2 เดือน";
           renderOvViewSwitch();
-          renderOvFilters();
+          renderOvFilters(show[show.length - 1]);
           renderOvPicker(keys, show);
           renderOvCoverage(show);
           renderOvKpis(show);
@@ -4467,6 +4485,7 @@
             renderOverview();
           }
         };
+        $("ovSortRow").onclick = $("ovFilters").onclick;
         $("ovMonthPicker").onclick = function (e) {
           var btn = e.target.closest("[data-ov-month]");
           if (btn) ovToggleMonth(btn.getAttribute("data-ov-month"));
