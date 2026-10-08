@@ -1838,6 +1838,85 @@ def aggregate_sev_cm_target_rows(rows2d, cm_to_target, stats):
                 rec["m1"] = m1_target
 
 
+def looks_like_sev_cm_ga_summary_sheet(rows2d):
+    """An ad hoc BI export's own per-CM GA summary (seen as the 'CM' sheet in a file named
+    e.g. 'Data Synergy Oct26_New.xlsx' -- naming varies month to month, so detected by
+    header shape, not by file/sheet name). Two-row header: group labels (GA/Overall/Mass/
+    Migrant/MM/Tourist) then leaf columns (TDS_Regions/CM/No.Store/TG/Actual/...). Matched
+    on the leaf row alone -- requires CM, TG and Actual together, and deliberately NO COM
+    column, since the otherwise-identical COM-level export has one and shifts every column
+    one to the right (must be read with COM-aware offsets, never these fixed CM-sheet ones)."""
+    for row in rows2d[:6]:
+        if not row:
+            continue
+        normed = [norm_header(c) for c in row]
+        if "cm" in normed and "com" not in normed and "tg" in normed and "actual" in normed:
+            return True
+    return False
+
+
+def aggregate_sev_cm_ga_summary_rows(rows2d, cm_to_target, stats):
+    """Reads the sheet looks_like_sev_cm_ga_summary_sheet matched. This sheet actually
+    holds TWO stacked blocks sharing the exact same column layout -- a GA one first, an M1
+    one afterward (confirmed against the real file: a marker cell reading "GA" sits one
+    row above the first block's own header, "M1" one row above the second's, both in the
+    same column as "TDS_Regions"). Reading every header-shaped row found (not just the
+    first) and stopping each block's data at the NEXT one found is what makes both real --
+    a single data loop running to the end of the sheet would walk straight from the GA
+    block into the M1 block using the GA block's own column offsets, silently overwriting
+    every CM's real GA target with its M1 figure instead (caught before this shipped).
+
+    Only ever used to FILL a gap a CM the authoritative CM-target sheets don't have yet
+    (e.g. a brand new CM from a recent reorg) -- see process_sev_files' merge order, which
+    never lets this overwrite a CM those other, more authoritative sources already cover."""
+    header_rows = []
+    for i, row in enumerate(rows2d):
+        if not row:
+            continue
+        normed = [norm_header(c) for c in row]
+        if "cm" in normed and "com" not in normed and "tg" in normed and "actual" in normed:
+            header_rows.append(i)
+    if not header_rows:
+        return
+    for block_i, header_idx in enumerate(header_rows):
+        header = rows2d[header_idx]
+        # "TG"/"Actual" each repeat 5x in this row -- once per Overall/Mass/Migrant/MM/
+        # Tourist sub-block -- so a {header: col} dict here would silently keep only the
+        # LAST one (Tourist) instead of the Overall block's own, which is the one actually
+        # wanted (caught before this shipped: it was reading each CM's Tourist-only TG as
+        # if it were their real target). First occurrence, left to right, every time.
+        def first_col(name, header=header):
+            return next((j for j, c in enumerate(header) if norm_header(c) == name), None)
+        cluster_col = first_col("tds_regions")
+        cm_col = first_col("cm")
+        tg_col = first_col("tg")
+        if cm_col is None or tg_col is None:
+            continue
+        marker_row = header_idx - 1
+        marker = None
+        if marker_row >= 0 and rows2d[marker_row]:
+            marker = norm_header(get(rows2d[marker_row], cluster_col if cluster_col is not None else 0))
+        is_m1 = marker == "m1"
+        block_end = header_rows[block_i + 1] if block_i + 1 < len(header_rows) else len(rows2d)
+        for r in range(header_idx + 1, block_end):
+            row = rows2d[r]
+            if not row:
+                continue
+            if cluster_col is not None and not in_target_cluster(get(row, cluster_col)):
+                continue
+            name = get(row, cm_col)
+            if name is None or str(name).strip() == "":
+                continue
+            name_trimmed = str(name).strip()
+            if re.search(r"grand total|total", name_trimmed, re.I):
+                continue  # pivot's own summary row, not a CM
+            val = num(get(row, tg_col))
+            if val > 0:
+                rec = cm_to_target.setdefault(name_trimmed, {"ga": 0, "m1": 0})
+                rec["m1" if is_m1 else "ga"] = val
+                stats["rows"] += 1
+
+
 ZERO_SEV_MONTH = {
     "ga": 0, "revAmt": 0, "ap100": 0, "ap49": 0, "ap99": 0, "ap199": 0, "apOver199": 0,
     "mass": 0, "migrant": 0, "tourist": 0, "dtacGa": 0, "trueGa": 0, "simTypes": {},
@@ -1920,6 +1999,11 @@ def process_sev_files(paths):
     # "TG CM"-style sheet covers, and a single flat dict can't hold two months' values for
     # the same CM name at once without one silently clobbering the other.
     le_cm_to_target, le_cm_target_stats = {}, {"rows": 0}
+    # Another independent, lower-precedence source -- an ad hoc BI export's own "CM" summary
+    # sheet (see looks_like_sev_cm_ga_summary_sheet), only ever used to fill in a CM the
+    # authoritative cm_to_target/le_cm_to_target sheets don't have yet (e.g. a brand new CM
+    # a recent reorg introduced that those files haven't caught up to).
+    cm_ga_summary_to_target, cm_ga_summary_stats = {}, {"rows": 0}
     sheet_errors = []
 
     # ---- pass 1: cheap metadata only (sheet names, header row, and -- for anything that
@@ -1943,12 +2027,17 @@ def process_sev_files(paths):
             ws = wb[name]
             header_row = next(ws.iter_rows(max_row=1, values_only=True), None)
             header = list(header_row) if header_row else []
+            # looks_like_sev_cm_ga_summary_sheet's header is two rows deep (group labels,
+            # then leaf columns) -- the other is_other checks here only ever need row 1.
+            second_row = next(ws.iter_rows(min_row=2, max_row=2, values_only=True), None)
+            second_row = list(second_row) if second_row else []
             is_other = (
                 looks_like_sev_cm_target_sheet(name)
                 or looks_like_sev_target_sheet(name)
                 or looks_like_roster_sheet([header])
                 or looks_like_sev_le_by_store_sheet([header])
                 or looks_like_sev_le_cm_target_sheet([header])
+                or looks_like_sev_cm_ga_summary_sheet([header, second_row])
             )
             months_touched = None
             if not is_other:
@@ -2015,7 +2104,8 @@ def process_sev_files(paths):
     for sh in all_sheets:
         if (looks_like_sev_cm_target_sheet(sh["name"]) or looks_like_sev_target_sheet(sh["name"])
                 or looks_like_roster_sheet(sh["rows2D"]) or looks_like_sev_monitor_store_sheet(sh["rows2D"])
-                or looks_like_sev_le_by_store_sheet(sh["rows2D"]) or looks_like_sev_le_cm_target_sheet(sh["rows2D"])):
+                or looks_like_sev_le_by_store_sheet(sh["rows2D"]) or looks_like_sev_le_cm_target_sheet(sh["rows2D"])
+                or looks_like_sev_cm_ga_summary_sheet(sh["rows2D"])):
             other_sheets.append(sh)
         else:
             sh["dayCounts"] = sev_count_rows_by_day(sh["rows2D"])
@@ -2052,9 +2142,15 @@ def process_sev_files(paths):
     monitor_store_file_name = None
     le_by_store_file_name = None
     le_cm_target_file_name = None
+    cm_ga_summary_file_name = None
     for sh in other_sheets:
         try:
-            if looks_like_sev_cm_target_sheet(sh["name"]):
+            if looks_like_sev_cm_ga_summary_sheet(sh["rows2D"]):
+                before = len(cm_ga_summary_to_target)
+                aggregate_sev_cm_ga_summary_rows(sh["rows2D"], cm_ga_summary_to_target, cm_ga_summary_stats)
+                if cm_ga_summary_file_name is None and len(cm_ga_summary_to_target) > before:
+                    cm_ga_summary_file_name = sh["fileName"]
+            elif looks_like_sev_cm_target_sheet(sh["name"]):
                 before = len(cm_to_target)
                 aggregate_sev_cm_target_rows(sh["rows2D"], cm_to_target, cm_target_stats)
                 if cm_target_file_name is None and len(cm_to_target) > before:
@@ -2197,6 +2293,12 @@ def process_sev_files(paths):
     le_cm_target_month_key = (
         le_cm_target_file_name and parse_month_from_filename(le_cm_target_file_name)
     )
+    # No month of its own in the sheet (unlike cm_to_target/le_cm_to_target's source files,
+    # which carry an explicit "TG <month>" column) -- same fallback as target_month_key.
+    cm_ga_summary_month_key = (
+        (cm_ga_summary_file_name and parse_month_from_filename(cm_ga_summary_file_name))
+        or (months_available[-1] if months_available else None)
+    )
 
     # Merged by month, not into one flat dict -- see le_cm_to_target's own comment above.
     # Each source only ever writes into its OWN month's slot, so an overlapping CM name
@@ -2207,6 +2309,16 @@ def process_sev_files(paths):
         cm_target_by_month.setdefault(cm_target_month_key, {}).update(cm_to_target)
     if le_cm_to_target and le_cm_target_month_key:
         cm_target_by_month.setdefault(le_cm_target_month_key, {}).update(le_cm_to_target)
+    # Lowest precedence, gap-fill only -- never overwrites a CM cm_to_target/le_cm_to_target
+    # already gave a target for that same month, only adds one for a CM neither of those
+    # authoritative sources has yet (see cm_ga_summary_to_target's own comment above).
+    filled_cms = []
+    if cm_ga_summary_to_target and cm_ga_summary_month_key:
+        month_targets = cm_target_by_month.setdefault(cm_ga_summary_month_key, {})
+        for cm, v in cm_ga_summary_to_target.items():
+            if cm not in month_targets:
+                month_targets[cm] = v
+                filled_cms.append(cm)
 
     print(f"  {stats['totalRows']} rows scanned, {stats['clusterRows']} in cluster, "
           f"{len(stores)} stores mapped ({unmapped_count} unmapped / GA {unmapped_ga:.0f} dropped)")
@@ -2216,6 +2328,10 @@ def process_sev_files(paths):
           f"(month: {le_by_store_month_key}), CM targets: {cm_target_stats['rows']} "
           f"(month: {cm_target_month_key}), LE CM targets: {le_cm_target_stats['rows']} "
           f"(month: {le_cm_target_month_key})")
+    if cm_ga_summary_to_target:
+        print(f"  CM GA summary sheet: {cm_ga_summary_stats['rows']} CM(s) read "
+              f"(month: {cm_ga_summary_month_key}); filled in a missing target for: "
+              f"{sorted(filled_cms) if filled_cms else '(none -- already covered)'}")
     print(f"  months available: {months_available}")
     for mk in months_available:
         total_ga = sum(s["byMonth"][mk]["ga"] for s in stores if mk in s["byMonth"])
