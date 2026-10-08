@@ -166,6 +166,7 @@ ROUTING_ROUTE_SHEET_RE = re.compile(r"^rtr_route$", re.I)
 # primary workbook's KPI Set Up doesn't cover yet -- same block layout parse_kpi_setup_targets
 # already reads, just on this sheet instead.
 PERF_CM_SHEET_RE = re.compile(r"^performance\s*cm", re.I)
+PERF_COM_SHEET_RE = re.compile(r"^performance\s*com\b", re.I)
 SEV_TARGET_SHEET_RE = re.compile(r"^tg\s", re.I)
 SEV_CM_TARGET_SHEET_RE = re.compile(r"^tg\s*cm\s*$", re.I)
 
@@ -373,7 +374,7 @@ def parse_target_blocks(header):
     return blocks
 
 
-def parse_kpi_setup_targets(rows2d):
+def parse_kpi_setup_targets(rows2d, name_col="cm"):
     """The 'KPI Set Up' sheet: a leadership-committed target per CM, laid out
     as a two-row header repeated once per month, at three granularities (PBH/
     CM/RSR) -- only the CM-level block, and only when its own 'Total' row's
@@ -410,9 +411,11 @@ def parse_kpi_setup_targets(rows2d):
             continue
         s_row = rows2d[g_idx + 1]
         s_norm = [norm_header(c) for c in s_row]
-        if "cm" not in s_norm:
+        # name_col="com_name" reads the routing workbook's "Performance COM" sheet, which has
+        # this exact block layout, just one row per COM instead of per CM.
+        if name_col not in s_norm:
             continue  # PBH-only or RSR-level block -- keep scanning past it
-        cm_idx = s_norm.index("cm")
+        cm_idx = s_norm.index(name_col)
         all_rtr_idx = s_norm.index("all rtr") if "all rtr" in s_norm else -1
 
         def block_bounds(anchor_idx):
@@ -1080,6 +1083,16 @@ def build_rtr_month_tables(m):
             "headers": ["cm", "target", "targetMassMigrant", "targetTourist", "targetM1", "achM1"],
             "rows": cm_rows,
         },
+        # Per-COM committed target/M1 from the routing workbook's "Performance COM" sheet --
+        # empty for any month that sheet doesn't cover (the dashboard then falls back to
+        # summing per-store targets, as before).
+        "comtargets": {
+            "headers": ["com", "target", "targetMassMigrant", "targetTourist", "targetM1", "achM1"],
+            "rows": sorted(
+                [com, v["total"], v["massMigrant"], v["tourist"], v["m1Total"], v["achM1Total"]]
+                for com, v in (m.get("comTargets") or {}).items()
+            ),
+        },
     }
 
 
@@ -1128,6 +1141,7 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
     routing_target_overrides = {}
     canonical_to_com = {}
     canonical_to_cm_override = {}
+    com_targets = {}  # {monthAbbr: {comName: {total, massMigrant, tourist, m1Total, achM1Total, ...}}}
     # Month sheet NAMES the routing workbook's CM override is trusted for -- deliberately
     # NARROWER than "months whose raw rows came from the routing workbook". A month the
     # routing workbook merely has a row-count-fresher copy of (its own "Sep" outscoring the
@@ -1155,6 +1169,11 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
                     if mo not in kpi_setup_targets:
                         kpi_setup_targets[mo] = cms
                         print(f"    CM targets for {mo} from {pname} (primary KPI Set Up has no {mo} block)")
+            for pname in [n for n in wb_r.sheetnames if PERF_COM_SHEET_RE.match(n.strip())]:
+                for mo, coms in (parse_kpi_setup_targets(sheet_to_rows(wb_r[pname]), name_col="com_name")
+                                 or {}).items():
+                    com_targets.setdefault(mo, {}).update(coms)
+                    print(f"    COM targets for {mo} from {pname}: {len(coms)} COMs")
             for rname in [n for n in wb_r.sheetnames if MONTH_RE.match(n.strip())]:
                 r_date = parse_sheet_date(rname)
                 if not r_date:
@@ -1214,6 +1233,10 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
     for m in months:
         for s in m["stores"]:
             s["com"] = canonical_to_com.get(s["code"], "")
+        d = parse_sheet_date(m["sheetName"])
+        mo_key = MONTH_LABEL[d["monthIndex"]].lower() if d else None
+        coms_here = {s["com"] for s in m["stores"] if s["com"]}
+        m["comTargets"] = {com: v for com, v in com_targets.get(mo_key, {}).items() if com in coms_here}
     if routing_target_overrides:
         for m in months:
             d = parse_sheet_date(m["sheetName"])
@@ -2237,6 +2260,27 @@ def process_sev_files(paths):
         elif s["cm"] not in known_cms and s["cm"] in company_wide_cms:
             s["cm"] = UNMAPPED_CM
 
+    # A store's CM comes from its own latest sales row, so a store with no sale yet in the
+    # newest month still carries the CM from before a reorg (e.g. 18 of one AE's stores still
+    # showing the old CM while the AE's other stores show the new one). Each AE's current CM
+    # is the majority CM among their stores that DID sell in the newest month; their other
+    # stores follow it, so one AE never appears under two CMs at once.
+    newest_mk = max((s["cmMonthKey"] for s in all_stores if s.get("cmMonthKey")), default=None)
+    ae_votes = {}
+    for s in all_stores:
+        if (s.get("cmMonthKey") == newest_mk and s["cm"] != UNMAPPED_CM
+                and s["ae"] and s["ae"] != UNMAPPED_AE):
+            ae_votes.setdefault(s["ae"], Counter())[s["cm"]] += 1
+    ae_current_cm = {ae: votes.most_common(1)[0][0] for ae, votes in ae_votes.items()}
+    followed = 0
+    for s in all_stores:
+        new_cm = ae_current_cm.get(s["ae"])
+        if new_cm and s.get("cmMonthKey") != newest_mk and s["cm"] != UNMAPPED_CM and s["cm"] != new_cm:
+            s["cm"] = new_cm
+            followed += 1
+    if followed:
+        print(f"  {followed} store(s) with no {newest_mk} sale yet moved to their AE's current CM")
+
     unmapped_count = unmapped_ga = 0
     stores = []
     for s in all_stores:
@@ -2460,6 +2504,11 @@ def post_to_sync(action, secret, extra=None, timeout=120, retries=3, backoff=4):
             last_err = f"HTTP {e.code}\n{e.read().decode('utf-8', 'replace')[:500]}"
         except urllib.error.URLError as e:
             last_err = str(e.reason)
+        except OSError as e:
+            # socket.timeout while READING the body (after the connection already opened)
+            # isn't wrapped in URLError -- without this a slow Apps Script reply crashed the
+            # run with a traceback instead of retrying.
+            last_err = f"network error: {e or type(e).__name__}"
         except json.JSONDecodeError:
             # A handful of tables (54+ tabs' worth) can push this response into multi-MB
             # territory -- if Apps Script hit its own 6-minute execution cap or just needed

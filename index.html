@@ -7209,6 +7209,10 @@
             // Stores with no COM (outside the routing workbook's own cluster, or that file
             // temporarily missing) simply aren't part of this comparison -- not an error.
             if (!s.com) return;
+            // Picking a CM narrows this to that CM's own COMs (same as the 7-11 tab's AE
+            // comparison does for its CM). Picking a COM doesn't narrow further, so the
+            // selected COM is still compared against its CM's other COMs.
+            if (state.rtr.currentCM && s.cm !== state.rtr.currentCM) return;
             var row =
               byCom[s.com] ||
               (byCom[s.com] = {
@@ -7236,14 +7240,37 @@
             }
           });
           var comNames = Object.keys(byCom);
-          if (comNames.length <= 1) {
+          // With a CM picked, one COM is a real answer ("this CM's COM"), not a pointless
+          // one-row comparison -- only an unfiltered single-COM file has nothing to show.
+          if (comNames.length === 0 || (comNames.length === 1 && !state.rtr.currentCM)) {
             $("comLeaderboardHint").textContent = "";
             wrap.innerHTML =
               '<div class="insight-empty">มีแค่ 1 COM ในไฟล์นี้ ไม่มีอะไรให้เปรียบเทียบ</div>';
             return;
           }
+          var committed = m.comTargets || {};
           var rows = comNames.map(function (com) {
             var r = byCom[com];
+            // The routing workbook's own committed COM target ("Performance COM" sheet,
+            // Target GA Total incl. Tourist) and Ach M1, when published for this month --
+            // same precedence as a CM's KPI Set Up target over its summed store targets.
+            var c = committed[com];
+            if (c && c.total > 0) {
+              var m1 = c.achM1Total > 0 ? c.achM1Total : r.m1;
+              return {
+                com: com,
+                storeCount: r.storeCount,
+                ga: r.ga,
+                target: c.total,
+                achievePct: r.ga / c.total,
+                momPct:
+                  r.hasLmtd && r.lmtdSum > 0
+                    ? (r.ga - r.lmtdSum) / r.lmtdSum
+                    : null,
+                m1: m1,
+                arpu: r.ga > 0 && m1 > 0 ? m1 / r.ga : null,
+              };
+            }
             return {
               com: com,
               storeCount: r.storeCount,
@@ -12050,7 +12077,9 @@
             }
           });
           var aeNames = Object.keys(byAe);
-          if (aeNames.length <= 1) {
+          // With a CM picked, its single AE is still worth showing -- hiding it made picking a
+          // one-AE CM look like that CM had no AE at all.
+          if (aeNames.length === 0 || (aeNames.length === 1 && !state.sev.currentCM)) {
             section.style.display = "none";
             return;
           }
@@ -16420,6 +16449,10 @@
             scriptReadTable(key + "-daily"),
             scriptReadTable(key + "-simtypes"),
             scriptReadTable(key + "-cmtargets"),
+            // Newer sub-tab -- missing for any month the publisher synced before it existed.
+            scriptReadTable(key + "-comtargets").catch(function () {
+              return { headers: [], rows: [] };
+            }),
           ]).then(function (parts) {
             var meta = {};
             parts[0].rows.forEach(function (r) {
@@ -16497,6 +16530,15 @@
               });
             });
 
+            var comTargets = {};
+            parts[5].rows.forEach(function (r) {
+              comTargets[r[0]] = {
+                total: Number(r[1]) || 0,
+                m1Total: Number(r[4]) || 0,
+                achM1Total: Number(r[5]) || 0,
+              };
+            });
+
             return {
               sheetName: meta.sheetName,
               label: meta.label,
@@ -16505,6 +16547,7 @@
                 return byCode[c];
               }),
               cmTargetMap: cmTargetMap,
+              comTargets: comTargets,
             };
           });
         }
@@ -16618,6 +16661,7 @@
               daily: agg.daily,
               cmRollup: agg.cmRollup,
               stores: g.stores,
+              comTargets: g.comTargets || {},
               sevTxByCode: new Map(), // 7-11 rows mixed into RTR sheets — not published, not needed here
               sevRowCount: 0,
             };
@@ -16932,7 +16976,7 @@
               function tabsFor(rtrKeys, sevKeys) {
                 var out = [];
                 rtrKeys.forEach(function (t) {
-                  ["meta", "stores", "daily", "simtypes", "cmtargets"].forEach(
+                  ["meta", "stores", "daily", "simtypes", "cmtargets", "comtargets"].forEach(
                     function (suffix) {
                       out.push(t + "-" + suffix);
                     },
