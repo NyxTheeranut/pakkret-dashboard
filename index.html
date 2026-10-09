@@ -14,6 +14,10 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <!-- SheetJS (xlsx.full.min.js) is loaded lazily instead -- see ensureXlsxLoaded() -- it's a
          large library (900KB+) needed only by the local-file-upload admin flow, and blocking
          EVERY viewer's page load on it (most never touch that flow) hit mobile hardest: slower
@@ -1815,6 +1819,289 @@
       @media (prefers-reduced-motion: reduce) {
         #panelOverview * { transition: none !important; animation: none !important; }
       }
+    </style>
+
+    <style id="redesign-layer">
+/* ============================================================================================
+   REDESIGN LAYER -- appended after the page's own CSS, so every rule here wins by order.
+   Pure CSS: no markup, JS or data is changed. Delete this <style> and you have the original.
+   Direction: "ledger" -- warm paper, one deep green-black ink, one teal accent, borderless
+   surfaces lifted by tinted shadows, calmer type, and numbers set in tabular figures.
+   ============================================================================================ */
+
+:root {
+  --ink: #15201d;
+  --paper: #f4f2ed;
+  --panel: #ffffff;
+  --accent: #177b70;
+  --accent-soft: #e3f0ec;
+  --warn: #c9973a;
+  --warn-soft: #f8efd9;
+  --alert: #c4423c;
+  --alert-soft: #f8e5e2;
+  --line: rgba(21, 32, 29, 0.09);
+  --muted: #5d6864;
+
+  --shadow-sm: 0 1px 2px rgba(21, 32, 29, 0.05), 0 8px 20px -12px rgba(21, 32, 29, 0.2);
+  --shadow-md: 0 2px 4px rgba(21, 32, 29, 0.05), 0 16px 34px -16px rgba(21, 32, 29, 0.32);
+  --r-lg: 18px;
+  --r-md: 12px;
+  --r-sm: 8px;
+  --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --font-ui: "IBM Plex Sans Thai", "Inter", system-ui, sans-serif;
+  --font-display: "Geist", "IBM Plex Sans Thai", system-ui, sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+* { scrollbar-width: thin; scrollbar-color: rgba(21, 32, 29, 0.22) transparent; }
+::selection { background: rgba(23, 123, 112, 0.22); }
+
+/* ---- type ------------------------------------------------------------------------------ */
+body {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.55;
+  background:
+    radial-gradient(1100px 520px at 8% -8%, rgba(23, 123, 112, 0.075), transparent 62%),
+    radial-gradient(900px 420px at 100% 0%, rgba(201, 151, 58, 0.06), transparent 60%),
+    var(--paper);
+  background-attachment: fixed;
+}
+h1, h2, h3, .display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.mono, .num-cell, .store-meta, .sheet-note { font-variant-numeric: tabular-nums; }
+
+/* ---- top bar --------------------------------------------------------------------------- */
+.topbar {
+  background: linear-gradient(180deg, #17231f 0%, #111a17 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 14px 30px -20px rgba(21, 32, 29, 0.7);
+}
+.topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.09;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.brand h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
+.brand h1 span { font-weight: 400; opacity: 0.7; }
+.bars-icon i { background: #3fb3a4; }
+
+/* ---- page frame ------------------------------------------------------------------------ */
+main { max-width: 1240px; padding: 30px 32px 120px; }
+main section { margin-bottom: 38px; }
+.pill-row { margin-bottom: 30px; gap: 10px; }
+
+/* ---- top tabs: underline, not pills ----------------------------------------------------- */
+.top-tabs { gap: 2px; margin-bottom: 30px; border-bottom: 1px solid var(--line); }
+.top-tab {
+  position: relative;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 13px 20px 15px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: color 0.18s var(--ease), transform 0.12s var(--ease);
+}
+.top-tab::after {
+  content: "";
+  position: absolute;
+  left: 14px; right: 14px; bottom: -1px;
+  height: 2.5px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.32s var(--ease);
+}
+.top-tab:hover { color: var(--ink); }
+.top-tab.active { background: transparent; color: var(--ink); border: 0; }
+.top-tab.active::after { transform: scaleX(1); }
+.top-tab:active { transform: translateY(1px); }
+.top-tab .dot { background: rgba(21, 32, 29, 0.16); }
+.top-tab.ready .dot, .top-tab.active.ready .dot { background: var(--accent); }
+
+/* ---- chips: month / filters ------------------------------------------------------------- */
+.pill {
+  background: transparent;
+  border: 1px solid rgba(21, 32, 29, 0.14);
+  border-radius: 10px;
+  padding: 9px 15px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  transition: background 0.16s, border-color 0.16s, transform 0.16s var(--ease), box-shadow 0.16s;
+}
+.pill:hover { background: var(--panel); border-color: rgba(21, 32, 29, 0.24); transform: translateY(-1px); }
+.pill:active { transform: scale(0.98); }
+.pill.active, .pill.active:hover {
+  background: var(--ink); color: #fff; border-color: var(--ink);
+  box-shadow: 0 6px 16px -8px rgba(21, 32, 29, 0.55);
+}
+.pill.small { padding: 5px 11px; font-size: 12.5px; border-radius: 8px; }
+
+/* ---- CM selector cards ------------------------------------------------------------------ */
+.cm-tabs { gap: 10px; margin-bottom: 20px; }
+.cm-tab {
+  background: var(--panel);
+  border: 0;
+  border-radius: var(--r-md);
+  padding: 12px 17px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), background 0.16s;
+}
+.cm-tab:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.cm-tab:active { transform: scale(0.98); }
+.cm-tab.active, .cm-tab.active:hover { background: var(--ink); color: #fff; box-shadow: var(--shadow-md); }
+.cm-tab .count { font-size: 11.5px; opacity: 0.55; }
+.ae-row { margin-bottom: 16px; gap: 8px; }
+.ae-row .lbl {
+  font-size: 12.5px; text-transform: none; letter-spacing: 0; color: var(--muted); margin-right: 6px;
+}
+
+/* ---- headings and hints ------------------------------------------------------------------ */
+.section-head { align-items: center; gap: 14px; margin-bottom: 15px; }
+.section-head h2 { font-size: 17.5px; font-weight: 600; letter-spacing: -0.02em; }
+.section-head .hint { font-size: 12.5px; color: var(--muted); max-width: 64ch; text-wrap: pretty; }
+
+/* ---- surfaces: no borders, tinted shadow, bigger radius ---------------------------------- */
+.card, .kpi-card, .insight-card {
+  background: var(--panel);
+  border: 0;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+}
+.card { padding: 20px 22px; }
+.card h3 {
+  font-size: 13.5px; font-weight: 600; text-transform: none; letter-spacing: -0.005em; color: var(--ink);
+}
+.card:has(> div > .table-scroll-box), .card:has(> .table-scroll-box) { padding: 8px 10px 10px; }
+
+/* ---- KPI cards ---------------------------------------------------------------------------- */
+.kpi-grid { gap: 14px; }
+.kpi-card {
+  padding: 19px 22px 17px;
+  transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease);
+}
+.kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.kpi-card .label {
+  font-size: 12.5px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--muted);
+}
+.kpi-card .value {
+  font-family: var(--font-display);
+  font-size: 31px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+  margin-top: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-card .sub { font-size: 11.5px; line-height: 1.55; margin-top: 7px; text-wrap: pretty; }
+
+
+/* ---- KPI grids: last row fills the width instead of leaving a hole (wide screens only) ---- */
+@media (min-width: 821px) {
+  .kpi-grid:has(> :nth-child(3):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .kpi-grid:has(> :nth-child(2):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-grid:has(> :nth-child(4)) > :last-child:nth-child(4n + 1) { grid-column: span 4; }
+  .kpi-grid:has(> :nth-child(4)) > :nth-last-child(2):nth-child(4n + 1),
+  .kpi-grid:has(> :nth-child(4)) > :last-child:nth-child(4n + 2),
+  .kpi-grid:has(> :nth-child(4)) > :last-child:nth-child(4n + 3) { grid-column: span 2; }
+}
+
+/* ---- tables ----------------------------------------------------------------------------- */
+table { background: transparent; border: 0; border-radius: 0; }
+.table-scroll-box { border-radius: var(--r-md); max-height: 540px; }
+thead th {
+  font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: 0;
+  color: var(--muted); padding: 13px 14px; border-bottom: 1px solid var(--line);
+}
+.table-scroll-box thead th { background: var(--panel); box-shadow: 0 1px 0 var(--line); }
+th.sortable-th { transition: color 0.14s; }
+tbody td { padding: 14px; font-size: 13.5px; border-bottom: 1px solid rgba(21, 32, 29, 0.06); }
+tbody tr { transition: background 0.14s; }
+tbody tr.clickable:hover { background: rgba(23, 123, 112, 0.07); }
+tbody tr.clickable:active { background: rgba(23, 123, 112, 0.13); }
+.num-cell { font-variant-numeric: tabular-nums; }
+.store-name { font-weight: 600; letter-spacing: -0.005em; }
+
+/* ---- percentage badges: square-ish, keep the page's own heat colours ---------------------- */
+.pct-badge {
+  border-radius: 6px;
+  min-width: 46px;
+  padding: 3px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.07);
+}
+.pct-badge.pct-badge-lg { font-size: 20px; min-width: 70px; padding: 3px 12px; border-radius: 10px; }
+.pct-badge-muted { box-shadow: none; }
+
+/* ---- buttons ------------------------------------------------------------------------------ */
+.file-btn {
+  border-radius: 10px; padding: 8px 14px;
+  transition: background 0.16s, transform 0.16s var(--ease), box-shadow 0.16s;
+}
+.file-btn:hover { transform: translateY(-1px); }
+.file-btn:active { transform: scale(0.98); }
+.file-btn.ghost-light {
+  background: var(--panel); border: 0; box-shadow: var(--shadow-sm);
+}
+.file-btn.ghost-light:hover { box-shadow: var(--shadow-md); background: var(--panel); }
+
+/* ---- notices: quiet, borderless ----------------------------------------------------------- */
+.sheet-note {
+  background: transparent; border: 0; padding: 0 2px; margin-bottom: 8px;
+  font-size: 11.5px; color: var(--muted);
+}
+.cache-banner {
+  background: var(--accent-soft); border: 0; border-radius: var(--r-md);
+  padding: 11px 16px; margin-bottom: 22px; font-size: 12.5px; color: #124d46;
+}
+.coverage-note {
+  border: 0; border-radius: var(--r-md); background: var(--warn-soft); color: #6b4d12;
+}
+
+/* ---- action cards ------------------------------------------------------------------------- */
+.insights-grid { gap: 16px; }
+.insight-card { padding: 20px 22px; }
+.insight-card .tag { border-radius: 6px; }
+
+/* ---- motion: sections rise in, staggered; tab content replays when its panel is shown ---------- */
+@keyframes rd-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+main section, main .pill-row, main .cm-tabs, main .cache-banner {
+  animation: rd-rise 0.55s var(--ease) both;
+}
+main section:nth-child(2) { animation-delay: 0.04s; }
+main section:nth-child(3) { animation-delay: 0.08s; }
+main section:nth-child(4) { animation-delay: 0.12s; }
+main section:nth-child(5) { animation-delay: 0.16s; }
+main section:nth-child(6) { animation-delay: 0.2s; }
+main section:nth-child(n+7) { animation-delay: 0.24s; }
+
+:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+@media (max-width: 720px) {
+  main { padding: 20px 16px 110px; }
+  .section-head h2 { font-size: 16.5px; }
+  .kpi-card .value { font-size: 26px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
     </style>
   </head>
   <body>
