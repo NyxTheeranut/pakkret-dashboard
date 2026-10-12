@@ -2431,6 +2431,10 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
 
 </style>
 <style id="redesign-v5">
+@media (min-width: 1100px) {
+  #rtrKpiGrid:has(> :nth-child(5):last-child) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  #rtrKpiGrid:has(> :nth-child(5):last-child) > :last-child { grid-column: auto; }
+}
 /* v5 = v3 (unchanged) + the three tabs moved into the dark header as a segmented control. */
 @media (min-width: 981px) {
   .top-tabs {
@@ -7063,6 +7067,11 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
               sub: "มูลค่าแพ็ค " + fmtBaht(t.ap1dAmt),
             },
             {
+              label: "1-Day Activation",
+              value: pct(t.ga > 0 ? t.ap1d / t.ga : 0),
+              sub: fmt(t.ap1d) + " จาก " + fmt(t.ga) + " ซิม",
+            },
+            {
               label: "30-Day Activation",
               value: pct(convRate),
               sub: fmt(t.ap30d) + " จาก " + fmt(t.ga) + " ซิม",
@@ -8043,13 +8052,28 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           );
         }
 
+        // Run-rate %Achieve for the quadrant: GA so far / days elapsed * days in the month, over the
+        // store's full-month target (straight-line, no pacing curve). Stamped onto the store objects
+        // as rrPct so the chart X axis, the four zones, the zone table and its export all agree.
+        function rtrApplyRunRate(stores) {
+          var mIdx = state.rtr.currentMonthIdx;
+          var prevMonth = mIdx > 0 ? state.rtr.months[mIdx - 1] : null;
+          var pacing = rtrMonthPacing(rtrCurrentMonth(), prevMonth);
+          stores.forEach(function (s) {
+            s.rrPct =
+              pacing && s.hasTarget && s.target > 0
+                ? ((s.ga / pacing.daysElapsed) * pacing.daysInMonth) / s.target
+                : null;
+          });
+          return stores;
+        }
         var QUADRANT_ZONES = {
           star: {
             label: "ดาวเด่น",
             color: "var(--accent)",
             textColor: "var(--accent)",
             predicate: function (s) {
-              return s.achievePct >= 1 && s.momPct >= 0;
+              return s.rrPct >= 1 && s.momPct >= 0;
             },
           },
           improving: {
@@ -8057,7 +8081,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
             color: "var(--warn)",
             textColor: "#8a6316",
             predicate: function (s) {
-              return s.achievePct < 1 && s.momPct >= 0;
+              return s.rrPct < 1 && s.momPct >= 0;
             },
           },
           risk: {
@@ -8065,7 +8089,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
             color: "var(--warn)",
             textColor: "#8a6316",
             predicate: function (s) {
-              return s.achievePct >= 1 && s.momPct < 0;
+              return s.rrPct >= 1 && s.momPct < 0;
             },
           },
           critical: {
@@ -8073,7 +8097,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
             color: "var(--alert)",
             textColor: "var(--alert)",
             predicate: function (s) {
-              return s.achievePct < 1 && s.momPct < 0;
+              return s.rrPct < 1 && s.momPct < 0;
             },
           },
         };
@@ -8082,8 +8106,8 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
         // zone on the chart IS the zone picker, so the Export button just exports whichever one
         // is showing (see quadrantZoneHeadHtml, right below, for where it sits).
         function rtrQuadrantZoneStores() {
-          var stores = rtrCurrentStores().filter(function (s) {
-            return s.hasTarget && s.momPct != null;
+          var stores = rtrApplyRunRate(rtrCurrentStores()).filter(function (s) {
+            return s.hasTarget && s.momPct != null && s.rrPct != null;
           });
           var zoneInfo = QUADRANT_ZONES[state.rtr.quadrantZone];
           return stores.filter(zoneInfo.predicate);
@@ -8107,8 +8131,8 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
         }
 
         function renderQuadrant() {
-          var stores = rtrCurrentStores().filter(function (s) {
-            return s.hasTarget && s.momPct != null;
+          var stores = rtrApplyRunRate(rtrCurrentStores()).filter(function (s) {
+            return s.hasTarget && s.momPct != null && s.rrPct != null;
           });
           var hint = $("quadrantHint");
           if (!rtrCurrentMonth().hasPrevMonth) {
@@ -8127,7 +8151,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           }
           hint.textContent =
             stores.length +
-            " ร้าน (เฉพาะร้านที่มีเป้าหมาย) · แกน X = %Achieve · แกน Y = %MOM · คลิกที่มุมเพื่อดูรายชื่อร้าน";
+            " ร้าน (เฉพาะร้านที่มีเป้าหมาย) · แกน X = %Ach จาก Run rate (GA ÷ วันที่ผ่านมา × วันในเดือน ÷ Target) · แกน Y = %MOM · คลิกที่มุมเพื่อดูรายชื่อร้าน";
 
           var W = 640,
             H = 420,
@@ -8136,7 +8160,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
             null,
             stores
               .map(function (s) {
-                return s.achievePct;
+                return s.rrPct;
               })
               .concat([1.2]),
           );
@@ -8263,15 +8287,15 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           });
 
           stores.forEach(function (s) {
-            var cx = xPos(s.achievePct),
+            var cx = xPos(s.rrPct),
               cy = yPos(s.momPct);
             cx = Math.max(6, Math.min(W - 6, cx));
             cy = Math.max(6, Math.min(H - 6, cy));
             var tip =
               "<b>" +
               esc(s.name) +
-              "</b><br>%Achieve: " +
-              pct(s.achievePct) +
+              "</b><br>%Ach (RR): " +
+              pct(s.rrPct) +
               "<br>%MOM: " +
               pctColored(s.momPct) +
               "<br>GA: " +
@@ -8295,8 +8319,8 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           var rzKey = state.rtr.redZoneSortKey,
             rzMult = state.rtr.redZoneSortDir === "asc" ? 1 : -1;
           zoneStores = zoneStores.slice().sort(function (a, b) {
-            var av = rtrSortValue(a, rzKey),
-              bv = rtrSortValue(b, rzKey);
+            var av = rtrSortValue(a, rzKey, true),
+              bv = rtrSortValue(b, rzKey, true);
             if (rzKey === "name")
               return rzMult * String(av).localeCompare(String(bv));
             return rzMult * (av - bv);
@@ -8310,7 +8334,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
                   esc(s.code) +
                   '">' +
                   RTR_TABLE_COLS.map(function (col) {
-                    return rtrTableCellHtml(col, s);
+                    return rtrTableCellHtml(col, s, true);
                   }).join("") +
                   "</tr>"
                 );
@@ -8331,11 +8355,11 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
                 '" data-rz-sort-key="' +
                 col.key +
                 '" tabindex="0" role="button" aria-label="เรียงตาม ' +
-                esc(col.label) +
+                esc(rtrColLabel(col, true)) +
                 '"' +
                 alignStyle +
                 ">" +
-                esc(col.label) +
+                esc(rtrColLabel(col, true)) +
                 arrow +
                 "</th>"
               );
@@ -9096,6 +9120,10 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           { key: "m1", label: "M1" },
           { key: "arpu", label: "ARPU" },
         ];
+        // The quadrant's table and its export read %Achieve from the run rate, so say so in the header.
+        function rtrColLabel(col, runRate) {
+          return runRate && col.key === "achieve" ? "%Ach (RR)" : col.label;
+        }
         // One cell renderer driven by RTR_TABLE_COLS, shared by the main store table AND the quadrant's
         // red-zone table, so column order lives in exactly one place. Both tables previously hand-wrote
         // their own <td> sequence and had to be edited in lockstep with RTR_TABLE_COLS -- the same drift
@@ -9120,7 +9148,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
             (tog.tourist ? s.tourist || 0 : 0)
           );
         }
-        function rtrTableCellHtml(col, s) {
+        function rtrTableCellHtml(col, s, runRate) {
           var k = col.key;
           if (k === "name")
             return (
@@ -9141,7 +9169,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           if (k === "achieve")
             return (
               '<td class="num-cell">' +
-              pctBadge(s.achievePct, "achieve") +
+              pctBadge(runRate ? s.rrPct : s.achievePct, "achieve") +
               "</td>"
             );
           if (k === "lmtdGa")
@@ -9180,12 +9208,14 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
             );
           return '<td class="num-cell"></td>';
         }
-        function rtrSortValue(s, key) {
+        function rtrSortValue(s, key, runRate) {
           if (key === "name") return s.name || "";
           if (key === "ga") return rtrStoreSegGA(s);
           if (key === "target") return s.target;
-          if (key === "achieve")
-            return s.achievePct == null ? -1 : s.achievePct;
+          if (key === "achieve") {
+            var achV = runRate ? s.rrPct : s.achievePct;
+            return achV == null ? -1 : achV;
+          }
           if (key === "lmtdGa") return s.lmtdGa == null ? -1 : s.lmtdGa;
           if (key === "mom") return s.momPct == null ? -2 : s.momPct;
           if (key === "ap1dSubs") return s.ap1d;
@@ -9404,8 +9434,8 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           ).value;
           var mult = dir === "asc" ? 1 : -1;
           stores = stores.slice().sort(function (a, b) {
-            var av = rtrSortValue(a, sortKey),
-              bv = rtrSortValue(b, sortKey);
+            var av = rtrSortValue(a, sortKey, isQuadrant),
+              bv = rtrSortValue(b, sortKey, isQuadrant);
             if (sortKey === "name")
               return mult * String(av).localeCompare(String(bv));
             return mult * (av - bv);
@@ -9428,8 +9458,11 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           if (col.key === "code") return s.code;
           if (col.key === "ga") return fmt(rtrStoreSegGA(s));
           if (col.key === "target") return s.hasTarget ? fmt(s.target) : "—";
-          if (col.key === "achieve")
-            return s.achievePct == null ? "—" : pct(s.achievePct);
+          if (col.key === "achieve") {
+            var ach =
+              state.rtr.exportScope === "quadrant" ? s.rrPct : s.achievePct;
+            return ach == null ? "—" : pct(ach);
+          }
           if (col.key === "lmtdGa")
             return s.lmtdGa == null ? "—" : fmt(s.lmtdGa);
           if (col.key === "mom") return s.momPct == null ? "—" : pct(s.momPct);
@@ -9487,7 +9520,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
 
           ctx.font = fontRow;
           var colW = cols.map(function (c) {
-            return ctx.measureText(c.label).width;
+            return ctx.measureText(rtrColLabel(c, state.rtr.exportScope === "quadrant")).width;
           });
           stores.forEach(function (s) {
             cols.forEach(function (c, i) {
@@ -9529,7 +9562,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           ctx.fillStyle = "#121A2B";
           var x = 0;
           cols.forEach(function (c, i) {
-            ctx.fillText(c.label, x + padX, y + headH / 2 + 4);
+            ctx.fillText(rtrColLabel(c, state.rtr.exportScope === "quadrant"), x + padX, y + headH / 2 + 4);
             x += colW[i];
           });
           y += headH;
@@ -9603,7 +9636,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           downloadCsv(
             "pak-kret-rtr-stores-" + Date.now() + ".csv",
             cols.map(function (c) {
-              return c.label;
+              return rtrColLabel(c, state.rtr.exportScope === "quadrant");
             }),
             stores.map(function (s) {
               return cols.map(function (c) {
@@ -9617,7 +9650,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
           var cols = RTR_EXPORT_COLS;
           var headHtml = cols
             .map(function (c) {
-              return "<th>" + esc(c.label) + "</th>";
+              return "<th>" + esc(rtrColLabel(c, state.rtr.exportScope === "quadrant")) + "</th>";
             })
             .join("");
           var bodyHtml = stores
