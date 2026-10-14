@@ -2431,6 +2431,10 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
 
 </style>
 <style id="redesign-v5">
+.kpi-card .sub:empty { min-height: 1.55em; }
+.kpi-split { margin-top: 10px; padding-top: 9px; border-top: 1px dashed var(--line); display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+.kpi-split > div { display: flex; justify-content: space-between; gap: 12px; }
+.kpi-split b { font-family: "Geist Mono", "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
 @media (min-width: 1100px) {
   #rtrKpiGrid:has(> :nth-child(5):last-child) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   #rtrKpiGrid:has(> :nth-child(5):last-child) > :last-child { grid-column: auto; }
@@ -7423,6 +7427,29 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
                 monthMaxDay(rtrCurrentMonth())) +
               " เท่ากัน"
             : "เทียบเดือนก่อนหน้า";
+          // Target / Actual broken down the only way the committed targets are split: Mass + Migrant
+          // bundled, Tourist separate (never three ways -- see rtrSegTargetInfo). Shown only on the
+          // unrestricted view with a committed target, and Actual only when Actual GA is the full GA
+          // (committed CM targets), so the Mass + Migrant / Tourist split adds up to the headline.
+          var splitOk =
+            segInfo.supported &&
+            !segInfo.segLabel &&
+            segInfo.target > 0 &&
+            (t.targetMassMigrant || 0) + (t.targetTourist || 0) > 0;
+          var targetSplit = splitOk
+            ? [
+                ["Mass + Migrant", fmt(t.targetMassMigrant || 0)],
+                ["Tourist", fmt(t.targetTourist || 0)],
+              ]
+            : null;
+          var actualSplit =
+            splitOk &&
+            Math.round(segInfo.targetedGA || 0) === Math.round(t.ga || 0)
+              ? [
+                  ["Mass + Migrant", fmt((t.mass || 0) + (t.migrant || 0))],
+                  ["Tourist", fmt(t.tourist || 0)],
+                ]
+              : null;
           var groups = [
             {
               title: "เทียบเป้า",
@@ -7449,6 +7476,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
                           ? " (เฉพาะ " + segInfo.segLabel + ")"
                           : "")
                       : "ยังไม่ได้ตั้งเป้าเดือนนี้",
+                  split: targetSplit,
                 },
                 {
                   label: "Actual GA (มีเป้า)",
@@ -7465,6 +7493,7 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
                     : segInfo.target > 0
                       ? ""
                       : "ยังไม่มีเป้าให้เทียบเดือนนี้",
+                  split: actualSplit,
                 },
                 {
                   label: "%Achieve",
@@ -7541,7 +7570,19 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
               c.value +
               '</div><div class="sub">' +
               esc(c.sub) +
-              "</div></div>"
+              "</div>" +
+              (c.split
+                ? '<div class="kpi-split">' +
+                  c.split
+                    .map(function (r) {
+                      return (
+                        "<div><span>" + esc(r[0]) + "</span><b>" + r[1] + "</b></div>"
+                      );
+                    })
+                    .join("") +
+                  "</div>"
+                : "") +
+              "</div>"
             );
           }
           $("perfKpiGrid").innerHTML = groups
