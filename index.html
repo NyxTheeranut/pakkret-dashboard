@@ -2541,6 +2541,69 @@ td.num-cell, thead th { white-space: nowrap; }
 }
 
 </style>
+<style id="redesign-taste">
+/* ============================================================================================
+   TASTE REDESIGN (preview). redesign-existing-projects + design-taste-frontend + impeccable polish,
+   applied to the look that is live now. Preserve mode: same palette family, same copy, same behaviour.
+   What the audit changed:
+   - Surfaces: every section keeps its own off-white panel (hairline + one soft shadow); KPI strips stay
+     the most raised. Action cards get wider padding and gutters.
+   - Shape lock: containers 12, controls 8, tags 6. Nothing else.
+   - No pure white: panels #fcfcfa on a #f4f4f0 page.
+   - Section headers stack (title row, then the note beneath at 68ch) instead of a note floating beside.
+   - Group titles read as headings (13.5px, 600, ink) instead of faint eyebrow labels.
+   - Em-dash separators in prose become hyphens (builder patch), skip link + search label added.
+   ============================================================================================ */
+:root {
+  --paper: #f4f4f0;
+  --panel: #fcfcfa;
+  --r-lg: 12px;
+  --r-md: 8px;
+  --r-sm: 8px;
+  --shadow-1: 0 1px 2px rgba(22, 32, 28, 0.05), 0 10px 28px -18px rgba(22, 32, 28, 0.28);
+}
+body { background: radial-gradient(900px 380px at 4% -6%, rgba(15, 118, 110, 0.05), transparent 62%), var(--paper); }
+
+/* surfaces: every section keeps its own panel so groups read at a glance.
+   Panels are borderless-looking: a hairline plus one soft tinted shadow on off-white. KPI strips stay
+   the most raised. */
+.kpi-grid { border: 0; box-shadow: var(--shadow-1); background: rgba(22, 32, 28, 0.08); }
+.kpi-card { background: var(--panel); }
+.card, .insight-card {
+  background: var(--panel);
+  border: 1px solid rgba(22, 32, 28, 0.08);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+}
+.card { padding: 20px 24px; }
+.card:has(> div > .table-scroll-box), .card:has(> .table-scroll-box), .card:has(.table-scroll-box) { padding: 6px 8px 10px; }
+.table-scroll-box { border-radius: var(--r-md); }
+
+/* action cards: room to breathe, clear gutters between neighbours */
+.insights-grid { gap: 20px; }
+.insight-card { padding: 22px 22px 18px; }
+.insight-list .v { max-width: 66%; }
+.insight-list .v .col-ae { max-width: 92px; }
+.insight-card .insight-list, .insight-card ul { margin-top: 10px; }
+.insight-list > * { padding-top: 7px; padding-bottom: 7px; }
+
+/* shape lock: 12 containers / 8 controls / 6 tags */
+.pill, .cm-tab, .file-btn, .top-tab, .chart-tooltip, .modal-select { border-radius: 8px; }
+.pill.small { border-radius: 8px; }
+.pct-badge, .insight-card .tag { border-radius: 6px; }
+.pct-badge.pct-badge-lg { border-radius: 8px; }
+
+/* headers: stack, no floating note */
+.section-head { flex-wrap: wrap; align-items: center; row-gap: 4px; margin-bottom: 14px; }
+.section-head h2 { font-size: 20px; letter-spacing: -0.025em; margin-right: auto; }
+.section-head .hint { order: 3; flex: 0 0 100%; max-width: 100%; padding-right: max(0px, calc(100% - 68ch)); margin: 0; color: var(--muted); text-wrap: pretty; text-align: left; }
+.sub-card-title, h3.sub-card-title { font-size: 13.5px; font-weight: 600; color: var(--ink); text-transform: none; letter-spacing: -0.005em; margin: 22px 0 8px; }
+
+/* skip link (added by the builder) */
+.skip-link { position: absolute; left: 12px; top: -48px; z-index: 100; background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 8px; font-weight: 600; transition: top 0.16s; }
+.skip-link:focus { top: 12px; }
+
+</style>
 </head>
   <body>
     <div class="login-gate" id="loginGate" style="display: none">
@@ -2632,7 +2695,7 @@ td.num-cell, thead th { white-space: nowrap; }
         <div class="modal-body">
           <div id="syncCfgPane">
             <div class="modal-hint">
-              ค่าเหล่านี้มาจาก Google Cloud Console (PHASE 1 ในแผน) — เก็บไว้ใน
+              ค่าเหล่านี้มาจาก Google Cloud Console (PHASE 1 ในแผน) - เก็บไว้ใน
               เบราว์เซอร์นี้เท่านั้น ทดสอบก่อนได้ที่
               <code>drive-file-test.html</code>
             </div>
@@ -2706,7 +2769,8 @@ td.num-cell, thead th { white-space: nowrap; }
       </div>
     </div>
 
-    <main>
+    <a class="skip-link" href="#main">ข้ามไปเนื้อหา</a>
+    <main id="main" tabindex="-1">
       <div class="top-tabs">
         <button class="top-tab active" id="tabBtnRtr" data-tab="rtr">
           <span class="dot"></span>RTR
@@ -2776,7 +2840,7 @@ td.num-cell, thead th { white-space: nowrap; }
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
           <h2>เชื่อมต่อไฟล์ RTR</h2>
           <p>
-            ไฟล์ Commit Target GA Mass Migrant — ระบบจะอ่านเฉพาะชีตรายเดือน
+            ไฟล์ Commit Target GA Mass Migrant - ระบบจะอ่านเฉพาะชีตรายเดือน
             (Jul.26, Jun.26, ...) และชีต mapping ร้าน↔CM (RTR Target GA (MM) /
             RTR Target GA (Tourist)) แล้วกรองมาเฉพาะ cluster Pak Kret, Bang Bua
             Thong, Sai Noi
@@ -2874,7 +2938,7 @@ td.num-cell, thead th { white-space: nowrap; }
 
           <section id="quadrantSection">
             <div class="section-head">
-              <h2>Analysis — Quadrant (%Ach / MoM)</h2>
+              <h2>Analysis - Quadrant (%Ach / MoM)</h2>
               <span class="hint" id="quadrantHint"></span>
             </div>
             <div class="card">
@@ -2906,7 +2970,7 @@ td.num-cell, thead th { white-space: nowrap; }
                 <input
                   type="text"
                   class="search-input"
-                  id="rtrSearchInput"
+                  id="rtrSearchInput" aria-label="ค้นหาร้านค้า"
                   placeholder="ค้นหาชื่อร้าน / รหัสร้าน..."
                 />
                 <button
@@ -3091,7 +3155,7 @@ td.num-cell, thead th { white-space: nowrap; }
                   value="png"
                   checked
                 />
-                รูปภาพ (PNG) — ส่งไลน์ได้เลย</label
+                รูปภาพ (PNG) - ส่งไลน์ได้เลย</label
               >
               <label
                 ><input type="radio" name="rtrSummaryFormat" value="pdf" /> PDF
@@ -3146,7 +3210,7 @@ td.num-cell, thead th { white-space: nowrap; }
                   value="png"
                   checked
                 />
-                รูปภาพ (PNG) — ส่งไลน์ได้เลย</label
+                รูปภาพ (PNG) - ส่งไลน์ได้เลย</label
               >
               <label
                 ><input type="radio" name="sevSummaryFormat" value="pdf" /> PDF
@@ -3188,7 +3252,7 @@ td.num-cell, thead th { white-space: nowrap; }
             ระบบจะกรองมาเฉพาะพื้นที่ Pak Kret, Bang Bua Thong, Sai Noi (จาก
             TDS_PROVINCE) แล้วรวมทุกไฟล์เข้าด้วยกัน<br />ใส่ไฟล์
             7-Eleven_Store_Database.xlsx เข้าไปด้วย (เลือกพร้อมกันได้เลย)
-            เพื่อดึงมุมมองแยกตาม CM กลับมา — ระบบจะรู้เองว่าไฟล์ไหนเป็นไฟล์ไหน
+            เพื่อดึงมุมมองแยกตาม CM กลับมา - ระบบจะรู้เองว่าไฟล์ไหนเป็นไฟล์ไหน
           </p>
           <div class="req-cols">
             คอลัมน์ที่ต้องมี (ไฟล์ยอดขาย): TM_KEY_DAY · TDS_PROVINCE ·
@@ -3232,7 +3296,7 @@ td.num-cell, thead th { white-space: nowrap; }
             </div>
             <div id="sevFiltersBody" style="display: none">
               <div class="hint" style="display: block; margin-bottom: 10px">
-                เลือกได้หลายมิติพร้อมกัน — ตัวเลือกจะปรับตามที่เลือกไว้แล้ว
+                เลือกได้หลายมิติพร้อมกัน - ตัวเลือกจะปรับตามที่เลือกไว้แล้ว
               </div>
               <div class="ae-row" id="sevKhetRow"></div>
               <div class="ae-row" id="sevFyaiRow"></div>
@@ -3766,29 +3830,29 @@ td.num-cell, thead th { white-space: nowrap; }
           return luma > 150 ? "#121A2B" : "#FFFFFF";
         }
         var ACHIEVE_STOPS = [
-          [0.0, "#B23B38"], // well below target — deep red
+          [0.0, "#B23B38"], // well below target - deep red
           [0.5, "#D9724F"], // orange
-          [0.75, "#E2A33D"], // amber — getting close
-          [1.0, "#8DBF4C"], // met target — green
-          [1.3, "#0F6E62"], // well past target — deep teal-green
+          [0.75, "#E2A33D"], // amber - getting close
+          [1.0, "#8DBF4C"], // met target - green
+          [1.3, "#0F6E62"], // well past target - deep teal-green
         ];
         var MOM_STOPS = [
-          [-0.3, "#B23B38"], // steep decline — deep red
+          [-0.3, "#B23B38"], // steep decline - deep red
           [-0.08, "#D9724F"], // orange
-          [0.0, "#E2A33D"], // roughly flat — amber
-          [0.08, "#8DBF4C"], // growing — green
-          [0.3, "#0F6E62"], // strong growth — deep teal-green
+          [0.0, "#E2A33D"], // roughly flat - amber
+          [0.08, "#8DBF4C"], // growing - green
+          [0.3, "#0F6E62"], // strong growth - deep teal-green
         ];
         // Months of SIM stock cover remaining at the current burn rate. Same red->green
         // language as ACHIEVE_STOPS, anchored at 1 month (matches LOW_STOCK_COVER_MONTHS in
         // renderRtrInsights) instead of 100% -- under a month is the "will run out soon, deep
         // red" end, 3+ months is comfortably stocked.
         var STOCK_STOPS = [
-          [0.0, "#B23B38"], // about to run out — deep red
+          [0.0, "#B23B38"], // about to run out - deep red
           [0.5, "#D9724F"], // orange
-          [1.0, "#E2A33D"], // amber — under a month left
-          [2.0, "#8DBF4C"], // green — healthy
-          [3.0, "#0F6E62"], // deep teal-green — well stocked
+          [1.0, "#E2A33D"], // amber - under a month left
+          [2.0, "#8DBF4C"], // green - healthy
+          [3.0, "#0F6E62"], // deep teal-green - well stocked
         ];
         // size 'lg' renders the KPI-card sized variant; the colour scale is identical either way.
         function pctBadge(value, kind, size) {
@@ -4146,9 +4210,9 @@ td.num-cell, thead th { white-space: nowrap; }
           if (!btn) return;
           btn.disabled = !FS_ACCESS_SUPPORTED || !hasHandles;
           btn.title = !FS_ACCESS_SUPPORTED
-            ? 'รีเฟรชแบบอัตโนมัติรองรับเฉพาะ Chrome/Edge — เบราว์เซอร์นี้ใช้ปุ่ม "เลือกไฟล์" แทนได้'
+            ? 'รีเฟรชแบบอัตโนมัติรองรับเฉพาะ Chrome/Edge - เบราว์เซอร์นี้ใช้ปุ่ม "เลือกไฟล์" แทนได้'
             : !hasHandles
-              ? 'ยังไม่มีไฟล์ที่จำไว้ — เลือกไฟล์ผ่านปุ่ม "เลือกไฟล์" ก่อนอย่างน้อย 1 ครั้ง'
+              ? 'ยังไม่มีไฟล์ที่จำไว้ - เลือกไฟล์ผ่านปุ่ม "เลือกไฟล์" ก่อนอย่างน้อย 1 ครั้ง'
               : "อ่านไฟล์ที่จำไว้ใหม่จากดิสก์";
         }
 
@@ -5147,7 +5211,7 @@ td.num-cell, thead th { white-space: nowrap; }
             $("ovFilters").innerHTML = "";
             $("ovSortRow").innerHTML = "";
             $("ovKpis").innerHTML = "";
-            $("ovCmTable").innerHTML = '<div class="insight-empty">ยังไม่มีข้อมูล — โหลดไฟล์ RTR หรือ 7-11 ก่อน</div>';
+            $("ovCmTable").innerHTML = '<div class="insight-empty">ยังไม่มีข้อมูล - โหลดไฟล์ RTR หรือ 7-11 ก่อน</div>';
             $("ovM1Table").innerHTML = "";
             $("ovTrend").innerHTML = "";
             $("ovBarChart").innerHTML = "";
@@ -5337,7 +5401,7 @@ td.num-cell, thead th { white-space: nowrap; }
               rtrError(
                 "รีเฟรชไม่สำเร็จ",
                 String(err && err.message ? err.message : err) +
-                  ' — ลองกด "เลือกไฟล์" แล้วเลือกไฟล์เดิมอีกครั้งแทน',
+                  ' - ลองกด "เลือกไฟล์" แล้วเลือกไฟล์เดิมอีกครั้งแทน',
               );
             })
             .finally(function () {
@@ -5478,7 +5542,7 @@ td.num-cell, thead th { white-space: nowrap; }
 
             var missingMapMsg =
               mapCandidates.length === 0
-                ? 'หมายเหตุ: ไม่พบชีต mapping ร้าน↔CM ("RTR Target GA...") เลยในไฟล์นี้ — ร้านทั้งหมดจะไม่มี CM/Target กำกับ'
+                ? 'หมายเหตุ: ไม่พบชีต mapping ร้าน↔CM ("RTR Target GA...") เลยในไฟล์นี้ - ร้านทั้งหมดจะไม่มี CM/Target กำกับ'
                 : "";
 
             rtrStep(
@@ -6379,8 +6443,8 @@ td.num-cell, thead th { white-space: nowrap; }
           var open = healthOpen[tab] === undefined ? false : healthOpen[tab];
           var headIcon = warns ? "⚠️" : "✅";
           var headText = warns
-            ? "ตรวจสอบข้อมูล — พบ " + warns + " จุดที่ควรดู"
-            : "ตรวจสอบข้อมูล — ปกติ";
+            ? "ตรวจสอบข้อมูล - พบ " + warns + " จุดที่ควรดู"
+            : "ตรวจสอบข้อมูล - ปกติ";
           var html =
             '<div class="health-box"><div class="health-head" data-health-toggle="' +
             tab +
@@ -6445,7 +6509,7 @@ td.num-cell, thead th { white-space: nowrap; }
               text:
                 "ไม่พบคอลัมน์เป้าของเดือน <b>" +
                 esc(m.label) +
-                "</b> ในชีต mapping — ร้านทั้งหมดจะไม่มีเป้า และ %Achieve จะว่าง",
+                "</b> ในชีต mapping - ร้านทั้งหมดจะไม่มีเป้า และ %Achieve จะว่าง",
             });
           } else {
             diag.forEach(function (d) {
@@ -6486,7 +6550,7 @@ td.num-cell, thead th { white-space: nowrap; }
                   esc(sh) +
                   "</b> ไม่มีคอลัมน์เป้าของเดือน " +
                   esc(m.label) +
-                  " — ร้านในชีตนี้ไม่มีเป้าเดือนนี้",
+                  " - ร้านในชีตนี้ไม่มีเป้าเดือนนี้",
               });
           });
 
@@ -6518,7 +6582,7 @@ td.num-cell, thead th { white-space: nowrap; }
                 (revCut + 1) +
                 "-" +
                 mx +
-                "</b> ยังเข้าไม่ครบ (ระบบต้นทางทยอยลงรายได้ทีหลัง) — ยอด <b>รายได้รวม</b> จึงต่ำกว่าความเป็นจริง" +
+                "</b> ยังเข้าไม่ครบ (ระบบต้นทางทยอยลงรายได้ทีหลัง) - ยอด <b>รายได้รวม</b> จึงต่ำกว่าความเป็นจริง" +
                 esc(revInfoNote(m.revInfo)),
             });
           }
@@ -6545,7 +6609,7 @@ td.num-cell, thead th { white-space: nowrap; }
                 fmt(m.unmappedCount) +
                 "</b> ร้าน (GA " +
                 fmt(m.unmappedGA) +
-                ") ไม่มี CM กำกับ ถูกคัดออกจากแดชบอร์ดนี้ทั้งหมด (ถือว่าเป็นของพื้นที่อื่น) — " +
+                ") ไม่มี CM กำกับ ถูกคัดออกจากแดชบอร์ดนี้ทั้งหมด (ถือว่าเป็นของพื้นที่อื่น) - " +
                 "ถ้าร้านนี้ควรอยู่ Pak Kret ให้เช็กชีต mapping (RTR Target GA...) ว่ามีรหัสร้านนี้ และ Cluster ตรงกับ Pak Kret หรือไม่",
             });
           }
@@ -6557,7 +6621,7 @@ td.num-cell, thead th { white-space: nowrap; }
                 fmt(noMall) +
                 "</b> ร้าน (GA " +
                 fmt(noMallGA) +
-                ") ไม่มีข้อมูลทำเล — จะหายไปเมื่อกรอง In Mall / Out mall",
+                ") ไม่มีข้อมูลทำเล - จะหายไปเมื่อกรอง In Mall / Out mall",
             });
 
           renderHealth("rtr", items);
@@ -6610,7 +6674,7 @@ td.num-cell, thead th { white-space: nowrap; }
           var note =
             "ไฟล์นี้มี " +
             state.rtr.allSheetCount +
-            " ชีตทั้งหมด — ใช้ " +
+            " ชีตทั้งหมด - ใช้ " +
             state.rtr.months.length +
             " ชีตรายเดือน (เรียงตามวันที่): " +
             names +
@@ -6627,7 +6691,7 @@ td.num-cell, thead th { white-space: nowrap; }
             note +=
               " · พบแถวร้าน 7-11 ปนอยู่ " +
               fmt(sevTotal) +
-              " แถว (บางเดือนเท่านั้น) — แยกออกจากมุมมอง RTR แล้ว ไปดูได้ที่แท็บ 7-11";
+              " แถว (บางเดือนเท่านั้น) - แยกออกจากมุมมอง RTR แล้ว ไปดูได้ที่แท็บ 7-11";
           }
           $("rtrSheetNote").textContent = note;
         }
@@ -7079,7 +7143,7 @@ td.num-cell, thead th { white-space: nowrap; }
                   pct(untaggedGA / totalGA) +
                   " ของพื้นที่)</b> ที่ไม่มีข้อมูลทำเลในไฟล์ต้นทาง" +
                   (untaggedTourist > 0
-                    ? " — ส่วนใหญ่เป็นร้านกลุ่ม Tourist (GA " +
+                    ? " - ส่วนใหญ่เป็นร้านกลุ่ม Tourist (GA " +
                       fmt(untaggedTourist) +
                       ")"
                     : ""),
@@ -7091,7 +7155,7 @@ td.num-cell, thead th { white-space: nowrap; }
                   fmt(untaggedGA) +
                   " · " +
                   pct(untaggedGA / totalGA) +
-                  ") ไม่มีข้อมูลทำเล — จะหายไปถ้ากดกรอง In Mall / Out mall",
+                  ") ไม่มีข้อมูลทำเล - จะหายไปถ้ากดกรอง In Mall / Out mall",
               );
             }
           }
@@ -7377,7 +7441,7 @@ td.num-cell, thead th { white-space: nowrap; }
               pacing.daysElapsed +
               "/" +
               pacing.daysInMonth +
-              " วัน — ถึงตอนนี้ควรได้ " +
+              " วัน - ถึงตอนนี้ควรได้ " +
               pct(pacing.expectedPct) +
               " ของเป้า แต่ได้จริง " +
               pct(segInfo.achievePct) +
@@ -7429,7 +7493,7 @@ td.num-cell, thead th { white-space: nowrap; }
                 fmt(segInfo.targetedGA) +
                 " จากเป้า " +
                 fmt(segInfo.target) +
-                " — ที่เหลือคือส่วนเกิน";
+                " - ที่เหลือคือส่วนเกิน";
             } else if (fc.needPerDay != null) {
               // The card label already says "ต่อวัน", so the value must not repeat "/วัน".
               // Colour compares the required rate against the rate actually being achieved: green when
@@ -7447,10 +7511,10 @@ td.num-cell, thead th { white-space: nowrap; }
               var cmp = "";
               if (fc.currentPerDay != null) {
                 cmp = enough
-                  ? " — ตอนนี้ทำได้วันละ " +
+                  ? " - ตอนนี้ทำได้วันละ " +
                     fmt(fc.currentPerDay) +
                     " เร็วกว่าที่ต้องการอยู่แล้ว ✓"
-                  : " — ตอนนี้ทำได้วันละ " +
+                  : " - ตอนนี้ทำได้วันละ " +
                     fmt(fc.currentPerDay) +
                     " ต้องเร่งขึ้นอีก " +
                     fmt(fc.needPerDay - fc.currentPerDay) +
@@ -7658,7 +7722,7 @@ td.num-cell, thead th { white-space: nowrap; }
           $("perfHint").textContent =
             t.noTargetCount > 0
               ? t.noTargetCount +
-                " ร้านไม่มีเป้าหมายเฉพาะบุคคล (ส่วนใหญ่เป็นร้านขายส่ง) — GA รวม " +
+                " ร้านไม่มีเป้าหมายเฉพาะบุคคล (ส่วนใหญ่เป็นร้านขายส่ง) - GA รวม " +
                 fmt(t.noTargetGA) +
                 " นับรวมอยู่ใน %Achieve ผ่านเป้ารวมของ CM แล้ว"
               : "ทุกร้านมีเป้าหมายเฉพาะบุคคล";
@@ -7679,8 +7743,8 @@ td.num-cell, thead th { white-space: nowrap; }
               ? "ตอนนี้ทำได้วันละ " +
                 fmt(r.currentPerDay) +
                 (enough
-                  ? " — พอแล้ว"
-                  : " — ต้องเร่งอีก " +
+                  ? " - พอแล้ว"
+                  : " - ต้องเร่งอีก " +
                     fmt(r.needPerDay - r.currentPerDay) +
                     "/วัน")
               : "";
@@ -8626,7 +8690,7 @@ td.num-cell, thead th { white-space: nowrap; }
 
         function renderRtrTrendAndSegment() {
           var scope = rtrCurrentScope();
-          $("rtrTrendTitle").textContent = "Trend รายวัน (GA) — " + scope.label;
+          $("rtrTrendTitle").textContent = "Trend รายวัน (GA) - " + scope.label;
           renderRtrSegTicks();
 
           var tog = state.rtr.segToggle;
@@ -9473,7 +9537,7 @@ td.num-cell, thead th { white-space: nowrap; }
 
         function rtrExportScopeLabel() {
           if (state.rtr.exportScope === "quadrant") {
-            return "Quadrant — " + QUADRANT_ZONES[state.rtr.quadrantZone].label;
+            return "Quadrant - " + QUADRANT_ZONES[state.rtr.quadrantZone].label;
           }
           var parts = [
             state.rtr.currentCM,
@@ -9498,10 +9562,10 @@ td.num-cell, thead th { white-space: nowrap; }
           $("rtrExportScopeHint").textContent = isQuadrant
             ? "จะ export ร้านในโซนที่เลือกอยู่ตอนนี้: " +
               rtrExportScopeLabel() +
-              " — ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วคลิกโซนอื่นในกราฟ Quadrant ก่อน"
+              " - ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วคลิกโซนอื่นในกราฟ Quadrant ก่อน"
             : "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
               rtrExportScopeLabel() +
-              " — ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วปรับตัวกรองบนหน้าเว็บก่อน";
+              " - ถ้าอยากเปลี่ยน ให้ปิดหน้าต่างนี้แล้วปรับตัวกรองบนหน้าเว็บก่อน";
           $("rtrExportOverlay").style.display = "flex";
         }
         function rtrCloseExportModal() {
@@ -9638,7 +9702,7 @@ td.num-cell, thead th { white-space: nowrap; }
           ctx.fillRect(0, 0, totalW, totalH);
           ctx.fillStyle = "#121A2B";
           ctx.font = fontTitle;
-          ctx.fillText("Pak Kret RTR — ร้านค้า", padX, 26);
+          ctx.fillText("Pak Kret RTR - ร้านค้า", padX, 26);
           ctx.font = fontSub;
           ctx.fillStyle = "#6B7280";
           ctx.fillText(
@@ -9763,7 +9827,7 @@ td.num-cell, thead th { white-space: nowrap; }
             })
             .join("");
           var html =
-            "<h1>Pak Kret RTR — ร้านค้า</h1>" +
+            "<h1>Pak Kret RTR - ร้านค้า</h1>" +
             "<p>" +
             esc(rtrExportScopeLabel()) +
             " · " +
@@ -9994,7 +10058,7 @@ td.num-cell, thead th { white-space: nowrap; }
           }
 
           return {
-            title: "Pak Kret RTR — สรุปภาพรวม",
+            title: "Pak Kret RTR - สรุปภาพรวม",
             subtitle:
               scope.label +
               " · " +
@@ -10556,7 +10620,7 @@ td.num-cell, thead th { white-space: nowrap; }
               sevError(
                 "รีเฟรชไม่สำเร็จ",
                 String(err && err.message ? err.message : err) +
-                  ' — ลองกด "เลือกไฟล์" แล้วเลือกไฟล์เดิมอีกครั้งแทน',
+                  ' - ลองกด "เลือกไฟล์" แล้วเลือกไฟล์เดิมอีกครั้งแทน',
               );
             })
             .finally(function () {
@@ -10636,7 +10700,7 @@ td.num-cell, thead th { white-space: nowrap; }
                 sheetName +
                   ": พบข้อมูลใกล้ขอบเขตสูงสุดที่อ่านได้ (" +
                   SHEET_ROW_CAP +
-                  " แถว) — อาจมีข้อมูลตกหล่น กรุณาแจ้งผู้พัฒนา",
+                  " แถว) - อาจมีข้อมูลตกหล่น กรุณาแจ้งผู้พัฒนา",
               );
               return;
             }
@@ -11342,7 +11406,7 @@ td.num-cell, thead th { white-space: nowrap; }
             .then(function () {
               if (storesMap.size === 0) {
                 var extra = sheetErrors.length
-                  ? " — ปัญหาที่พบ: " + sheetErrors.join("; ")
+                  ? " - ปัญหาที่พบ: " + sheetErrors.join("; ")
                   : "";
                 sevError(
                   "ไม่พบร้านในพื้นที่เป้าหมาย",
@@ -11510,14 +11574,14 @@ td.num-cell, thead th { white-space: nowrap; }
                   (sevRevCutoffDay + 1) +
                   "-" +
                   sevMomCutoffDay +
-                  "</b> ยังเข้าไม่ครบ — การเทียบรายได้จึงใช้เฉพาะวันที่ 1-" +
+                  "</b> ยังเข้าไม่ครบ - การเทียบรายได้จึงใช้เฉพาะวันที่ 1-" +
                   sevRevCutoffDay +
                   " และยอด <b>รายได้</b> ที่แสดงยังต่ำกว่าความเป็นจริง",
               });
           } else {
             items.push({
               level: "warn",
-              text: "ยังไม่ได้เลือกเดือน — MOM และการเทียบรายได้จะไม่แสดง",
+              text: "ยังไม่ได้เลือกเดือน - MOM และการเทียบรายได้จะไม่แสดง",
             });
           }
 
@@ -11538,7 +11602,7 @@ td.num-cell, thead th { white-space: nowrap; }
                 fmt(unbanded) +
                 "</b> GA (" +
                 pct(unbanded / totGa) +
-                ") อ่านราคาจาก SIM_TYPE ไม่ได้ — ไม่ถูกนับใน AP Mix",
+                ") อ่านราคาจาก SIM_TYPE ไม่ได้ - ไม่ถูกนับใน AP Mix",
             });
           // Stores whose code never matched a CM are dropped entirely during ingestion (see
           // handleSevFiles), same rule as the RTR side -- they never reach state.sev.stores, so
@@ -11555,7 +11619,7 @@ td.num-cell, thead th { white-space: nowrap; }
                 ") ไม่มี CM กำกับ ถูกคัดออกจากแดชบอร์ดนี้ทั้งหมด (ถือว่าเป็นของพื้นที่อื่น)" +
                 (state.sev.rosterLoaded
                   ? ""
-                  : " — ยังไม่ได้โหลดไฟล์ roster (7-Eleven Store Database)"),
+                  : " - ยังไม่ได้โหลดไฟล์ roster (7-Eleven Store Database)"),
             });
 
           renderHealth("sev", items);
@@ -11610,7 +11674,7 @@ td.num-cell, thead th { white-space: nowrap; }
           }
           var note =
             (state.sev.fileNames || []).join(", ") +
-            " — " +
+            " - " +
             fmt(state.sev.totalRows) +
             " แถวทั้งหมด, กรองมาเฉพาะพื้นที่เป้าหมาย " +
             fmt(state.sev.clusterRows) +
@@ -11628,7 +11692,7 @@ td.num-cell, thead th { white-space: nowrap; }
               " ร้าน";
           } else {
             note +=
-              " · ยังไม่ได้เชื่อมไฟล์ roster (7-Eleven_Store_Database.xlsx) — มุมมองแยกตาม CM จะยังใช้ไม่ได้";
+              " · ยังไม่ได้เชื่อมไฟล์ roster (7-Eleven_Store_Database.xlsx) - มุมมองแยกตาม CM จะยังใช้ไม่ได้";
           }
           if (state.sev.sheetErrors && state.sev.sheetErrors.length) {
             note +=
@@ -11715,7 +11779,7 @@ td.num-cell, thead th { white-space: nowrap; }
             });
           if (!hasCmData) {
             wrap.innerHTML =
-              '<div class="pending-box">ยังไม่ได้เชื่อมไฟล์ roster (7-Eleven_Store_Database.xlsx) — เพิ่มไฟล์นั้นเข้าไปพร้อมกับไฟล์ยอดขาย (ปุ่ม "เลือกไฟล์" ด้านบน) เพื่อดูมุมมองแยกตาม CM</div>';
+              '<div class="pending-box">ยังไม่ได้เชื่อมไฟล์ roster (7-Eleven_Store_Database.xlsx) - เพิ่มไฟล์นั้นเข้าไปพร้อมกับไฟล์ยอดขาย (ปุ่ม "เลือกไฟล์" ด้านบน) เพื่อดูมุมมองแยกตาม CM</div>';
             return;
           }
           var counts = {};
@@ -13457,7 +13521,7 @@ td.num-cell, thead th { white-space: nowrap; }
               momSub = "ไม่มีข้อมูลเดือนก่อนหน้าให้เทียบ";
             }
           } else if (day) {
-            momSub = "ดูรายวันอยู่ — MOM เทียบได้เฉพาะระดับเดือน";
+            momSub = "ดูรายวันอยู่ - MOM เทียบได้เฉพาะระดับเดือน";
           }
           var overviewCards = [
             { label: "จำนวนร้านทั้งหมด", value: fmt(stores.length), sub: "" },
@@ -13532,7 +13596,7 @@ td.num-cell, thead th { white-space: nowrap; }
             kpiHint =
               noTargetCount > 0
                 ? noTargetCount +
-                  " ร้านไม่มีเป้าหมายเฉพาะบุคคล (ส่วนใหญ่เป็นร้านขายส่ง) — GA รวม " +
+                  " ร้านไม่มีเป้าหมายเฉพาะบุคคล (ส่วนใหญ่เป็นร้านขายส่ง) - GA รวม " +
                   fmt(noTargetGA) +
                   " นับรวมอยู่ใน %Achieve ผ่านเป้ารวมของ CM แล้ว"
                 : "ทุกร้านมีเป้าหมายเฉพาะบุคคล";
@@ -13563,7 +13627,7 @@ td.num-cell, thead th { white-space: nowrap; }
                 pacing.daysElapsed +
                 "/" +
                 pacing.daysInMonth +
-                " วัน — ถึงตอนนี้ควรได้ " +
+                " วัน - ถึงตอนนี้ควรได้ " +
                 pct(pacing.expectedPct) +
                 " ของเป้า แต่ได้จริง " +
                 pct(achievePct) +
@@ -13604,7 +13668,7 @@ td.num-cell, thead th { white-space: nowrap; }
                   fmt(totGa) +
                   " จากเป้า " +
                   fmt(totTarget) +
-                  " — ที่เหลือคือส่วนเกิน";
+                  " - ที่เหลือคือส่วนเกิน";
               } else if (fc.needPerDay != null) {
                 var enough =
                   fc.currentPerDay != null && fc.currentPerDay >= fc.needPerDay;
@@ -13622,10 +13686,10 @@ td.num-cell, thead th { white-space: nowrap; }
                   " วันที่เหลือ" +
                   (fc.currentPerDay != null
                     ? enough
-                      ? " — ตอนนี้ทำได้วันละ " +
+                      ? " - ตอนนี้ทำได้วันละ " +
                         fmt(fc.currentPerDay) +
                         " เร็วกว่าที่ต้องการอยู่แล้ว ✓"
-                      : " — ตอนนี้ทำได้วันละ " +
+                      : " - ตอนนี้ทำได้วันละ " +
                         fmt(fc.currentPerDay) +
                         " ต้องเร่งขึ้นอีก " +
                         fmt(fc.needPerDay - fc.currentPerDay) +
@@ -13879,7 +13943,7 @@ td.num-cell, thead th { white-space: nowrap; }
           }
 
           return {
-            title: "Pak Kret 7-11 — สรุปภาพรวม",
+            title: "Pak Kret 7-11 - สรุปภาพรวม",
             subtitle:
               sevExportScopeLabel() +
               " · ออกรายงาน " +
@@ -14085,7 +14149,7 @@ td.num-cell, thead th { white-space: nowrap; }
           var mk = state.sev.currentMonthKey;
           $("sevTrendTitle").textContent =
             "ยอดขาย GA รายวัน" +
-            (mk ? " — " + sevMonthLabel(mk) : " — ทุกเดือนรวมกัน");
+            (mk ? " - " + sevMonthLabel(mk) : " - ทุกเดือนรวมกัน");
           var panel = $("sevSalesPanel");
           if (!state.sev.loaded || state.sev.stores.length === 0) {
             panel.innerHTML =
@@ -14748,7 +14812,7 @@ td.num-cell, thead th { white-space: nowrap; }
           $("sevExportScopeHint").textContent =
             "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
             sevExportScopeLabel() +
-            " — ถ้าอยากเปลี่ยนตัวกรองอื่น ให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
+            " - ถ้าอยากเปลี่ยนตัวกรองอื่น ให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
           $("sevExportOverlay").style.display = "flex";
         }
         function sevCloseExportModal() {
@@ -14759,14 +14823,14 @@ td.num-cell, thead th { white-space: nowrap; }
           $("sevExportScopeHint").textContent =
             "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
             sevExportScopeLabel() +
-            " — ถ้าอยากเปลี่ยนตัวกรองอื่น ให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
+            " - ถ้าอยากเปลี่ยนตัวกรองอื่น ให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
         }
         function sevExportFyaiPickerChanged() {
           sevExportFyai = $("sevExportFyaiPicker").value;
           $("sevExportScopeHint").textContent =
             "จะ export ตามตัวกรองที่เลือกอยู่ตอนนี้: " +
             sevExportScopeLabel() +
-            " — ถ้าอยากเปลี่ยนตัวกรองอื่น ให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
+            " - ถ้าอยากเปลี่ยนตัวกรองอื่น ให้ปิดหน้าต่างนี้แล้วปรับบนหน้าเว็บก่อน";
         }
 
         // Same filter+search as the live table (sevCurrentStores + search), but sort/limit come from
@@ -15440,7 +15504,7 @@ td.num-cell, thead th { white-space: nowrap; }
           ctx.fillRect(0, 0, totalW, totalH);
           ctx.fillStyle = "#121A2B";
           ctx.font = fontTitle;
-          ctx.fillText("Pak Kret 7-11 — ร้านค้า", padX, 26);
+          ctx.fillText("Pak Kret 7-11 - ร้านค้า", padX, 26);
           ctx.font = fontSub;
           ctx.fillStyle = "#6B7280";
           ctx.fillText(
@@ -15535,7 +15599,7 @@ td.num-cell, thead th { white-space: nowrap; }
             })
             .join("");
           var html =
-            "<h1>Pak Kret 7-11 — ร้านค้า</h1>" +
+            "<h1>Pak Kret 7-11 - ร้านค้า</h1>" +
             "<p>" +
             esc(sevExportScopeLabel()) +
             " · " +
@@ -16010,7 +16074,7 @@ td.num-cell, thead th { white-space: nowrap; }
         var SYNC = {
           SS: "https://sheets.googleapis.com/v4/spreadsheets",
           SCOPE: "https://www.googleapis.com/auth/drive.file",
-          CHUNK: 40000, // a cell holds ~50,000 chars — leave headroom
+          CHUNK: 40000, // a cell holds ~50,000 chars - leave headroom
           KEEP_MONTHS: 6,
           token: null,
         };
@@ -16243,7 +16307,7 @@ td.num-cell, thead th { white-space: nowrap; }
           return new Promise(function (resolve, reject) {
             if (!window.google || !google.accounts || !google.accounts.oauth2)
               return reject(
-                new Error("Google sign-in ยังโหลดไม่เสร็จ — ลองใหม่อีกครั้ง"),
+                new Error("Google sign-in ยังโหลดไม่เสร็จ - ลองใหม่อีกครั้ง"),
               );
             google.accounts.oauth2
               .initTokenClient({
@@ -16856,7 +16920,7 @@ td.num-cell, thead th { white-space: nowrap; }
             return;
           }
           if (!state.rtr.loaded && !state.sev.loaded) {
-            alert("ยังไม่ได้โหลดข้อมูล — เลือกไฟล์ RTR หรือ 7-11 ก่อน");
+            alert("ยังไม่ได้โหลดข้อมูล - เลือกไฟล์ RTR หรือ 7-11 ก่อน");
             return;
           }
           $("syncSteps").innerHTML = "";
@@ -16910,7 +16974,7 @@ td.num-cell, thead th { white-space: nowrap; }
                 newFp[tab] = fp;
                 var old = prevFp[tab];
                 if (old && old.h === fp.h) {
-                  skipped.push(tab); // byte-identical — nothing to do
+                  skipped.push(tab); // byte-identical - nothing to do
                 } else if (old && (fp.d < old.d || fp.g < old.g)) {
                   shrinking.push({ tab: tab, old: old, now: fp });
                 } else {
@@ -16953,7 +17017,7 @@ td.num-cell, thead th { white-space: nowrap; }
               }
 
               skipped.sort().forEach(function (t) {
-                syncStep(t + " — ไม่เปลี่ยนแปลง ข้าม");
+                syncStep(t + " - ไม่เปลี่ยนแปลง ข้าม");
               });
 
               var chain = Promise.resolve();
@@ -17005,7 +17069,7 @@ td.num-cell, thead th { white-space: nowrap; }
               renderSyncStatus();
               syncStep("meta ✔");
               $("syncResult").innerHTML =
-                "✅ เสร็จแล้ว — เขียน <b>" +
+                "✅ เสร็จแล้ว - เขียน <b>" +
                 res.written.length +
                 "</b> เดือน · ข้าม <b>" +
                 res.skipped.length +
@@ -17018,7 +17082,7 @@ td.num-cell, thead th { white-space: nowrap; }
               console.error(err);
               syncStep(String(err.message || err), "warn");
               $("syncResult").innerHTML =
-                "❌ ซิงค์ไม่สำเร็จ — ดูรายละเอียดด้านบน" +
+                "❌ ซิงค์ไม่สำเร็จ - ดูรายละเอียดด้านบน" +
                 (String(err).indexOf("404") !== -1
                   ? "<br>404 มักแปลว่า Project number (setAppId) ไม่ตรงกับ project ที่ออก Client ID"
                   : "");
@@ -17352,7 +17416,7 @@ td.num-cell, thead th { white-space: nowrap; }
               stores: g.stores,
               comTargets: g.comTargets || {},
               revInfo: g.revInfo || [],
-              sevTxByCode: new Map(), // 7-11 rows mixed into RTR sheets — not published, not needed here
+              sevTxByCode: new Map(), // 7-11 rows mixed into RTR sheets - not published, not needed here
               sevRowCount: 0,
             };
           });
@@ -17817,7 +17881,7 @@ td.num-cell, thead th { white-space: nowrap; }
           ).then(function (f) {
             if (!f.capabilities || !f.capabilities.canEdit)
               throw new Error(
-                "บัญชีนี้มีสิทธิ์อ่านอย่างเดียว (Viewer) จึงซิงค์ไม่ได้ — ต้องเป็นเจ้าของหรือ Editor ของไฟล์",
+                "บัญชีนี้มีสิทธิ์อ่านอย่างเดียว (Viewer) จึงซิงค์ไม่ได้ - ต้องเป็นเจ้าของหรือ Editor ของไฟล์",
               );
             return id;
           });
@@ -17898,7 +17962,7 @@ td.num-cell, thead th { white-space: nowrap; }
             window.addEventListener("load", function () {
               if (!(window.google && google.accounts && google.accounts.id)) {
                 showLoginStatus(
-                  "โหลด Google Sign-In ไม่สำเร็จ — ลองรีเฟรชหน้านี้",
+                  "โหลด Google Sign-In ไม่สำเร็จ - ลองรีเฟรชหน้านี้",
                   true,
                 );
                 return;
