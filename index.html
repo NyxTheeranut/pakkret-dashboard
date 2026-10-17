@@ -2486,6 +2486,61 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
 }
 
 </style>
+<style id="redesign-polish">
+/* ============================================================================================
+   POLISH PASS -- refinement of the look that is live now. Same identity, same copy, same behaviour;
+   this only fixes what an audit of the rendered page found. Pure CSS, appended last.
+   1. Hover on the ghost buttons (Export, สรุป 1 หน้า, Target: GA) turned the label white on white.
+   2. Header subtitle was 3.6:1; keyboard focus on the header tabs was dark teal on near-black.
+   3. A 12px floor for UI text (store codes, counts, notes, tags); chart value labels scale down by
+      viewport instead of sitting at 8px everywhere.
+   4. Wide tables keep their first column pinned and show a soft edge shadow where more is hidden.
+   5. Numbers and short statuses stop wrapping into two lines ("ไม่มี / เป้า").
+   ============================================================================================ */
+
+/* 1. hover states that lose their label */
+.file-btn.ghost-light:hover { color: var(--ink); }
+.insight-export-btn:hover, .search-clear-btn:hover { color: var(--ink); }
+
+/* 2. header legibility */
+.topbar .brand .sub { color: rgba(255, 255, 255, 0.74); opacity: 1; }
+@media (min-width: 981px) {
+  .top-tab:focus-visible, .topbar :focus-visible { outline: 2px solid #8fe3d6; outline-offset: 2px; }
+}
+
+/* 3. text floors */
+.store-meta, .day-hint, .cm-tab .count, .insight-card .tag, .insight-card-badge,
+.insight-list .v, .col-num, .col-pct, .col-ae { font-size: 12px; }
+.kpi-card .sub, .sheet-note { font-size: 12.5px; }
+.trend-val { font-size: clamp(8px, 0.85vw, 11px); }
+.trend-axis, .trend-bar-col .trend-axis, .trend-axis span { font-size: clamp(9px, 0.85vw, 11px); }
+
+/* 4. wide tables: pinned first column + edge shadow as the "there is more" cue */
+.table-scroll-box {
+  background:
+    linear-gradient(to right, var(--panel) 30%, rgba(255, 255, 255, 0)) 0 0 / 36px 100% no-repeat local,
+    linear-gradient(to left, var(--panel) 30%, rgba(255, 255, 255, 0)) 100% 0 / 36px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(22, 32, 28, 0.2), rgba(22, 32, 28, 0)) 0 0 / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(22, 32, 28, 0.2), rgba(22, 32, 28, 0)) 100% 0 / 12px 100% no-repeat scroll;
+}
+.table-scroll-box tbody td:first-child, .table-scroll-box thead th:first-child {
+  position: sticky; left: 0; background: var(--panel); box-shadow: 1px 0 0 var(--line);
+}
+.table-scroll-box tbody td:first-child { z-index: 1; }
+.table-scroll-box thead th:first-child { z-index: 3; }
+.table-scroll-box tbody tr.clickable:hover td:first-child { background: #e8f1ee; }
+
+/* 5. no two-line numbers or short statuses */
+td.num-cell, thead th { white-space: nowrap; }
+.table-scroll-box tbody td:first-child { min-width: 132px; }
+
+/* 6. a group of exactly five cards sits in one row on wide screens (was 4 + one stretched card) */
+@media (min-width: 1100px) {
+  .kpi-grid:has(> :nth-child(5):last-child) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .kpi-grid:has(> :nth-child(5):last-child) > :last-child { grid-column: auto; }
+}
+
+</style>
 </head>
   <body>
     <div class="login-gate" id="loginGate" style="display: none">
