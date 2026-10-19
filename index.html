@@ -2604,6 +2604,124 @@ body { background: radial-gradient(900px 380px at 4% -6%, rgba(15, 118, 110, 0.0
 .skip-link:focus { top: 12px; }
 
 </style>
+<style id="redesign-showcase">
+/* ============================================================================================
+   SHOWCASE (preview). Restrained modern effects on the live light look. Written from scratch in plain
+   CSS; patterns are the well-known ones (cursor spotlight card, moving border, shiny text, aurora
+   glow, count-up, scroll reveal), not copied code. Every effect shows state or hierarchy, and every
+   motion is off under prefers-reduced-motion.
+   ============================================================================================ */
+@property --ang { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes sc-spin { to { --ang: 360deg; } }
+@keyframes sc-shine { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+@keyframes sc-aurora { from { background-position: 0% 0%, 100% 100%; } to { background-position: 100% 100%, 0% 0%; } }
+
+/* 1. spotlight: a soft teal glow follows the cursor over KPI cells and action cards */
+.kpi-card, .insight-card { --mx: -999px; --my: -999px; }
+.kpi-card, .kpi-card:hover {
+  background: radial-gradient(260px circle at var(--mx) var(--my), rgba(15, 118, 110, 0.11), transparent 62%), var(--panel);
+}
+.insight-card {
+  background: radial-gradient(320px circle at var(--mx) var(--my), rgba(15, 118, 110, 0.09), transparent 60%), var(--panel);
+}
+
+/* 3. moving border on the selected choice only */
+.pill.active, .pill.active:hover, .cm-tab.active, .cm-tab.active:hover {
+  border: 1.5px solid transparent !important;
+  background:
+    linear-gradient(var(--ink), var(--ink)) padding-box,
+    conic-gradient(from var(--ang), rgba(76, 194, 179, 0) 0 56%, #4cc2b3 76%, #c9f7f0 88%, rgba(76, 194, 179, 0) 100%) border-box;
+  background-color: var(--ink);
+  animation: sc-spin 5.5s linear infinite;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 8px 18px -10px rgba(22, 32, 28, 0.55);
+}
+
+/* 4. shiny title: one sheen pass on load */
+.brand h1 {
+  background: linear-gradient(110deg, #fff 0 42%, #8ff0e0 50%, #fff 58% 100%) 100% 0 / 260% 100% no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: sc-shine 2.4s cubic-bezier(0.4, 0, 0.2, 1) 0.5s 1 both;
+}
+
+/* 5. aurora: very soft glow inside the dark header, clipped to it */
+.topbar { isolation: isolate; }
+.topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  clip-path: inset(0);
+  opacity: 1;
+  mix-blend-mode: normal;
+  background-image: none;
+  background:
+    radial-gradient(520px 120px at 14% 30%, rgba(76, 194, 179, 0.34), transparent 70%),
+    radial-gradient(420px 110px at 82% 70%, rgba(201, 151, 58, 0.2), transparent 70%);
+  background-size: 130% 180%, 130% 180%;
+  background-repeat: no-repeat;
+  filter: blur(14px);
+  animation: sc-aurora 18s ease-in-out infinite alternate;
+}
+
+/* 6. glass segmented tabs with a sliding indicator (desktop header) */
+@media (min-width: 981px) {
+  .top-tabs {
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 10px 26px -14px rgba(0, 0, 0, 0.6);
+  }
+  .top-tab { position: relative; z-index: 1; transition: background 0.14s, transform 0.14s; }
+  .top-tab.active { background: transparent; }
+  .tab-ind {
+    position: absolute; top: 3px; bottom: 3px; left: 0; width: 0; z-index: 0; pointer-events: none;
+    border-radius: 8px; background: #fff;
+    box-shadow: 0 3px 10px -3px rgba(0, 0, 0, 0.45), inset 0 -1px 0 rgba(22, 32, 28, 0.06);
+  }
+  .tab-ind.on { transition: transform 0.4s cubic-bezier(0.34, 1.25, 0.5, 1), width 0.4s cubic-bezier(0.34, 1.25, 0.5, 1); }
+}
+@media (max-width: 980px) { .tab-ind { display: none; } }
+
+/* 7. controls: physical press, clearer focus */
+.pill:active, .cm-tab:active, .file-btn:active { transform: scale(0.97); }
+:focus-visible { box-shadow: 0 0 0 5px rgba(15, 118, 110, 0.18); }
+.chart-tooltip {
+  background: rgba(22, 32, 28, 0.88);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* 8. scroll reveal: replaces the page-load settle */
+main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: none; }
+.sc-rv-on [data-rv] { transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+.sc-rv-on [data-rv="0"] { opacity: 0; transform: translateY(16px); }
+.sc-rv-on [data-rv="1"] { opacity: 1; transform: none; }
+
+/* 9. charts: hovering a bar dims the others */
+.trend-chart > * { transition: opacity 0.18s; }
+.trend-chart:hover > *:not(:hover) { opacity: 0.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pill.active, .cm-tab.active, .brand h1, .topbar::before { animation: none !important; }
+  .brand h1 { -webkit-text-fill-color: #fff; color: #fff; background: none; }
+  .tab-ind.on { transition: none; }
+}
+
+
+/* phones: section titles and their notes stay left-aligned (the earlier layer's align-items:center won on mobile) */
+@media (max-width: 720px) {
+  .section-head { align-items: flex-start; }
+  .section-head .hint { flex: 0 1 auto; padding-right: 0; }
+}
+
+</style>
 </head>
   <body>
     <div class="login-gate" id="loginGate" style="display: none">
@@ -17982,5 +18100,135 @@ body { background: radial-gradient(900px 380px at 4% -6%, rgba(15, 118, 110, 0.0
         }
       })();
     </script>
-  </body>
+  <script id="redesign-showcase-js">
+/* Showcase effects: spotlight, count-up, sliding tab indicator, scroll reveal. Vanilla, no libraries.
+   Every effect is skipped under prefers-reduced-motion; the page's own code is never touched. */
+(function () {
+  var RM = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (RM) return;
+  var root = document.documentElement;
+  var F = window.__SCF || { spot: 1, count: 1, ind: 1, rv: 1 };
+
+  // ---- spotlight (mouse only) ----
+  var lastCard = null;
+  if (F.spot) document.addEventListener("pointermove", function (e) {
+    if (e.pointerType && e.pointerType !== "mouse") return;
+    var el = e.target.closest ? e.target.closest(".kpi-card, .insight-card") : null;
+    if (lastCard && lastCard !== el) { lastCard.style.removeProperty("--mx"); lastCard.style.removeProperty("--my"); }
+    lastCard = el;
+    if (el) {
+      var r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", e.clientX - r.left + "px");
+      el.style.setProperty("--my", e.clientY - r.top + "px");
+    }
+  }, { passive: true });
+
+  // ---- count-up on KPI values, once per tab view ----
+  var done = {};
+  function ease(t) { return 1 - Math.pow(1 - t, 3); }
+  function fmtN(v, dec) {
+    var s = v.toFixed(dec), p = s.split(".");
+    p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return p.join(".");
+  }
+  function countUp() {
+    var els = document.querySelectorAll(".kpi-card .value:not([data-cu])");
+    Array.prototype.forEach.call(els, function (el) {
+      if (el.offsetParent === null) return;               // not on screen yet: animate when shown
+      el.setAttribute("data-cu", "1");
+      if (el.children.length || !el.firstChild || el.firstChild.nodeType !== 3) return;
+      var card = el.closest(".kpi-card"), lab = card && card.querySelector(".label");
+      var panel = el.closest("[id^=panel]"), key = (panel ? panel.id : "") + "|" + (lab ? lab.textContent : "");
+      if (done[key]) return;
+      done[key] = 1;
+      var txt = el.getAttribute("data-cu-final") || el.firstChild.nodeValue;
+      el.setAttribute("data-cu-final", txt);
+      var tok = (el._cuTok = (el._cuTok || 0) + 1), m = txt.trim().match(/^([฿+]?)(\d[\d,]*)(\.\d+)?(%?)$/);
+      if (!m) return;
+      var target = parseFloat((m[2] + (m[3] || "")).replace(/,/g, "")), dec = m[3] ? m[3].length - 1 : 0;
+      if (!(target >= 10)) return;
+      var node = el.firstChild, t0 = performance.now(), dur = 850;
+      node.nodeValue = m[1] + "0" + m[4];
+      var finished = false;
+      setTimeout(function () { if (el._cuTok === tok) { finished = true; node.nodeValue = txt; } }, dur + 400);   // always end on the exact original text
+      (function step() {
+        if (finished || el._cuTok !== tok) return;
+        var t = Math.min(1, (performance.now() - t0) / dur);
+        node.nodeValue = t >= 1 ? txt : m[1] + fmtN(target * ease(t), dec) + m[4];
+        if (t < 1) requestAnimationFrame(step); else finished = true;
+      })();
+    });
+  }
+  if (F.count) new MutationObserver(countUp).observe(document.body, { childList: true, subtree: true });
+
+  // ---- sliding tab indicator (desktop header) ----
+  var tabs = document.querySelector(".top-tabs");
+  if (tabs && F.ind) {
+    var ind = document.createElement("span");
+    ind.className = "tab-ind";
+    tabs.insertBefore(ind, tabs.firstChild);
+    var place = function (anim) {
+      var a = tabs.querySelector(".top-tab.active");
+      if (!a || getComputedStyle(ind).display === "none") return;
+      ind.style.width = a.offsetWidth + "px";
+      ind.style.transform = "translateX(" + a.offsetLeft + "px)";
+      if (anim && !ind.classList.contains("on")) ind.classList.add("on");
+    };
+    place(false);
+    new MutationObserver(function (recs) {
+      for (var i = 0; i < recs.length; i++) if (recs[i].target !== ind) { place(true); return; }
+    }).observe(tabs, { attributes: true, subtree: true, attributeFilter: ["class"] });
+    window.addEventListener("resize", function () { place(false); });
+    setTimeout(function () { place(false); }, 300);
+    tabs.addEventListener("click", function () {
+      done = {};
+      setTimeout(function () {
+        Array.prototype.forEach.call(document.querySelectorAll(".kpi-card .value[data-cu]"), function (v) { v.removeAttribute("data-cu"); });
+        countUp(); scanReveal();
+      }, 0);
+    });
+  }
+
+  // ---- scroll reveal for sections ----
+  var io = null;
+  function scanReveal() {
+    if (!io) return;
+    Array.prototype.forEach.call(document.querySelectorAll("main section:not([data-rv])"), function (s) {
+      s.setAttribute("data-rv", "0");
+      io.observe(s);
+    });
+  }
+  if (F.rv && "IntersectionObserver" in window) {
+    root.classList.add("sc-rv-on");
+    io = new IntersectionObserver(function (entries) {
+      var i = 0;
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        e.target.style.transitionDelay = Math.min(i++, 5) * 70 + "ms";
+        e.target.setAttribute("data-rv", "1");
+        io.unobserve(e.target);
+      });
+    }, { rootMargin: "0px 0px -6% 0px", threshold: 0.02 });
+    scanReveal();
+    // safety net: anything already on screen is revealed even if an observer callback is late
+    var failsafe = function () {
+      Array.prototype.forEach.call(document.querySelectorAll("[data-rv='0']"), function (s) {
+        if (s.offsetParent === null) return;
+        var r = s.getBoundingClientRect();
+        if (r.top < window.innerHeight * 1.05 && r.bottom > 0) { s.setAttribute("data-rv", "1"); io.unobserve(s); }
+      });
+    };
+    var fsT = null;
+    window.addEventListener("scroll", function () { clearTimeout(fsT); fsT = setTimeout(failsafe, 200); }, { passive: true });
+    setTimeout(failsafe, 1200); setTimeout(failsafe, 2600);
+    if (tabs) tabs.addEventListener("click", function () { setTimeout(failsafe, 900); });
+    window.addEventListener("beforeprint", function () {
+      Array.prototype.forEach.call(document.querySelectorAll("[data-rv='0']"), function (s) { s.setAttribute("data-rv", "1"); });
+    });
+  }
+  if (F.count) setTimeout(countUp, 400);
+})();
+
+</script>
+</body>
 </html>
