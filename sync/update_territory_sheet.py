@@ -67,7 +67,7 @@ SYNC_URL = "https://script.google.com/macros/s/AKfycbzjNSiIzcG2d0o1VcGX-kVoUtj3H
 # Matches SYNC.KEEP_MONTHS in the dashboard JS.
 KEEP_MONTHS = 6
 
-DASHBOARD_DIR = Path(__file__).resolve().parent.parent
+DASHBOARD_DIR = Path(__file__).resolve().parent.parent.parent
 TERRITORY_DIR = DASHBOARD_DIR / "Territory Explorer"
 RTR_DIR = TERRITORY_DIR / "Source Data" / "RTR"
 SEV_DIR = TERRITORY_DIR / "Source Data" / "7-11"
