@@ -12548,7 +12548,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           { key: "stores", label: "ร้าน" },
           { key: "ga", label: "GA" },
           { key: "target", label: "Target" },
-          { key: "achieve", label: "%Achieve" },
+          { key: "achieve", label: "%Ach (RR)" },
           { key: "ap49", label: "AP 49" },
           { key: "ap99", label: "AP 99" },
           { key: "ap199", label: "AP 199" },
@@ -12568,8 +12568,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (key === "stores") return row.storeCount;
           if (key === "ga") return row.ga;
           if (key === "target") return row.target == null ? -1 : row.target;
-          if (key === "achieve")
-            return row.achievePct == null ? -1 : row.achievePct;
+          if (key === "achieve") return row.rrPct == null ? -1 : row.rrPct;
           if (key === "ap49") return row.ap49;
           if (key === "ap99") return row.ap99;
           if (key === "ap199") return row.ap199;
@@ -12669,6 +12668,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // GA column itself, AP tiers, and ARPU stay GA-based regardless of the toggle -- only
           // the metrics the toggle's own label names switch.
           var mode = state.sev.cmLbTargetMode;
+          // %Ach (RR): the month projected at today's pace over the target, i.e. (actual so far /
+          // days elapsed * days in month) / target = the plain %Achieve scaled by daysInMonth /
+          // daysElapsed. Only defined for one running month (mk && !day), like the pace/forecast.
+          var rrPacing = mk && !day ? sevMonthPacing(mk, stores) : null;
           var rows = cmNames.map(function (cm) {
             var r = byCm[cm];
             var gaMomPct =
@@ -12686,6 +12689,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             var achieveBasis = mode === "m1" ? r.revAmt : r.ga;
             r.achievePct =
               targetActive && r.target > 0 ? achieveBasis / r.target : null;
+            r.rrPct =
+              rrPacing && r.achievePct != null
+                ? (r.achievePct * rrPacing.daysInMonth) / rrPacing.daysElapsed
+                : null;
             r.apUnder100Pct = r.ga > 0 ? (r.ap49 + r.ap99) / r.ga : null;
             return r;
           });
@@ -12713,6 +12720,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                       " (ตัดวันท้ายที่รายได้ยังเข้าไม่ครบ)"
                     : "")
                 : " · เลือกเดือนใดเดือนหนึ่งเพื่อดู %MOM") +
+            (mk && !day
+              ? " · %Ach (RR) = ยอดจนถึงตอนนี้ ÷ วันที่ผ่านมา × วันในเดือน ÷ Target"
+              : "") +
             (mk ? revInfoNote(state.sev.revInfoByMonth[mk]) : "") +
             " · คลิกแถวเพื่อดูเฉพาะ CM นั้น";
 
@@ -12794,7 +12804,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   "</td>",
                 achieve:
                   '<td class="num-cell">' +
-                  pctBadge(r.achievePct, "achieve") +
+                  pctBadge(r.rrPct, "achieve") +
                   "</td>",
                 ap49: '<td class="num-cell">' + fmt(r.ap49) + "</td>",
                 ap99: '<td class="num-cell">' + fmt(r.ap99) + "</td>",
@@ -13664,7 +13674,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               value: fmt(totGa),
               sub: "ยอดขายจริงจากไฟล์ 7-11",
             },
-            { label: "MOM (GA)", value: pctColored(momPct), sub: momSub },
+            { label: "MTD (GA)", value: pctColored(momPct), sub: momSub },
             {
               label: "รายได้ (" + periodLabel + ")",
               value: fmtBaht(totRev),
