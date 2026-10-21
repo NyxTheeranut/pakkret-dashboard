@@ -647,6 +647,32 @@ def parse_mapping_sheets(map_sheets):
             target_by_month, canonical_to_name, canonical_to_district)
 
 
+def _pick_routing_cm_column(header, body_rows, cluster_col, com_col):
+    """Which of the routing sheet's several "CM" columns to read.
+
+    The sheet carries more than one column headed "CM" (a coarser one earlier, the finer one right after
+    COM, and -- since the Oct'26 refresh -- an extra EMPTY one far to the right). Taking simply the last
+    one (what a dict keyed by header name does) started returning nothing the day that empty column
+    appeared, and the publish silently fell back to the older 2-CM roster. So: prefer the nearest "CM"
+    column AFTER COM, but only one that actually holds values for the target cluster; otherwise any
+    "CM" column that does (nearest to COM first); otherwise the old behaviour (the last "CM" column)."""
+    cands = [i for i, h in enumerate(header) if norm_header(h) == "cm"]
+    if not cands:
+        return None
+    anchor = com_col if com_col is not None else -1
+    ordered = sorted((i for i in cands if i > anchor)) + sorted((i for i in cands if i <= anchor), reverse=True)
+    for ci in ordered:
+        for row in body_rows:
+            if not row:
+                continue
+            cluster = get(row, cluster_col) if cluster_col is not None else None
+            if not in_target_cluster(cluster):
+                continue
+            if str(get(row, ci) or "").strip():
+                return ci
+    return cands[-1]
+
+
 def extract_routing_overrides(path, code_to_canonical):
     """Reads the 'routing' workbook's own 'RTR_Route' sheet for two things the primary
     workbook doesn't have: a genuinely live per-store target for whichever month this file is
@@ -659,9 +685,9 @@ def extract_routing_overrides(path, code_to_canonical):
     RSR <Month> Target' anchor in the primary workbook's own mapping sheets -- no month name
     is ever hardcoded, so this keeps working whichever month the file currently carries.
 
-    Also reads each store's CM from this same sheet (the column after COM -- two columns in
-    this sheet's header both normalize to "cm"; dict constructor below keeps the later/finer
-    one as idx["cm"]). The primary workbook's own roster-mapping sheets are a point-in-time
+    Also reads each store's CM from this same sheet (the "CM" column right after COM; the
+    sheet has several columns headed "CM", see _pick_routing_cm_column for how the right one
+    is chosen). The primary workbook's own roster-mapping sheets are a point-in-time
     snapshot too (just an older one), so when the org chart changes -- a CM's book splitting
     into two new CMs, say -- the routing workbook catches up first. Call sites apply this CM
     override only to the month(s) this routing workbook is already the data source for (see
@@ -696,7 +722,7 @@ def extract_routing_overrides(path, code_to_canonical):
     idx = {norm_header(h): i for i, h in enumerate(header)}
     cluster_col = idx.get("cluster")
     com_col = idx.get("com")
-    cm_col = idx.get("cm")
+    cm_col = _pick_routing_cm_column(header, rows2d[h_idx + 1:], cluster_col, com_col)
     blocks = parse_target_blocks(header)
 
     for r in range(h_idx + 1, len(rows2d)):
