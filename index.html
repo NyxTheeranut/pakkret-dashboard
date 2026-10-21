@@ -7893,7 +7893,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           { key: "stores", label: "ร้าน" },
           { key: "ga", label: "GA" },
           { key: "target", label: "Target" },
-          { key: "achieve", label: "%Achieve" },
+          { key: "achieve", label: "%Ach (RR)" },
           { key: "pace", label: "%MTD" },
           { key: "gap", label: "ขาด/เกิน" },
           { key: "need", label: "ต้องได้อีก/วัน" },
@@ -7906,8 +7906,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (key === "stores") return row.storeCount;
           if (key === "ga") return row.ga;
           if (key === "target") return row.target == null ? -1 : row.target;
-          if (key === "achieve")
-            return row.achievePct == null ? -1 : row.achievePct;
+          if (key === "achieve") return row.rrPct == null ? -1 : row.rrPct;
           if (key === "pace") return row.paceDelta == null ? -2 : row.paceDelta;
           // Ascending puts the biggest projected shortfall first; no target sorts last.
           if (key === "gap") return row.surplus == null ? Infinity : row.surplus;
@@ -8025,6 +8024,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               achievePct = segInfo.achievePct;
               segSupported = segInfo.supported;
             }
+            // %Ach (RR): run-rate achievement = the month projected at today's pace over the target,
+            // i.e. (GA so far / days elapsed * days in month) / target, which is the same thing as
+            // the plain %Achieve scaled by daysInMonth / daysElapsed (works for GA and M1 targets).
+            var rrPct =
+              pacing && achievePct != null
+                ? (achievePct * pacing.daysInMonth) / pacing.daysElapsed
+                : null;
             var paceDelta =
               pacing && segInfo.achievePct != null
                 ? segInfo.achievePct - pacing.expectedPct
@@ -8046,6 +8052,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               ga: segInfo.ga,
               target: target,
               achievePct: achievePct,
+              rrPct: rrPct,
               segSupported: segSupported,
               momPct:
                 r.hasLmtd && r.lmtdSum > 0
@@ -8082,6 +8089,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 " วัน · "
               : "") +
             "เรียงจากคนที่คาดว่าจะขาดเป้ามากที่สุด" +
+            " · %Ach (RR) = ยอดจนถึงตอนนี้ ÷ วันที่ผ่านมา × วันในเดือน ÷ Target" +
             revInfoNote(m.revInfo) +
             " · คลิกแถวเพื่อดูเฉพาะ COM นั้น";
 
@@ -8148,7 +8156,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   "</td>",
                 achieve:
                   '<td class="num-cell">' +
-                  pctBadge(r.achievePct, "achieve") +
+                  pctBadge(r.rrPct, "achieve") +
                   "</td>",
                 pace: '<td class="num-cell">' + paceHtml + "</td>",
                 gap: '<td class="num-cell">' + signedUnits(r.surplus) + "</td>",
