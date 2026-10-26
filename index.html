@@ -2739,6 +2739,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 .tgt-switch .tgt-thumb { position: absolute; top: 2px; left: 2px; width: calc(50% - 2px); height: 22px; border-radius: 999px; background: var(--ink, #16201c);
   box-shadow: 0 1px 2px rgba(22, 32, 28, 0.3); transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
 .tgt-switch.is-m1 .tgt-thumb { transform: translateX(100%); }
+.tgt-switch.tgt-wide .tgt-track { width: 124px; }
+.section-head .tgt-switch { margin-left: auto; }
 .tgt-switch .tgt-opt { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; color: var(--muted, #5a6560); transition: color 0.22s; }
 .tgt-switch:not(.is-m1) .tgt-opt:nth-child(2), .tgt-switch.is-m1 .tgt-opt:nth-child(3) { color: #fff; }
 @media (pointer: coarse) { .tgt-switch { min-height: 44px; } .tgt-switch .tgt-track { height: 32px; width: 96px; } .tgt-switch .tgt-thumb { height: 28px; } }
@@ -3045,6 +3047,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             <div class="section-head">
               <h2>เลือกมุมมอง</h2>
               <span class="hint">Overview = รวมทุก CM ในพื้นที่นี้</span>
+              <button
+                class="tgt-switch tgt-wide"
+                id="rtrUnlimitedBtn"
+                type="button"
+                role="switch"
+                aria-checked="false"
+                aria-label="ไม่รวมซิมอันลิมิต ในข้อมูล RTR ทั้งหมด"
+                title="รวม/ไม่รวมห้างหุ้นส่วนจำกัด ซิมอันลิมิต ในข้อมูล RTR ทุกส่วน (การ์ด ตาราง กราฟ Overview) เป้า CM ไม่เปลี่ยน"
+              ><span class="tgt-lbl">ซิมอันลิมิต</span><span class="tgt-track" aria-hidden="true"><span class="tgt-thumb"></span><span class="tgt-opt">รวม</span><span class="tgt-opt">ไม่รวม</span></span></button>
             </div>
             <div class="cm-tabs" id="rtrCmTabs"></div>
             <div class="ae-row" id="rtrDistrictRow"></div>
@@ -3832,6 +3843,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             overviewMonths: null,
             comLbSortKey: "gap",
             comLbSortDir: "asc",
+            excludeUnlimited: (function () {
+              try {
+                return localStorage.getItem("pk_excl_unlimited") === "1";
+              } catch (e) {
+                return false;
+              }
+            })(),
             comLbTargetMode: "ga", // "ga" | "m1" -- which committed target Target/%Achieve read
           },
           sev: {
@@ -7086,6 +7104,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         }
 
         function renderRtrDashboard() {
+          renderUnlimitedSwitch();
           renderRtrMonthPills();
           renderRtrCmTabs();
           renderRtrDistrictTabs();
@@ -8046,6 +8065,40 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           btn.setAttribute("aria-checked", on ? "true" : "false");
           btn.classList.toggle("is-m1", on);
         }
+        function renderUnlimitedSwitch() {
+          var b = $("rtrUnlimitedBtn");
+          b.setAttribute("aria-checked", state.rtr.excludeUnlimited ? "true" : "false");
+          b.classList.toggle("is-m1", !!state.rtr.excludeUnlimited);
+        }
+        $("rtrUnlimitedBtn").addEventListener("click", function () {
+          if (!state.rtr._rawGroups) return;
+          state.rtr.excludeUnlimited = !state.rtr.excludeUnlimited;
+          try {
+            localStorage.setItem("pk_excl_unlimited", state.rtr.excludeUnlimited ? "1" : "0");
+          } catch (e) {}
+          var keep = {
+            cm: state.rtr.currentCM,
+            com: state.rtr.currentCOM,
+            district: state.rtr.currentDistrict,
+            mall: state.rtr.currentMallType,
+            month: state.rtr.currentMonthIdx,
+          };
+          applyRtrFromCloud(state.rtr._rawGroups);
+          var last = state.rtr.months.length - 1;
+          state.rtr.currentMonthIdx = Math.min(keep.month, last);
+          var m = rtrCurrentMonth();
+          function has(f, v) {
+            return m.stores.some(function (s) {
+              return s[f] === v;
+            });
+          }
+          state.rtr.currentCM = keep.cm && has("cm", keep.cm) ? keep.cm : null;
+          state.rtr.currentCOM = keep.com && has("com", keep.com) ? keep.com : null;
+          state.rtr.currentDistrict = keep.district;
+          state.rtr.currentMallType = keep.mall;
+          renderRtrSheetNote();
+          renderRtrDashboard();
+        });
         function renderComLeaderboard() {
           var wrap = $("comLeaderboardWrap");
           var targetMode = state.rtr.comLbTargetMode;
@@ -17990,7 +18043,19 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // upload path uses, over the raw per-store facts + resolved CM targets read back from
         // the sheet, so achievePct/momPct/lmtdGa/cmRollup/totals can't drift from what the local
         // path computes for the same input.
-        function applyRtrFromCloud(rawGroups) {
+        function applyRtrFromCloud(allGroups) {
+          state.rtr._rawGroups = allGroups;
+          // "ไม่รวมซิมอันลิมิต" switch: the shop is dropped from every store list BEFORE the rollups are built, so
+          // totals / CM / COM / tables / charts / Overview all agree. CM committed targets are not touched.
+          var rawGroups = state.rtr.excludeUnlimited
+            ? allGroups.map(function (g) {
+                return Object.assign({}, g, {
+                  stores: g.stores.filter(function (s) {
+                    return !isActivationExcluded(s);
+                  }),
+                });
+              })
+            : allGroups;
           var months = rawGroups.map(function (g) {
             var agg = buildRtrAggregatesFromStores(g.stores);
             return {
