@@ -2774,10 +2774,16 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 @media (pointer: coarse) { .wow-btn, .wow-menu button { min-height: 44px; } }
 .kpi-card .sub .nowrap { white-space: nowrap; }
 .kpi-card .kpi-real {
-  margin-left: 8px; font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0; line-height: 1;
+  margin-left: 10px; font-family: inherit; font-size: 14px; font-weight: 600; letter-spacing: 0; line-height: 1;
   color: #0f766e; font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.kpi-split .kpi-real { margin-left: 6px; font-size: 12px; }
+.kpi-card .kpi-real small { margin-right: 4px; font-size: 12px; font-weight: 500; color: var(--muted, #5a6560); }
+.kpi-split .ach-row { display: grid; grid-template-columns: 1fr 52px 52px; gap: 8px; align-items: baseline; }
+.kpi-split .ach-row b, .kpi-split .ach-row em { text-align: right; font-style: normal; font-family: "Geist Mono", "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; font-weight: 600; }
+.kpi-split .ach-row b { color: var(--ink, #16201c); }
+.kpi-split .ach-row em { color: #0f766e; }
+.kpi-split .ach-head { font-size: 12px; padding-bottom: 1px; }
+.kpi-split .ach-head b, .kpi-split .ach-head em { font-family: inherit; font-weight: 500; color: var(--muted, #5a6560); }
 .kpi-card .kpi-grey {
   margin-left: 8px; font-family: inherit; font-size: 13px; font-weight: 500; letter-spacing: 0; line-height: 1;
   color: var(--muted, #5a6560); font-variant-numeric: tabular-nums; white-space: nowrap;
@@ -4066,7 +4072,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (rr == null) return pctBadge(actual, "achieve", "lg");
           return (
             pctBadge(rr, "achieve", "lg") +
-            ' <span class="kpi-real" title="%Achieve จริงถึงตอนนี้ (ยังไม่ปรับตามจังหวะ)">จริง ' +
+            ' <span class="kpi-real" title="%Achieve จริงถึงตอนนี้ (ยังไม่ปรับตามจังหวะ)"><small>จริง</small> ' +
             pct(actual) +
             "</span>"
           );
@@ -7850,12 +7856,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             if (!(target > 0)) return "—";
             var real = actual / target;
             var rr = pacing && pacing.daysElapsed > 0 ? (real * pacing.daysInMonth) / pacing.daysElapsed : null;
-            return rr != null ? pct(rr) + ' <span class="kpi-real">จริง ' + pct(real) + "</span>" : pct(real);
+            return rr != null ? [pct(rr), pct(real)] : [pct(real), ""];
           }
           var achSplit = actualSplit
             ? [
-                ["Mass + Migrant", segAch((t.mass || 0) + (t.migrant || 0), t.targetMassMigrant || 0)],
-                ["Tourist", segAch(t.tourist || 0, t.targetTourist || 0)],
+                ["", "RR", "จริง", "head"],
+                ["Mass + Migrant"].concat(segAch((t.mass || 0) + (t.migrant || 0), t.targetMassMigrant || 0)),
+                ["Tourist"].concat(segAch(t.tourist || 0, t.targetTourist || 0)),
               ]
             : null;
           var groups = [
@@ -7887,7 +7894,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   split: targetSplit,
                 },
                 {
-                  label: "Actual GA (มีเป้า)",
+                  label: "Actual GA",
                   // Scoped to "GA from CMs with a committed target" (targetedGA), not total GA --
                   // with no target published, there's nothing in that scope to sum, so this
                   // shows "—" (not applicable) rather than "0" (which reads as "no sales",
@@ -7908,10 +7915,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   value: achRrHtml(segInfo.achievePct, pacing),
                   sub: !segInfo.supported
                     ? "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้"
-                    : "คาดการณ์จบเดือน ÷ เป้า · เลขเล็ก = ที่ทำได้จริงถึงตอนนี้" +
-                      (segInfo.segLabel
-                        ? " (เฉพาะ " + segInfo.segLabel + ")"
-                        : ""),
+                    : segInfo.segLabel
+                      ? "เฉพาะ " + segInfo.segLabel
+                      : "",
                   split: achSplit,
                 },
                 { label: "จังหวะเป้าหมาย", value: paceTxt, sub: paceSub },
@@ -7984,6 +7990,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 ? '<div class="kpi-split">' +
                   c.split
                     .map(function (r) {
+                      if (r.length > 2)
+                        return (
+                          '<div class="ach-row' + (r[3] === "head" ? " ach-head" : "") + '"><span>' + esc(r[0]) +
+                          "</span><b>" + r[1] + "</b><em>" + r[2] + "</em></div>"
+                        );
                       return (
                         "<div><span>" + esc(r[0]) + "</span><b>" + r[1] + "</b></div>"
                       );
@@ -14161,7 +14172,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             // actually comparing, not a store-count-matched "GA from targeted stores only"
             // that would silently be a smaller, different figure.
             targetCards.push({
-              label: "Actual GA (มีเป้า)",
+              label: "Actual GA",
               value: fmt(totGa),
               sub: "",
             });
@@ -14191,7 +14202,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             targetCards.push({
               label: "%Ach (RR)",
               value: achRrHtml(achievePct, sevMonthPacing(mk, stores)),
-              sub: "คาดการณ์จบเดือน ÷ เป้า · เลขเล็ก = ที่ทำได้จริงถึงตอนนี้",
+              sub: "",
             });
             // Same pacing badge as RTR's own จังหวะเป้าหมาย card -- reuses the exact pacing
             // object already computed below for the forecast card, just read a step earlier
