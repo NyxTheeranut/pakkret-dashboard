@@ -2725,6 +2725,25 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 }
 
 </style>
+<style id="redesign-switch">
+/* Target GA / M1 switch (RTR COM table + 7-11 CM table): a labelled two-state switch instead of a text button
+   that changes its own wording. Thumb slides (transform only); reduced motion = instant. */
+.tgt-switch { display: inline-flex; align-items: center; gap: 10px; min-height: 32px; padding: 3px 4px 3px 12px; margin: 0;
+  border: 1px solid rgba(22, 32, 28, 0.16); border-radius: 999px; background: var(--panel, #fcfcfa); color: var(--ink, #16201c);
+  font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.tgt-switch:hover { border-color: rgba(22, 32, 28, 0.36); }
+.tgt-switch:focus-visible { outline: 2px solid var(--accent, #0f766e); outline-offset: 2px; }
+.tgt-switch:active .tgt-thumb { transform: scale(0.96); }
+.tgt-switch .tgt-lbl { font-size: 13px; font-weight: 600; color: var(--muted, #5a6560); }
+.tgt-switch .tgt-track { position: relative; display: grid; grid-template-columns: 1fr 1fr; width: 88px; height: 26px; border-radius: 999px; background: rgba(22, 32, 28, 0.08); }
+.tgt-switch .tgt-thumb { position: absolute; top: 2px; left: 2px; width: calc(50% - 2px); height: 22px; border-radius: 999px; background: var(--ink, #16201c);
+  box-shadow: 0 1px 2px rgba(22, 32, 28, 0.3); transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+.tgt-switch.is-m1 .tgt-thumb { transform: translateX(100%); }
+.tgt-switch .tgt-opt { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; color: var(--muted, #5a6560); transition: color 0.22s; }
+.tgt-switch:not(.is-m1) .tgt-opt:nth-child(2), .tgt-switch.is-m1 .tgt-opt:nth-child(3) { color: #fff; }
+@media (pointer: coarse) { .tgt-switch { min-height: 44px; } .tgt-switch .tgt-track { height: 32px; width: 96px; } .tgt-switch .tgt-thumb { height: 28px; } }
+@media (prefers-reduced-motion: reduce) { .tgt-switch .tgt-thumb, .tgt-switch .tgt-opt { transition: none; } }
+</style>
 <style id="redesign-wow">
 .wow-bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px; }
 .wow-btn {
@@ -3057,11 +3076,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             <div class="section-head">
               <h2>เปรียบเทียบ COM</h2>
               <button
-                class="pill small"
+                class="tgt-switch"
                 id="comTargetModeBtn"
                 type="button"
+                role="switch"
+                aria-checked="false"
+                aria-label="Target ฐาน M1"
                 title="สลับ Target/%Achieve ระหว่างฐาน GA กับฐาน M1 (%MOM/pace/forecast อิง GA เสมอ)"
-              ></button>
+              ><span class="tgt-lbl">Target</span><span class="tgt-track" aria-hidden="true"><span class="tgt-thumb"></span><span class="tgt-opt">GA</span><span class="tgt-opt">M1</span></span></button>
               <span class="hint" id="comLeaderboardHint"></span>
             </div>
             <div class="card">
@@ -3500,11 +3522,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             <div class="section-head">
               <h2>เปรียบเทียบ CM</h2>
               <button
-                class="pill small"
+                class="tgt-switch"
                 id="sevCmTargetModeBtn"
                 type="button"
+                role="switch"
+                aria-checked="false"
+                aria-label="Target ฐาน M1"
                 title="สลับ Target/%Achieve/%MOM ระหว่างฐาน GA กับฐาน M1"
-              ></button>
+              ><span class="tgt-lbl">Target</span><span class="tgt-track" aria-hidden="true"><span class="tgt-thumb"></span><span class="tgt-opt">GA</span><span class="tgt-opt">M1</span></span></button>
               <span class="hint" id="sevCmLeaderboardHint"></span>
             </div>
             <div class="card">
@@ -8015,11 +8040,16 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             state.rtr.comLbTargetMode === "m1" ? "ga" : "m1";
           renderComLeaderboard();
         });
+        // Target GA/M1 switch: the thumb slides to the active side; aria-checked = "M1 base is on"
+        function setTargetSwitch(btn, mode) {
+          var on = mode === "m1";
+          btn.setAttribute("aria-checked", on ? "true" : "false");
+          btn.classList.toggle("is-m1", on);
+        }
         function renderComLeaderboard() {
           var wrap = $("comLeaderboardWrap");
           var targetMode = state.rtr.comLbTargetMode;
-          $("comTargetModeBtn").textContent =
-            "Target: " + (targetMode === "m1" ? "M1" : "GA");
+          setTargetSwitch($("comTargetModeBtn"), targetMode);
           var m = rtrCurrentMonth();
           var byCom = {};
           m.stores.forEach(function (s) {
@@ -12679,8 +12709,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         function renderSevCmLeaderboard() {
           var section = $("sevCmLeaderboardSection");
           var wrap = $("sevCmLeaderboardWrap");
-          $("sevCmTargetModeBtn").textContent =
-            "Target: " + (state.sev.cmLbTargetMode === "m1" ? "M1" : "GA");
+          setTargetSwitch($("sevCmTargetModeBtn"), state.sev.cmLbTargetMode);
           // BUGFIX: this used to read sevFilteredStores("cm") (ignoring only the CM filter), so
           // picking an AE narrowed the input down to that AE's own CM -- exactly one CM -- which
           // tripped the "<=1 CM, nothing to compare" branch below and made the whole section

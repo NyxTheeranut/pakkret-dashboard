@@ -2311,10 +2311,14 @@ def process_sev_files(paths):
                 if monitor_store_file_name is None and len(monitor_store_targets) > before:
                     monitor_store_file_name = sh["fileName"]
             elif looks_like_sev_le_cm_target_sheet(sh["rows2D"]):
-                before = len(le_cm_to_target)
-                aggregate_sev_le_cm_target_rows(sh["rows2D"], le_cm_to_target, le_cm_target_stats)
-                if le_cm_target_file_name is None and len(le_cm_to_target) > before:
-                    le_cm_target_file_name = sh["fileName"]
+                # One "LE by store" file per month (Sep AND Oct both sit in Source Data) -- each file's
+                # targets belong to ITS OWN month (from the filename), never pooled into one dict, or
+                # the later file silently overwrites the earlier month's CMs with the wrong month's TG.
+                file_targets = {}
+                aggregate_sev_le_cm_target_rows(sh["rows2D"], file_targets, le_cm_target_stats)
+                file_mk = parse_month_from_filename(sh["fileName"])
+                if file_targets and file_mk:
+                    le_cm_to_target.setdefault(file_mk, {}).update(file_targets)
             elif looks_like_sev_le_by_store_sheet(sh["rows2D"]):
                 # This file's month (e.g. "Sep 2026") comes from its own filename, same
                 # convention as target_file_name/monitor_store_file_name -- converted to
@@ -2476,9 +2480,7 @@ def process_sev_files(paths):
         (cm_target_file_name and parse_month_from_filename(cm_target_file_name))
         or target_month_key
     )
-    le_cm_target_month_key = (
-        le_cm_target_file_name and parse_month_from_filename(le_cm_target_file_name)
-    )
+    le_cm_target_month_key = max(le_cm_to_target) if le_cm_to_target else None  # newest, for the log line
     # No month of its own in the sheet (unlike cm_to_target/le_cm_to_target's source files,
     # which carry an explicit "TG <month>" column) -- same fallback as target_month_key.
     cm_ga_summary_month_key = (
@@ -2493,18 +2495,23 @@ def process_sev_files(paths):
     cm_target_by_month = {}
     if cm_to_target and cm_target_month_key:
         cm_target_by_month.setdefault(cm_target_month_key, {}).update(cm_to_target)
-    if le_cm_to_target and le_cm_target_month_key:
-        cm_target_by_month.setdefault(le_cm_target_month_key, {}).update(le_cm_to_target)
+    for le_mk, le_targets in le_cm_to_target.items():
+        cm_target_by_month.setdefault(le_mk, {}).update(le_targets)
     # Lowest precedence, gap-fill only -- never overwrites a CM cm_to_target/le_cm_to_target
     # already gave a target for that same month, only adds one for a CM neither of those
     # authoritative sources has yet (see cm_ga_summary_to_target's own comment above).
     filled_cms = []
+    m1_filled_cms = []
     if cm_ga_summary_to_target and cm_ga_summary_month_key:
         month_targets = cm_target_by_month.setdefault(cm_ga_summary_month_key, {})
         for cm, v in cm_ga_summary_to_target.items():
             if cm not in month_targets:
                 month_targets[cm] = v
                 filled_cms.append(cm)
+            elif not month_targets[cm].get("m1") and v.get("m1"):
+                # the authoritative GA target sources above carry no M1 target -- this sheet's M1 block does
+                month_targets[cm]["m1"] = v["m1"]
+                m1_filled_cms.append(cm)
 
     print(f"  {stats['totalRows']} rows scanned, {stats['clusterRows']} in cluster, "
           f"{len(stores)} stores mapped ({unmapped_count} unmapped / GA {unmapped_ga:.0f} dropped)")
@@ -2517,7 +2524,8 @@ def process_sev_files(paths):
     if cm_ga_summary_to_target:
         print(f"  CM GA summary sheet: {cm_ga_summary_stats['rows']} CM(s) read "
               f"(month: {cm_ga_summary_month_key}); filled in a missing target for: "
-              f"{sorted(filled_cms) if filled_cms else '(none -- already covered)'}")
+              f"{sorted(filled_cms) if filled_cms else '(none -- already covered)'}; "
+              f"M1 target added for: {sorted(m1_filled_cms) if m1_filled_cms else '(none)'}")
     print(f"  months available: {months_available}")
     for mk in months_available:
         total_ga = sum(s["byMonth"][mk]["ga"] for s in stores if mk in s["byMonth"])
