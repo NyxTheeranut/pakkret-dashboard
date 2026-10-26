@@ -478,8 +478,20 @@ def parse_kpi_setup_targets(rows2d, name_col="cm"):
                 continue
             is_total_row = any(v is not None and str(v).strip().lower() == "total" for v in row)
             if is_total_row:
-                if all_rtr_idx == -1 or not (num(get(row, all_rtr_idx)) > 0):
-                    trustworthy = False
+                if all_rtr_idx != -1:
+                    # "KPI Set Up": its own "All RTR" cell must hold a real number.
+                    if not (num(get(row, all_rtr_idx)) > 0):
+                        trustworthy = False
+                else:
+                    # "Performance CM&PBH" / "Performance COM" have no "All RTR" column. Once their totals row
+                    # got the literal label "Total" (Oct'26), treating that as a failed check threw away every
+                    # target for the month. Cross-check against the totals row's own Total GA figure instead:
+                    # the targets read above must add up to it (within 2%). No figure to compare -> accept.
+                    stated = num(get(row, total_ga_idx))
+                    if stated > 0:
+                        got = sum(t["total"] for t in targets.values())
+                        if abs(got - stated) > 0.02 * stated:
+                            trustworthy = False
                 break
             cm_name = str(get(row, cm_idx) or "").strip()
             if not cm_name:
