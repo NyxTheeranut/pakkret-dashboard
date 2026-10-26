@@ -9124,61 +9124,61 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             return;
           }
 
-          // The two AP30D/AP1D conversion-risk cards below deliberately do NOT follow the
-          // Mass/Migrant/Tourist trend-chart toggles (unlike "ยังไม่มียอดขายเลย" further
-          // down, which does via rtrStoreSegGA) -- AP1D/AP30D were never tracked per segment
-          // anywhere in the source data, so narrowing their GA denominator to a segment
-          // would inflate/deflate "conversion%" into a number that isn't real, which is
-          // worse than just showing the honest whole-store figure.
-          var withConv = stores.map(function (s) {
-            return { s: s, conv: s.ga > 0 ? s.ap30d / s.ga : 0 };
+          // The two AP30D/AP1D conversion-risk cards below judge each store on Mass + Migrant SIMs only (same
+          // basis as the Activation cards: Tourist activates ~100% and would hide a weak store), and leave
+          // out ซิมอันลิมิต. They ignore the Mass/Migrant/Tourist trend toggles. A Sheet published before the
+          // Mass+Migrant split existed falls back to all SIMs. Stores with no GA in that scope are not
+          // ranked: counting them as 0% conversion dragged the median down and hid weak stores.
+          var riskHasMM = stores.some(function (s) {
+            return s.ap1dMM != null;
           });
-          var gaSorted = withConv.slice().sort(function (a, b) {
-            return b.s.ga - a.s.ga;
-          });
-          var topTertileCut = gaSorted[Math.floor(gaSorted.length / 3)]
-            ? gaSorted[Math.floor(gaSorted.length / 3)].s.ga
-            : 0;
-          var convSorted = withConv.slice().sort(function (a, b) {
-            return a.conv - b.conv;
-          });
-          var medianConv = convSorted[Math.floor(convSorted.length / 2)]
-            ? convSorted[Math.floor(convSorted.length / 2)].conv
-            : 0;
-          var riskStoresAll = withConv
-            .filter(function (x) {
-              return (
-                x.s.ga >= topTertileCut && x.conv < medianConv && x.s.ga > 0
-              );
+          function riskScope(s) {
+            return riskHasMM
+              ? { ga: (s.mass || 0) + (s.migrant || 0), ap1d: s.ap1dMM || 0, ap30d: s.ap30dMM || 0 }
+              : { ga: s.ga, ap1d: s.ap1d, ap30d: s.ap30d };
+          }
+          var riskBase = stores
+            .filter(function (s) {
+              return !isActivationExcluded(s) && riskScope(s).ga > 0;
+            })
+            .map(function (s) {
+              var v = riskScope(s);
+              return { s: s, v: v, conv30: v.ap30d / v.ga, conv1: v.ap1d / v.ga };
+            });
+          var topTertileCut = riskBase
+            .map(function (x) {
+              return x.v.ga;
             })
             .sort(function (a, b) {
-              return a.conv - b.conv;
-            });
+              return b - a;
+            })[Math.floor(riskBase.length / 3)] || 0;
+          function riskMedian(key) {
+            var c = riskBase
+              .map(function (x) {
+                return x[key];
+              })
+              .sort(function (a, b) {
+                return a - b;
+              });
+            return c.length ? c[Math.floor(c.length / 2)] : 0;
+          }
+          function riskList(key, med) {
+            return riskBase
+              .filter(function (x) {
+                return x.v.ga >= topTertileCut && x[key] < med;
+              })
+              .map(function (x) {
+                return { s: x.s, v: x.v, conv: x[key] };
+              })
+              .sort(function (a, b) {
+                return a.conv - b.conv;
+              });
+          }
+          var medianConv = riskMedian("conv30");
+          var riskStoresAll = riskList("conv30", medianConv);
           var riskStores = riskStoresAll.slice(0, 10);
-
-          // Same "high volume, weak conversion" shape as riskStores above, but against AP1D
-          // instead of AP30D -- a store can convert fine over 30 days while still hiding a
-          // same-day (AP1D) problem, so this is a genuinely different risk, not a duplicate view.
-          var withConvAp1d = stores.map(function (s) {
-            return { s: s, conv: s.ga > 0 ? s.ap1d / s.ga : 0 };
-          });
-          var convAp1dSorted = withConvAp1d.slice().sort(function (a, b) {
-            return a.conv - b.conv;
-          });
-          var medianConvAp1d = convAp1dSorted[
-            Math.floor(convAp1dSorted.length / 2)
-          ]
-            ? convAp1dSorted[Math.floor(convAp1dSorted.length / 2)].conv
-            : 0;
-          var riskStoresAp1dAll = withConvAp1d
-            .filter(function (x) {
-              return (
-                x.s.ga >= topTertileCut && x.conv < medianConvAp1d && x.s.ga > 0
-              );
-            })
-            .sort(function (a, b) {
-              return a.conv - b.conv;
-            });
+          var medianConvAp1d = riskMedian("conv1");
+          var riskStoresAp1dAll = riskList("conv1", medianConvAp1d);
           var riskStoresAp1d = riskStoresAp1dAll.slice(0, 10);
 
           // Stores with literally no GA this period -- the RTR-side equivalent of the 7-11
@@ -9306,18 +9306,19 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // fixed-width .col-num/.col-pct columns as the 7-11 insight cards (see
           // renderSevInsights), plus room for one card-specific trailing detail (e.g. the
           // stock card's pack count) instead of dropping that context entirely.
-          function gaApRow(s, conv, extraHtml) {
+          function gaApRow(s, conv, extraHtml, v) {
+            v = v || s;
             return (
               '<span class="n">' +
               esc(s.name) +
               '</span><span class="v"><span class="col-num">GA ' +
-              fmt(s.ga) +
+              fmt(v.ga) +
               '</span> · <span class="col-num">AP1D ' +
-              fmt(s.ap1d) +
+              fmt(v.ap1d) +
               '</span> · <span class="col-num">AP30D ' +
-              fmt(s.ap30d) +
+              fmt(v.ap30d) +
               '</span> · <span class="col-pct">' +
-              (s.ga > 0 ? pct(conv) : "—") +
+              (v.ga > 0 ? pct(conv) : "—") +
               "</span>" +
               (extraHtml ? " · " + extraHtml : "") +
               "</span>"
@@ -9337,10 +9338,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               x.s.name,
               x.s.code,
               x.s.com || "",
-              fmt(x.s.ga),
-              fmt(x.s.ap1d),
-              fmt(x.s.ap30d),
-              x.s.ga > 0 ? pct(x.conv) : "—",
+              fmt(x.v.ga),
+              fmt(x.v.ap1d),
+              fmt(x.v.ap30d),
+              x.v.ga > 0 ? pct(x.conv) : "—",
             ];
           }
           var BAD_MOM_EXPORT_COLS = [
@@ -9403,12 +9404,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           html += cardHtml(
             "tag-risk",
             "ความเสี่ยงคุณภาพ",
-            "ยอดขายเยอะ แต่ AP30D conversion ต่ำ (ค่ามัธยฐาน " +
+            "ยอดขายเยอะ แต่ AP30D conversion ต่ำ (" +
+              (riskHasMM ? "Mass+Migrant · " : "") +
+              "ค่ามัธยฐาน " +
               pct(medianConv) +
               ")",
             riskStores,
             function (x) {
-              return gaApRow(x.s, x.conv, comCol(x.s.com));
+              return gaApRow(x.s, x.conv, comCol(x.s.com), x.v);
             },
             RISK_EXPORT_COLS,
             riskStoresAll.map(riskExportRow),
@@ -9417,12 +9420,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           html += cardHtml(
             "tag-risk",
             "ความเสี่ยงคุณภาพ",
-            "ยอดขายเยอะ แต่ AP1D conversion ต่ำ (ค่ามัธยฐาน " +
+            "ยอดขายเยอะ แต่ AP1D conversion ต่ำ (" +
+              (riskHasMM ? "Mass+Migrant · " : "") +
+              "ค่ามัธยฐาน " +
               pct(medianConvAp1d) +
               ")",
             riskStoresAp1d,
             function (x) {
-              return gaApRow(x.s, x.conv, comCol(x.s.com));
+              return gaApRow(x.s, x.conv, comCol(x.s.com), x.v);
             },
             RISK_EXPORT_COLS,
             riskStoresAp1dAll.map(riskExportRow),
