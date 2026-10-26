@@ -935,6 +935,7 @@ def aggregate_rtr_sheet(rows2d, code_to_canonical, canonical_to_cm, canonical_to
                 "mallType": canonical_to_mall_type.get(canonical_code, ""),
                 "ga": 0, "ap1d": 0, "ap1dAmt": 0, "ap30d": 0, "revAmt": 0,
                 "mass": 0, "migrant": 0, "tourist": 0,
+                "ap1dMM": 0, "ap30dMM": 0,  # AP1D / AP30D of Mass+Migrant rows only (Activation cards)
                 "tiers": [0] * 8, "simTypes": {}, "daily": {},
                 "target": 0, "m1": 0,
                 "hasStock": stock_rec is not None,
@@ -964,6 +965,9 @@ def aggregate_rtr_sheet(rows2d, code_to_canonical, canonical_to_cm, canonical_to
         s["ap1dAmt"] += ap1d_amt
         s["ap30d"] += ap30d
         s["revAmt"] += rev_amt
+        if seg in ("MASS", "MIGRANT"):
+            s["ap1dMM"] += ap1d
+            s["ap30dMM"] += ap30d
         if seg == "MASS":
             s["mass"] += ga
         elif seg == "MIGRANT":
@@ -1135,6 +1139,7 @@ def build_rtr_month_tables(m):
             s["tStock"], s["dStock"], s["stock"], s["coverMth"],
             s.get("com", ""),
             s.get("revGa", s["ga"]),  # GA whose revenue has been reported -- see revenue_maturity
+            s.get("ap1dMM", 0), s.get("ap30dMM", 0),
         ])
         for day in sorted(s["daily"].keys(), key=str):
             d = s["daily"][day]
@@ -1161,7 +1166,7 @@ def build_rtr_month_tables(m):
             "headers": ["code", "name", "cm", "district", "mallType", "ga", "ap1d", "ap1dAmt",
                         "ap30d", "revAmt", "mass", "migrant", "tourist", "target", "m1"]
                        + ["tier_" + l for l in TIER_LABELS]
-                       + ["hasStock", "tStock", "dStock", "stock", "coverMth", "com", "revGa"],
+                       + ["hasStock", "tStock", "dStock", "stock", "coverMth", "com", "revGa", "ap1dMM", "ap30dMM"],
             "rows": stores_rows,
         },
         "daily": {

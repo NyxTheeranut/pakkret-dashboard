@@ -2751,10 +2751,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 .wow-menu button:hover, .wow-menu button:focus-visible { background: var(--accent-soft, #e2f1ee); }
 .wow-menu .sub { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--muted, #5a6560); }
 @media (pointer: coarse) { .wow-btn, .wow-menu button { min-height: 44px; } }
-.insight-list li.wow-head { padding-top: 0; padding-bottom: 4px; border-top: none; pointer-events: none; font-size: 12px; font-weight: 600; color: var(--muted, #5a6560); }
-.insight-list li.wow-head .v { font-family: inherit; }
-.wow-card .insight-list .v .col-ae { width: 92px; max-width: 92px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
-@media (max-width: 720px) { .insight-list li.wow-head { display: none; } }
 .kpi-card .sub .nowrap { white-space: nowrap; }
 .kpi-card .kpi-grey {
   margin-left: 8px; font-family: inherit; font-size: 13px; font-weight: 500; letter-spacing: 0; line-height: 1;
@@ -6191,6 +6187,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 mass: 0,
                 migrant: 0,
                 tourist: 0,
+                ap1dMM: 0,
+                ap30dMM: 0,
                 tiers: [0, 0, 0, 0, 0, 0, 0, 0],
                 simTypes: {},
                 daily: {},
@@ -6219,6 +6217,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             s.ap1dAmt += ap1dAmt;
             s.ap30d += ap30d;
             s.revAmt += revAmt;
+            if (seg === "MASS" || seg === "MIGRANT") {
+              s.ap1dMM += ap1d;
+              s.ap30dMM += ap30d;
+            }
             if (seg === "MASS") s.mass += ga;
             else if (seg === "MIGRANT") s.migrant += ga;
             else if (seg === "TOURIST") s.tourist += ga;
@@ -7339,20 +7341,39 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         function renderRtrKpis() {
           var scope = rtrCurrentScope();
           var t = scope.totals;
-          // what the excluded shops contribute inside the CURRENT filters (CM / COM / district / mall type)
-          var actEx = { ga: 0, ap1d: 0, ap30d: 0 };
+          // Activation = AP / GA of Mass + Migrant SIMs only (Tourist is left out). The excluded shops
+          // (ซิมอันลิมิต) come out of the main figure; the same figure with them is the small grey one.
+          // Sums over the stores inside the CURRENT filters (CM / COM / district / mall type).
+          var act = { ga: 0, ap1d: 0, ap30d: 0, exGa: 0, exAp1d: 0, exAp30d: 0, ok: false };
           rtrCurrentStores().forEach(function (s) {
-            if (!isActivationExcluded(s)) return;
-            actEx.ga += s.ga || 0;
-            actEx.ap1d += s.ap1d || 0;
-            actEx.ap30d += s.ap30d || 0;
+            if (s.ap1dMM != null) act.ok = true; // any store carrying the split = published after the update
+            var g = (s.mass || 0) + (s.migrant || 0);
+            act.ga += g;
+            act.ap1d += s.ap1dMM || 0;
+            act.ap30d += s.ap30dMM || 0;
+            if (isActivationExcluded(s)) {
+              act.exGa += g;
+              act.exAp1d += s.ap1dMM || 0;
+              act.exAp30d += s.ap30dMM || 0;
+            }
           });
           function activationCard(label, key) {
-            var full = t.ga > 0 ? t[key] / t.ga : 0;
-            var gaX = t.ga - actEx.ga;
-            if (!(actEx.ga > 0) || !(gaX > 0))
-              return { label: label, value: pct(full), sub: fmt(t[key]) + " จาก " + fmt(t.ga) + " ซิม" };
-            var apX = t[key] - actEx[key];
+            var ex = key === "ap1d" ? act.exAp1d : act.exAp30d;
+            var ap = act[key];
+            if (!act.ok)
+              // Sheet published before the Mass+Migrant split existed: show all SIMs until the next update
+              return {
+                label: label,
+                value: pct(t.ga > 0 ? t[key] / t.ga : 0),
+                sub: fmt(t[key]) + " จาก " + fmt(t.ga) + " ซิม",
+                subNote: "รันอัปเดตเพื่อแสดงเฉพาะ Mass+Migrant",
+              };
+            var note = "Mass + Migrant";
+            var full = act.ga > 0 ? ap / act.ga : 0;
+            var gaX = act.ga - act.exGa;
+            if (!(act.exGa > 0) || !(gaX > 0))
+              return { label: label, value: pct(full), sub: fmt(ap) + " จาก " + fmt(act.ga) + " ซิม", subNote: note };
+            var apX = ap - ex;
             return {
               label: label,
               value:
@@ -7361,7 +7382,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 pct(full) +
                 "</span>",
               sub: fmt(apX) + " จาก " + fmt(gaX) + " ซิม",
-              subNote: "ไม่รวมซิมอันลิมิต (GA " + fmt(actEx.ga) + ")",
+              subNote: [note, "ไม่รวมซิมอันลิมิต (GA " + fmt(act.exGa) + ")"],
             };
           }
           var cards = [
@@ -7400,7 +7421,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 c.value +
                 '</div><div class="sub">' +
                 esc(c.sub) +
-                (c.subNote ? '<br><span class="nowrap">' + esc(c.subNote) + "</span>" : "") +
+                (c.subNote
+                  ? [].concat(c.subNote)
+                      .map(function (n) {
+                        return '<br><span class="nowrap">' + esc(n) + "</span>";
+                      })
+                      .join("")
+                  : "") +
                 "</div></div>"
               );
             })
@@ -9213,12 +9240,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 cols: exportCols,
                 rows: exportRows,
               });
-              exportBtn =
-                '<button class="insight-export-btn" data-rtr-export-idx="' +
-                idx +
-                '" title="Export รายชื่อร้านทั้งหมด (' +
-                exportRows.length +
-                ' ร้าน) เป็นรูปภาพ">📤</button>';
+              exportBtn = exportMenuHtml("rtr:" + idx, exportRows.length);
             }
             return (
               '<div class="insight-card"><div class="insight-card-head"><span class="tag ' +
@@ -9418,24 +9440,16 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           );
           grid.innerHTML = html;
 
-          Array.prototype.forEach.call(
-            grid.querySelectorAll("[data-rtr-export-idx]"),
-            function (btn) {
-              btn.addEventListener("click", function () {
-                var entry =
-                  rtrExportRegistry[
-                    Number(btn.getAttribute("data-rtr-export-idx"))
-                  ];
-                if (!entry) return;
-                rtrExportCardPng(
-                  entry.title,
-                  entry.cols,
-                  entry.rows,
-                  entry.key,
-                );
-              });
-            },
-          );
+          wireExportMenus(grid, function (token, scope) {
+            var entry = rtrExportRegistry[Number(token.split(":")[1])];
+            if (!entry) return;
+            rtrExportCardPng(
+              entry.title + " · " + exportScopeLabel(entry.rows, scope),
+              entry.cols,
+              exportScopeRows(entry.rows, scope),
+              entry.key + "-" + scope,
+            );
+          });
 
           Array.prototype.forEach.call(
             grid.querySelectorAll(".insight-list li.clickable"),
@@ -13363,12 +13377,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 // ลดลง's rows are revenue-shaped, not GA-shaped like every other card here.
                 kind: kind || "ga",
               });
-              exportBtn =
-                '<button class="insight-export-btn" data-export-idx="' +
-                idx +
-                '" title="Export รายชื่อร้านทั้งหมด (' +
-                exportItems.length +
-                ' ร้าน) เป็นรูปภาพ">📤</button>';
+              exportBtn = exportMenuHtml("sev:" + idx, exportItems.length);
             }
             return (
               '<div class="insight-card"><div class="insight-card-head"><span class="insight-card-head-left"><span class="tag ' +
@@ -13685,9 +13694,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                     '" aria-pressed="' +
                     (pp === pair ? "true" : "false") +
                     '">W' +
-                    pp +
-                    " : W" +
                     (pp + 1) +
+                    " : W" +
+                    pp +
                     "</button>"
                   );
                 })
@@ -13708,17 +13717,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 : "";
               var body = shown.length
                 ? '<ul class="insight-list">' +
-                  '<li class="wow-head" aria-hidden="true"><span class="n">ร้าน</span><span class="v"><span class="col-num">W' +
-                  b +
-                  '</span> · <span class="col-num">W' +
-                  a +
-                  '</span> · <span class="col-pct">%WoW</span> · <span class="col-ae">COM</span></span></li>' +
                   shown
                     .map(function (x) {
                       return clickableRow(
                         x.s.code,
                         '<span class="n">' + esc(x.s.name) + "</span>",
-                        '<span class="v"><span class="col-num">W' +
+                        '<span class="v"><span class="col-num">GA W' +
                           b +
                           " " +
                           fmt(x.ga1) +
@@ -13826,22 +13830,16 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             });
           }
 
-          Array.prototype.forEach.call(
-            $("sevInsightsGrid").querySelectorAll("[data-export-idx]"),
-            function (btn) {
-              btn.addEventListener("click", function () {
-                var entry =
-                  exportRegistry[Number(btn.getAttribute("data-export-idx"))];
-                if (!entry) return;
-                sevExportCardPng(
-                  entry.title,
-                  entry.items,
-                  entry.key,
-                  entry.kind,
-                );
-              });
-            },
-          );
+          wireExportMenus($("sevInsightsGrid"), function (token, scope) {
+            var entry = exportRegistry[Number(token.split(":")[1])];
+            if (!entry) return;
+            sevExportCardPng(
+              entry.title + " · " + exportScopeLabel(entry.items, scope),
+              exportScopeRows(entry.items, scope),
+              entry.key + "-" + scope,
+              entry.kind,
+            );
+          });
 
           // Snapshot of exactly what was just rendered (same slice(0,10) per card), so the export
           // button paints the identical rows without re-deriving topGA/zeroGA/revDeclining/declining --
@@ -15542,6 +15540,77 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // renderRtrInsights' cardHtml calls). cols/rows are already built by the caller
         // (each card has different fields -- conversion% doesn't apply to the stock card,
         // stock doesn't apply to the others), so this only measures and paints them.
+        // Export menu shared by every insight card: ทั้งหมด / Top 10 / Bottom 10 of the card's own list.
+        function exportMenuHtml(token, count) {
+          return (
+            '<span class="wow-export-wrap"><button type="button" class="insight-export-btn" data-xm="' +
+            token +
+            '" aria-haspopup="menu" aria-expanded="false" title="Export เป็นรูปภาพ">📤</button>' +
+            '<div class="wow-menu" role="menu" hidden>' +
+            '<button type="button" role="menuitem" data-xm-scope="all">ทั้งหมด<span class="sub">' +
+            count +
+            " ร้าน</span></button>" +
+            '<button type="button" role="menuitem" data-xm-scope="top">Top 10<span class="sub">10 อันดับแรกของลิสต์</span></button>' +
+            '<button type="button" role="menuitem" data-xm-scope="bottom">Bottom 10<span class="sub">10 อันดับท้ายสุดของลิสต์</span></button>' +
+            "</div></span>"
+          );
+        }
+        // run(token, scope, scopeLabel) paints the PNG for the card the button belongs to
+        function wireExportMenus(root, run) {
+          var closeAll = function (except) {
+            Array.prototype.forEach.call(document.querySelectorAll(".wow-menu"), function (m) {
+              if (m === except) return;
+              m.hidden = true;
+              var tb = m.parentNode.querySelector("[data-xm],[data-wow-export]");
+              if (tb) tb.setAttribute("aria-expanded", "false");
+            });
+          };
+          Array.prototype.forEach.call(root.querySelectorAll("[data-xm]"), function (btn) {
+            var menu = btn.parentNode.querySelector(".wow-menu");
+            btn.addEventListener("click", function (e) {
+              e.stopPropagation();
+              var open = menu.hidden;
+              closeAll(menu);
+              menu.hidden = !open;
+              btn.setAttribute("aria-expanded", open ? "true" : "false");
+              if (open) menu.querySelector("button").focus();
+            });
+            Array.prototype.forEach.call(menu.querySelectorAll("[data-xm-scope]"), function (it) {
+              it.addEventListener("click", function (e) {
+                e.stopPropagation();
+                menu.hidden = true;
+                btn.setAttribute("aria-expanded", "false");
+                run(btn.getAttribute("data-xm"), it.getAttribute("data-xm-scope"));
+                btn.focus();
+              });
+            });
+          });
+          if (!window.__xmDocWired) {
+            window.__xmDocWired = true;
+            document.addEventListener("click", function () {
+              closeAll(null);
+            });
+            document.addEventListener("keydown", function (e) {
+              if (e.key !== "Escape") return;
+              Array.prototype.forEach.call(document.querySelectorAll(".wow-menu"), function (m) {
+                if (m.hidden) return;
+                m.hidden = true;
+                var tb = m.parentNode.querySelector("[data-xm],[data-wow-export]");
+                if (tb) {
+                  tb.setAttribute("aria-expanded", "false");
+                  tb.focus();
+                }
+              });
+            });
+          }
+        }
+        function exportScopeRows(list, scope) {
+          return scope === "top" ? list.slice(0, 10) : scope === "bottom" ? list.slice(-10) : list;
+        }
+        function exportScopeLabel(list, scope) {
+          return scope === "all" ? "ทั้งหมด " + list.length + " ร้าน" : scope === "top" ? "Top 10" : "Bottom 10";
+        }
+
         function rtrExportCardPng(title, cols, rows, key, filePrefix) {
           var probe = document.createElement("canvas").getContext("2d");
           var padX = 12;
@@ -17715,6 +17784,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 com: r[28] || "",
                 // r[29] newer still -- GA that already carries revenue. Absent = assume all.
                 revGa: r.length > 29 && r[29] !== "" ? Number(r[29]) || 0 : Number(r[5]) || 0,
+                // r[30..31] newest -- AP1D / AP30D of Mass+Migrant rows only. Absent (older Sheet) = null.
+                ap1dMM: r.length > 30 && r[30] !== "" ? Number(r[30]) || 0 : null,
+                ap30dMM: r.length > 31 && r[31] !== "" ? Number(r[31]) || 0 : null,
                 simTypes: {},
                 daily: {},
               };
