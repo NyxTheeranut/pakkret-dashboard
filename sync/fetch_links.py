@@ -25,8 +25,10 @@ What it does:
 
 If anything does not arrive (not signed in, offline, downloads blocked) it says so and carries on with what is
 already in Source Data. Usage:
-    python3 sync/fetch_links.py        # fetch, then file them
-    python3 sync/fetch_links.py --dry-run # only list which files it would fetch
+    python3 sync/fetch_links.py            # fetch, then file them. A file already in Downloads from the last
+                                           # 10 minutes (config: fetch.fresh_minutes) is not downloaded again
+    python3 sync/fetch_links.py --force    # always download again
+    python3 sync/fetch_links.py --dry-run  # only list which files it would fetch
 Test options: --root, --watch (repeatable), --downloads <dir>, --opener <command> (replaces the browser).
 """
 import argparse
@@ -38,6 +40,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 from urllib.parse import unquote, urlparse, urlunparse
 
@@ -311,6 +314,27 @@ def close_tabs(browser, tabs):
     return ok
 
 
+def fresh_in_downloads(folder, name, minutes):
+    """A valid copy of `name` already in Downloads that was saved within the last `minutes` minutes ->
+    (path, age in minutes), else None. Browser "(1)" copies count as the same file; the newest wins."""
+    key = intake.norm_name(name).casefold()
+    best = None
+    now = time.time()
+    for p in folder.glob("*"):
+        if not p.is_file() or p.name.lower().endswith(PARTIAL) or intake.norm_name(p.name).casefold() != key:
+            continue
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        age = (now - st.st_mtime) / 60.0
+        if st.st_size > 0 and 0 <= age <= minutes and (best is None or age < best[1]):
+            best = (p, age)
+    if best and zipfile.is_zipfile(best[0]):
+        return best
+    return None
+
+
 def downloads_snapshot(folder):
     return {p: p.stat().st_mtime for p in folder.glob("*") if p.is_file()}
 
@@ -350,6 +374,7 @@ def main(argv=None):
     ap.add_argument("--watch", action="append", default=[])
     ap.add_argument("--downloads", default=str(Path.home() / "Downloads"))
     ap.add_argument("--opener", default=None, help="test hook: command used instead of the browser")
+    ap.add_argument("--force", action="store_true", help="download again even if a fresh copy is already in Downloads")
     args = ap.parse_args(argv)
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -358,7 +383,7 @@ def main(argv=None):
 
     root = Path(args.root).resolve()
     cfg = intake.load_config(root, args.dry_run)
-    fcfg = {"enabled": True, "timeout": 90, "stagger": 2.5, **cfg.get("fetch", {})}
+    fcfg = {"enabled": True, "timeout": 90, "stagger": 2.5, "fresh_minutes": 10, **cfg.get("fetch", {})}
     watch = [{"path": w, "depth": 2} for w in args.watch] if args.watch else cfg["watch"]
     dl_dir = Path(args.downloads)
     passthrough = (["--dry-run"] if args.dry_run else []) + ["--quiet-links", "--root", str(root)] + [x for w in args.watch for x in ("--watch", w)]
@@ -375,11 +400,20 @@ def main(argv=None):
         say("  no link shortcuts found, checking the folders for files instead")
         intake.main(passthrough)
         return
+    # Files already sitting in Downloads from the last few minutes (e.g. you downloaded them by hand just now)
+    # are not downloaded again: the file check below picks them up from there.
+    fresh_min = float(fcfg["fresh_minutes"])
+    to_fetch = []
     for it in items:
-        say(f"  · {it['name']}")
+        hit = None if (args.force or fresh_min <= 0 or not dl_dir.is_dir()) else fresh_in_downloads(dl_dir, it["name"], fresh_min)
+        if hit:
+            say(f"  · {it['name']}  (already in Downloads, saved {hit[1]:.0f} min ago: not downloading again)")
+        else:
+            say(f"  · {it['name']}")
+            to_fetch.append(it)
 
     manifest = None
-    if not args.dry_run:
+    if not args.dry_run and to_fetch:
         before = downloads_snapshot(dl_dir) if dl_dir.is_dir() else {}
         browser = None if args.opener else default_browser()
         tabs_before = list_tabs(browser) if browser else None
@@ -387,15 +421,15 @@ def main(argv=None):
             say(f"  (cannot read {browser[0]}'s tabs, so they will be left open. To allow closing them: System Settings > Privacy & Security > Automation, allow Terminal to control {browser[0]})")
             browser = None
         opened = 0
-        for i, it in enumerate(items):
+        for i, it in enumerate(to_fetch):
             link = download_link(it["url"])
             if link and open_in_browser(link, args.opener, browser):
                 opened += 1
-            if i < len(items) - 1:
+            if i < len(to_fetch) - 1:
                 time.sleep(float(fcfg["stagger"]))
         say(f"  asked the browser to download {opened} file(s); waiting for them…")
-        arrived, missing = wait_for(dl_dir, before, [it["name"] for it in items], float(fcfg["timeout"]))
-        say(f"  received {len({intake.norm_name(p.name).casefold() for p in arrived})} of {len(items)} file(s)")
+        arrived, missing = wait_for(dl_dir, before, [it["name"] for it in to_fetch], float(fcfg["timeout"]))
+        say(f"  received {len({intake.norm_name(p.name).casefold() for p in arrived})} of {len(to_fetch)} file(s)")
         if missing:
             say("  ! not received: " + ", ".join(missing))
             say("    (signed out of the company account in your browser? offline? downloads blocked?)")
@@ -405,7 +439,7 @@ def main(argv=None):
             time.sleep(1.5)
             tabs_after = list_tabs(browser)
             if tabs_after is not None:
-                hosts = {(urlparse(download_link(it["url"]) or "").hostname or "").lower() for it in items}
+                hosts = {(urlparse(download_link(it["url"]) or "").hostname or "").lower() for it in to_fetch}
                 mine = tabs_to_close(tabs_before, tabs_after, hosts)
                 if mine and close_tabs(browser, mine):
                     say(f"  closed the {len(mine)} browser tab(s) this run opened")
@@ -414,6 +448,8 @@ def main(argv=None):
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump([str(p) for p in arrived], f)
         say()
+    elif not args.dry_run:
+        say("  nothing to download: everything is already in Downloads\n")
     intake.main(passthrough + (["--cleanup-manifest", manifest] if manifest else []))
 
 
