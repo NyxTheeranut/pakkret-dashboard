@@ -2725,6 +2725,42 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 }
 
 </style>
+<style id="redesign-wow">
+.wow-bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px; }
+.wow-btn {
+  min-height: 30px; padding: 4px 12px; border: 1px solid rgba(22, 32, 28, 0.18); border-radius: 8px;
+  background: var(--panel, #fcfcfa); color: var(--ink, #16201c); cursor: pointer;
+  font-family: inherit; font-size: 12.5px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums;
+  transition: background 0.14s, border-color 0.14s, transform 0.14s;
+}
+.wow-btn:hover { border-color: rgba(22, 32, 28, 0.36); background: #fff; }
+.wow-btn:active { transform: scale(0.97); }
+.wow-btn[aria-pressed="true"] { background: var(--ink, #16201c); border-color: var(--ink, #16201c); color: #fff; }
+.wow-caption { font-size: 12px; color: var(--muted, #5a6560); margin: 0 0 8px; }
+.wow-export-wrap { position: relative; display: inline-flex; margin-left: auto; }
+.wow-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 220px; display: grid; gap: 2px; padding: 6px;
+  background: var(--panel, #fcfcfa); border: 1px solid rgba(22, 32, 28, 0.12); border-radius: 10px;
+  box-shadow: 0 2px 4px rgba(22, 32, 28, 0.06), 0 14px 30px -14px rgba(22, 32, 28, 0.3);
+}
+.wow-menu[hidden] { display: none; }
+.wow-menu button {
+  min-height: 38px; padding: 7px 10px; text-align: left; border: 0; border-radius: 7px; background: transparent;
+  color: var(--ink, #16201c); font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.3; cursor: pointer;
+}
+.wow-menu button:hover, .wow-menu button:focus-visible { background: var(--accent-soft, #e2f1ee); }
+.wow-menu .sub { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--muted, #5a6560); }
+@media (pointer: coarse) { .wow-btn, .wow-menu button { min-height: 44px; } }
+.insight-list li.wow-head { padding-top: 0; padding-bottom: 4px; border-top: none; pointer-events: none; font-size: 12px; font-weight: 600; color: var(--muted, #5a6560); }
+.insight-list li.wow-head .v { font-family: inherit; }
+.wow-card .insight-list .v .col-ae { width: 92px; max-width: 92px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+@media (max-width: 720px) { .insight-list li.wow-head { display: none; } }
+.kpi-card .sub .nowrap { white-space: nowrap; }
+.kpi-card .kpi-grey {
+  margin-left: 8px; font-family: inherit; font-size: 13px; font-weight: 500; letter-spacing: 0; line-height: 1;
+  color: var(--muted, #5a6560); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+</style>
 </head>
   <body>
     <div class="login-gate" id="loginGate" style="display: none">
@@ -3810,6 +3846,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             aeLbSortDir: "desc",
             cmLbSortKey: "ga",
             cmLbSortDir: "desc",
+            wowDown: null, // week pair (1 = W1:W2, 2 = W2:W3, 3 = W3:W4) shown in the WoW ลดลง box; null = latest
+            wowUp: null, // same, for the WoW เพิ่มขึ้น box
             cmLbTargetMode: "ga", // "ga" | "m1" -- which committed target Target/%Achieve/%MOM read
             cmTargets: {}, // CM name -> {ga, m1} committed target, from the "TG CM" sheet
             cmTargetMonthKey: null,
@@ -7287,10 +7325,45 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             : "";
         }
 
+        // Shops left out of the Activation % cards: ซิมอันลิมิต activates ~100% of everything it sells, which
+        // lifts the whole cluster's figure. The card's main % excludes them and the all-shops figure is shown
+        // next to it in small grey. Matched by store code or by a piece of the name; add more here if needed.
+        var ACTIVATION_EXCLUDED_STORES = { codes: ["79671377"], names: ["ซิมอันลิมิต"] };
+        function isActivationExcluded(s) {
+          if (ACTIVATION_EXCLUDED_STORES.codes.indexOf(String(s.code)) !== -1) return true;
+          var nm = String(s.name || "");
+          return ACTIVATION_EXCLUDED_STORES.names.some(function (n) {
+            return nm.indexOf(n) !== -1;
+          });
+        }
         function renderRtrKpis() {
           var scope = rtrCurrentScope();
           var t = scope.totals;
-          var convRate = t.ga > 0 ? t.ap30d / t.ga : 0;
+          // what the excluded shops contribute inside the CURRENT filters (CM / COM / district / mall type)
+          var actEx = { ga: 0, ap1d: 0, ap30d: 0 };
+          rtrCurrentStores().forEach(function (s) {
+            if (!isActivationExcluded(s)) return;
+            actEx.ga += s.ga || 0;
+            actEx.ap1d += s.ap1d || 0;
+            actEx.ap30d += s.ap30d || 0;
+          });
+          function activationCard(label, key) {
+            var full = t.ga > 0 ? t[key] / t.ga : 0;
+            var gaX = t.ga - actEx.ga;
+            if (!(actEx.ga > 0) || !(gaX > 0))
+              return { label: label, value: pct(full), sub: fmt(t[key]) + " จาก " + fmt(t.ga) + " ซิม" };
+            var apX = t[key] - actEx[key];
+            return {
+              label: label,
+              value:
+                pct(apX / gaX) +
+                ' <span class="kpi-grey" title="รวมทุกร้าน (รวมซิมอันลิมิต)">รวม ' +
+                pct(full) +
+                "</span>",
+              sub: fmt(apX) + " จาก " + fmt(gaX) + " ซิม",
+              subNote: "ไม่รวมซิมอันลิมิต (GA " + fmt(actEx.ga) + ")",
+            };
+          }
           var cards = [
             {
               label: "GA (" + scope.label + ")",
@@ -7310,16 +7383,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               value: fmtBaht(t.revAmt),
               sub: "มูลค่าแพ็ค " + fmtBaht(t.ap1dAmt),
             },
-            {
-              label: "1-Day Activation",
-              value: pct(t.ga > 0 ? t.ap1d / t.ga : 0),
-              sub: fmt(t.ap1d) + " จาก " + fmt(t.ga) + " ซิม",
-            },
-            {
-              label: "30-Day Activation",
-              value: pct(convRate),
-              sub: fmt(t.ap30d) + " จาก " + fmt(t.ga) + " ซิม",
-            },
+            activationCard("1-Day Activation", "ap1d"),
+            activationCard("30-Day Activation", "ap30d"),
             {
               label: "จำนวนร้าน",
               value: fmt(scope.storeCount),
@@ -7335,6 +7400,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 c.value +
                 '</div><div class="sub">' +
                 esc(c.sub) +
+                (c.subNote ? '<br><span class="nowrap">' + esc(c.subNote) + "</span>" : "") +
                 "</div></div>"
               );
             })
@@ -13360,7 +13426,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             );
           }
           function aeCol(name) {
-            return '<span class="col-ae">' + esc(firstName(name)) + "</span>";
+            return '<span class="col-ae">' + esc(firstName(name) || "–") + "</span>";
           }
           // Revenue equivalent of gaCol/lmtdAndMom, for the M1 ลดลง card below.
           function revCol(x) {
@@ -13486,7 +13552,279 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               "declining",
             );
           }
+          // ---- Week on week (WoW): fixed 7-day blocks of the selected month (W1 = days 1-7 ... W4 = 22-28;
+          // days 29+ are not used so every week has the same length). A pair W(n):W(n+1) is offered only
+          // when BOTH weeks are complete, i.e. the latest day with data has reached the end of W(n+1).
+          // Uses `stores` (sevCurrentStores) so the CM / AE / area filters apply exactly like the cards above.
+          var wowExports = {};
+          if (mk && !day) {
+            var wowCut = sevMomCutoffDay || 0;
+            var wowPairs = [];
+            for (var wp = 1; wp <= 3; wp++) if (wowCut >= 7 * (wp + 1)) wowPairs.push(wp);
+            var wowScope =
+              [
+                state.sev.currentCM,
+                state.sev.currentKhet,
+                state.sev.currentFyai,
+                state.sev.currentGm,
+                state.sev.currentAe,
+              ]
+                .filter(Boolean)
+                .join(" / ") || "ภาพรวม";
+            var wowDayKey = function (d) {
+              return mk + (d < 10 ? "0" + d : "" + d);
+            };
+            var wowWeekGA = function (st, w) {
+              var tot = 0;
+              for (var d = (w - 1) * 7 + 1; d <= w * 7; d++) {
+                var r = st.daily[wowDayKey(d)];
+                if (r) tot += r.ga || 0;
+              }
+              return tot;
+            };
+            var signed = function (n) {
+              return (n > 0 ? "+" : "") + fmt(n);
+            };
+            var wowCard = function (box) {
+              var isDown = box === "down";
+              var stateKey = isDown ? "wowDown" : "wowUp";
+              var tagClass = isDown ? "tag-value" : "tag-top";
+              var tagText = isDown ? "WoW ลดลง" : "WoW เพิ่มขึ้น";
+              var head =
+                '<div class="insight-card wow-card"><div class="insight-card-head"><span class="insight-card-head-left"><span class="tag ' +
+                tagClass +
+                '">' +
+                tagText +
+                "</span></span>";
+              if (!wowPairs.length) {
+                return (
+                  head +
+                  "</div><h4>" +
+                  (isDown
+                    ? "ร้านที่ GA ลดลง Week on Week มากที่สุด"
+                    : "ร้านที่ GA เพิ่มขึ้น Week on Week มากที่สุด") +
+                  '</h4><div class="insight-empty">ยังไม่มีคู่สัปดาห์ที่ข้อมูลครบสำหรับเทียบ (ต้องมีข้อมูลถึงวันที่ 14 ขึ้นไป · ตอนนี้ถึงวันที่ ' +
+                  (wowCut || "-") +
+                  ")</div></div>"
+                );
+              }
+              var pair = state.sev[stateKey];
+              if (wowPairs.indexOf(pair) === -1) pair = wowPairs[wowPairs.length - 1];
+              var a = pair,
+                b = pair + 1;
+              var rows = [];
+              stores.forEach(function (st) {
+                var ga0 = wowWeekGA(st, a),
+                  ga1 = wowWeekGA(st, b);
+                if (isDown ? ga0 > 0 && ga1 < ga0 : ga1 > ga0) {
+                  rows.push({
+                    s: st,
+                    ga0: ga0,
+                    ga1: ga1,
+                    delta: ga1 - ga0,
+                    mom: ga0 > 0 ? (ga1 - ga0) / ga0 : null,
+                  });
+                }
+              });
+              rows.sort(function (x, y) {
+                if (x.delta !== y.delta) return isDown ? x.delta - y.delta : y.delta - x.delta;
+                var xm = x.mom == null ? (isDown ? 0 : -9) : x.mom;
+                var ym = y.mom == null ? (isDown ? 0 : -9) : y.mom;
+                return isDown ? xm - ym : ym - xm;
+              });
+              var shown = rows.slice(0, 10);
+              var title =
+                (isDown
+                  ? "ร้านที่ GA ลดลง Week on Week มากที่สุด ("
+                  : "ร้านที่ GA เพิ่มขึ้น Week on Week มากที่สุด (") +
+                rows.length +
+                " ร้าน)";
+              var caption =
+                "วันที่ " +
+                (7 * (b - 1) + 1) +
+                "–" +
+                7 * b +
+                " เทียบ " +
+                (7 * (a - 1) + 1) +
+                "–" +
+                7 * a +
+                " · " +
+                sevMonthLabel(mk);
+              var colsX = ["ร้าน", "รหัสร้าน", "GA W" + b, "GA W" + a, "ผลต่าง GA", "%WoW", "COM"];
+              var exportRows = function (list) {
+                return list.map(function (x) {
+                  return [
+                    x.s.name,
+                    x.s.code,
+                    fmt(x.ga1),
+                    fmt(x.ga0),
+                    signed(x.delta),
+                    x.mom == null ? "—" : (x.mom > 0 ? "+" : "") + pct(x.mom),
+                    firstName(x.s.ae),
+                  ];
+                });
+              };
+              wowExports[box] = {
+                titleBase:
+                  (isDown ? "GA ลดลง" : "GA เพิ่มขึ้น") +
+                  " W" + a + " : W" + b + " · " + sevMonthLabel(mk) + " · " + wowScope,
+                cols: colsX,
+                all: exportRows(rows),
+                top: exportRows(rows.slice(0, 10)),
+                bottom: exportRows(rows.slice(Math.max(0, rows.length - 10))),
+                count: rows.length,
+                key: "wow-" + box,
+              };
+              var bar = wowPairs
+                .map(function (pp) {
+                  return (
+                    '<button type="button" class="wow-btn" data-wow-box="' +
+                    box +
+                    '" data-wow-pair="' +
+                    pp +
+                    '" aria-pressed="' +
+                    (pp === pair ? "true" : "false") +
+                    '">W' +
+                    pp +
+                    " : W" +
+                    (pp + 1) +
+                    "</button>"
+                  );
+                })
+                .join("");
+              var exportBtn = rows.length
+                ? '<span class="wow-export-wrap"><button type="button" class="insight-export-btn" data-wow-export="' +
+                  box +
+                  '" aria-haspopup="menu" aria-expanded="false" title="Export เป็นรูปภาพ">📤</button>' +
+                  '<div class="wow-menu" role="menu" hidden data-wow-menu="' +
+                  box +
+                  '">' +
+                  '<button type="button" role="menuitem" data-wow-scope="all">ทั้งหมด<span class="sub">' +
+                  rows.length +
+                  " ร้าน</span></button>" +
+                  '<button type="button" role="menuitem" data-wow-scope="top">Top 10<span class="sub">10 อันดับแรกของลิสต์</span></button>' +
+                  '<button type="button" role="menuitem" data-wow-scope="bottom">Bottom 10<span class="sub">10 อันดับท้ายสุดของลิสต์</span></button>' +
+                  "</div></span>"
+                : "";
+              var body = shown.length
+                ? '<ul class="insight-list">' +
+                  '<li class="wow-head" aria-hidden="true"><span class="n">ร้าน</span><span class="v"><span class="col-num">W' +
+                  b +
+                  '</span> · <span class="col-num">W' +
+                  a +
+                  '</span> · <span class="col-pct">%WoW</span> · <span class="col-ae">COM</span></span></li>' +
+                  shown
+                    .map(function (x) {
+                      return clickableRow(
+                        x.s.code,
+                        '<span class="n">' + esc(x.s.name) + "</span>",
+                        '<span class="v"><span class="col-num">W' +
+                          b +
+                          " " +
+                          fmt(x.ga1) +
+                          '</span> · <span class="col-num">W' +
+                          a +
+                          " " +
+                          fmt(x.ga0) +
+                          '</span> · <span class="col-pct">' +
+                          pctColored(x.mom) +
+                          "</span> · " +
+                          aeCol(x.s.ae) +
+                          "</span>",
+                      );
+                    })
+                    .join("") +
+                  "</ul>"
+                : '<div class="insight-empty">ไม่พบร้านที่เข้าเงื่อนไขนี้</div>';
+              return (
+                head +
+                exportBtn +
+                "</div><h4>" +
+                esc(title) +
+                '</h4><div class="wow-bar" role="group" aria-label="เลือกคู่สัปดาห์ที่เปรียบเทียบ">' +
+                bar +
+                '</div><div class="wow-caption">' +
+                esc(caption) +
+                "</div>" +
+                body +
+                "</div>"
+              );
+            };
+            html += wowCard("down") + wowCard("up");
+          }
           $("sevInsightsGrid").innerHTML = html;
+
+          // week-pair buttons: change that box's pair and redraw the section
+          Array.prototype.forEach.call(
+            $("sevInsightsGrid").querySelectorAll(".wow-btn"),
+            function (btn) {
+              btn.addEventListener("click", function () {
+                var key = btn.getAttribute("data-wow-box") === "down" ? "wowDown" : "wowUp";
+                state.sev[key] = Number(btn.getAttribute("data-wow-pair"));
+                renderSevInsights();
+              });
+            },
+          );
+          // export menu: ทั้งหมด / Top 10 / Bottom 10, then the same PNG painter the other cards use
+          var wowCloseMenus = function (except) {
+            Array.prototype.forEach.call(
+              $("sevInsightsGrid").querySelectorAll(".wow-menu"),
+              function (m) {
+                if (m === except) return;
+                m.hidden = true;
+                var tb = m.parentNode.querySelector("[data-wow-export]");
+                if (tb) tb.setAttribute("aria-expanded", "false");
+              },
+            );
+          };
+          Array.prototype.forEach.call(
+            $("sevInsightsGrid").querySelectorAll("[data-wow-export]"),
+            function (btn) {
+              var menu = btn.parentNode.querySelector(".wow-menu");
+              btn.addEventListener("click", function (e) {
+                e.stopPropagation();
+                var open = menu.hidden;
+                wowCloseMenus(menu);
+                menu.hidden = !open;
+                btn.setAttribute("aria-expanded", open ? "true" : "false");
+                if (open) {
+                  var first = menu.querySelector("button");
+                  if (first) first.focus();
+                }
+              });
+              Array.prototype.forEach.call(menu.querySelectorAll("[data-wow-scope]"), function (it) {
+                it.addEventListener("click", function (e) {
+                  e.stopPropagation();
+                  var ex = wowExports[btn.getAttribute("data-wow-export")];
+                  var scope = it.getAttribute("data-wow-scope");
+                  menu.hidden = true;
+                  btn.setAttribute("aria-expanded", "false");
+                  if (!ex) return;
+                  var label = scope === "all" ? "ทั้งหมด " + ex.count + " ร้าน" : scope === "top" ? "Top 10" : "Bottom 10";
+                  rtrExportCardPng(ex.titleBase + " · " + label, ex.cols, ex[scope], ex.key + "-" + scope, "pak-kret-sev-");
+                  btn.focus();
+                });
+              });
+            },
+          );
+          if (!state.sev._wowDocWired) {
+            state.sev._wowDocWired = true;
+            document.addEventListener("click", function () {
+              Array.prototype.forEach.call(document.querySelectorAll(".wow-menu"), function (m) {
+                m.hidden = true;
+              });
+            });
+            document.addEventListener("keydown", function (e) {
+              if (e.key !== "Escape") return;
+              Array.prototype.forEach.call(document.querySelectorAll(".wow-menu"), function (m) {
+                if (!m.hidden) {
+                  m.hidden = true;
+                  var tb = m.parentNode.querySelector("[data-wow-export]");
+                  if (tb) { tb.setAttribute("aria-expanded", "false"); tb.focus(); }
+                }
+              });
+            });
+          }
 
           Array.prototype.forEach.call(
             $("sevInsightsGrid").querySelectorAll("[data-export-idx]"),
@@ -15204,7 +15542,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // renderRtrInsights' cardHtml calls). cols/rows are already built by the caller
         // (each card has different fields -- conversion% doesn't apply to the stock card,
         // stock doesn't apply to the others), so this only measures and paints them.
-        function rtrExportCardPng(title, cols, rows, key) {
+        function rtrExportCardPng(title, cols, rows, key, filePrefix) {
           var probe = document.createElement("canvas").getContext("2d");
           var padX = 12;
           var colW = cols.map(function (c) {
@@ -15261,7 +15599,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             var a = document.createElement("a");
             a.href = url;
             a.download =
-              "pak-kret-rtr-" + (key || "insight") + "-" + Date.now() + ".png";
+              (filePrefix || "pak-kret-rtr-") +
+              (key || "insight") +
+              "-" +
+              Date.now() +
+              ".png";
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
