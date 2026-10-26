@@ -9205,16 +9205,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             .sort(function (a, b) {
               return b - a;
             })[Math.floor(riskBase.length / 3)] || 0;
-          function riskMedian(key) {
-            var c = riskBase
-              .map(function (x) {
-                return x[key];
-              })
-              .sort(function (a, b) {
-                return a - b;
-              });
-            return c.length ? c[Math.floor(c.length / 2)] : 0;
-          }
           function riskList(key, med) {
             return riskBase
               .filter(function (x) {
@@ -9227,10 +9217,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 return a.conv - b.conv;
               });
           }
-          var medianConv = riskMedian("conv30");
+          // Fixed pass marks (set by the team) instead of the median: a store below the line is at risk
+          var RISK_AP30D_MARK = 0.8;
+          var RISK_AP1D_MARK = 0.72;
+          var medianConv = RISK_AP30D_MARK;
           var riskStoresAll = riskList("conv30", medianConv);
           var riskStores = riskStoresAll.slice(0, 10);
-          var medianConvAp1d = riskMedian("conv1");
+          var medianConvAp1d = RISK_AP1D_MARK;
           var riskStoresAp1dAll = riskList("conv1", medianConvAp1d);
           var riskStoresAp1d = riskStoresAp1dAll.slice(0, 10);
 
@@ -9459,7 +9452,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             "ความเสี่ยงคุณภาพ",
             "ยอดขายเยอะ แต่ AP30D conversion ต่ำ (" +
               (riskHasMM ? "Mass+Migrant · " : "") +
-              "ค่ามัธยฐาน " +
+              "เกณฑ์ " +
               pct(medianConv) +
               ")",
             riskStores,
@@ -9475,7 +9468,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             "ความเสี่ยงคุณภาพ",
             "ยอดขายเยอะ แต่ AP1D conversion ต่ำ (" +
               (riskHasMM ? "Mass+Migrant · " : "") +
-              "ค่ามัธยฐาน " +
+              "เกณฑ์ " +
               pct(medianConvAp1d) +
               ")",
             riskStoresAp1d,
