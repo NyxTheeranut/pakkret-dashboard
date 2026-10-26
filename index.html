@@ -2773,6 +2773,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 .wow-menu .sub { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--muted, #5a6560); }
 @media (pointer: coarse) { .wow-btn, .wow-menu button { min-height: 44px; } }
 .kpi-card .sub .nowrap { white-space: nowrap; }
+.kpi-card .kpi-real {
+  margin-left: 8px; font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0; line-height: 1;
+  color: #0f766e; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.kpi-split .kpi-real { margin-left: 6px; font-size: 12px; }
 .kpi-card .kpi-grey {
   margin-left: 8px; font-family: inherit; font-size: 13px; font-weight: 500; letter-spacing: 0; line-height: 1;
   color: var(--muted, #5a6560); font-variant-numeric: tabular-nums; white-space: nowrap;
@@ -4053,6 +4058,19 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           [3.0, "#0F6E62"], // deep teal-green - well stocked
         ];
         // size 'lg' renders the KPI-card sized variant; the colour scale is identical either way.
+        // %Achieve cards: the big badge is the run-rate %Ach (month projected at today's pace / target); the small teal
+        // number beside it is the real %Ach so far (GA to date / target).
+        function achRrHtml(actual, pacing) {
+          if (actual == null) return pctBadge(null, "achieve", "lg");
+          var rr = pacing && pacing.daysElapsed > 0 ? (actual * pacing.daysInMonth) / pacing.daysElapsed : null;
+          if (rr == null) return pctBadge(actual, "achieve", "lg");
+          return (
+            pctBadge(rr, "achieve", "lg") +
+            ' <span class="kpi-real" title="%Achieve จริงถึงตอนนี้ (ยังไม่ปรับตามจังหวะ)">จริง ' +
+            pct(actual) +
+            "</span>"
+          );
+        }
         function pctBadge(value, kind, size) {
           var sizeCls = size === "lg" ? " pct-badge-lg" : "";
           if (value == null)
@@ -7827,6 +7845,19 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   ["Tourist", fmt(t.tourist || 0)],
                 ]
               : null;
+          // Mass + Migrant and Tourist each against their own committed target, as run-rate % with the real % in brackets
+          function segAch(actual, target) {
+            if (!(target > 0)) return "—";
+            var real = actual / target;
+            var rr = pacing && pacing.daysElapsed > 0 ? (real * pacing.daysInMonth) / pacing.daysElapsed : null;
+            return rr != null ? pct(rr) + ' <span class="kpi-real">จริง ' + pct(real) + "</span>" : pct(real);
+          }
+          var achSplit = actualSplit
+            ? [
+                ["Mass + Migrant", segAch((t.mass || 0) + (t.migrant || 0), t.targetMassMigrant || 0)],
+                ["Tourist", segAch(t.tourist || 0, t.targetTourist || 0)],
+              ]
+            : null;
           var groups = [
             {
               title: "เทียบเป้า",
@@ -7873,14 +7904,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   split: actualSplit,
                 },
                 {
-                  label: "%Achieve",
-                  value: pctBadge(segInfo.achievePct, "achieve", "lg"),
+                  label: "%Ach (RR)",
+                  value: achRrHtml(segInfo.achievePct, pacing),
                   sub: !segInfo.supported
                     ? "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้"
-                    : "ยอดที่ทำได้ ÷ เป้า" +
+                    : "คาดการณ์จบเดือน ÷ เป้า · เลขเล็ก = ที่ทำได้จริงถึงตอนนี้" +
                       (segInfo.segLabel
                         ? " (เฉพาะ " + segInfo.segLabel + ")"
-                        : " (เฉพาะร้านที่มีเป้า)"),
+                        : ""),
+                  split: achSplit,
                 },
                 { label: "จังหวะเป้าหมาย", value: paceTxt, sub: paceSub },
                 {
@@ -8172,6 +8204,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             var r = byCom[com];
             var c = committed[com];
             var hasCommitted = !!(c && c.total > 0);
+            var targetRemoved = !!(c && c.zeroed);
             // Same shape as a cmRollup entry, so the CM helpers apply unchanged.
             var cr = {
               ga: r.ga,
@@ -8180,7 +8213,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               tourist: r.tourist,
               m1: hasCommitted && c.achM1Total > 0 ? c.achM1Total : r.m1,
               revGa: r.revGa,
-              target: hasCommitted ? c.total : r.hasAnyTarget ? r.target : 0,
+              target: hasCommitted ? c.total : r.hasAnyTarget && !targetRemoved ? r.target : 0,
               targetMassMigrant: hasCommitted ? c.massMigrant || 0 : 0,
               targetTourist: hasCommitted ? c.tourist || 0 : 0,
               targetM1: hasCommitted ? c.m1Total || 0 : 0,
@@ -14156,9 +14189,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   " นับรวมอยู่ใน %Achieve ผ่านเป้ารวมของ CM แล้ว"
                 : "ทุกร้านมีเป้าหมายเฉพาะบุคคล";
             targetCards.push({
-              label: "%Achieve",
-              value: pctBadge(achievePct, "achieve", "lg"),
-              sub: "ยอดที่ทำได้ ÷ เป้า (เฉพาะร้านที่มีเป้า)",
+              label: "%Ach (RR)",
+              value: achRrHtml(achievePct, sevMonthPacing(mk, stores)),
+              sub: "คาดการณ์จบเดือน ÷ เป้า · เลขเล็ก = ที่ทำได้จริงถึงตอนนี้",
             });
             // Same pacing badge as RTR's own จังหวะเป้าหมาย card -- reuses the exact pacing
             // object already computed below for the forecast card, just read a step earlier
@@ -18040,13 +18073,44 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           state.rtr._rawGroups = allGroups;
           // "ไม่รวมซิมอันลิมิต" switch: the shop is dropped from every store list BEFORE the rollups are built, so
           // totals / CM / COM / tables / charts / Overview all agree. CM committed targets are not touched.
+          // Their targets come off too: the shop's own store target leaves the GA target of its CM and COM (never
+          // below 0), the M1 target shrinks by the same proportion, and its revenue leaves the actual M1.
+          function trimTarget(t, tgt, rev) {
+            if (!t) return t;
+            var o = Object.assign({}, t);
+            var oldT = o.total || 0;
+            var newT = Math.max(0, oldT - tgt);
+            var ratio = oldT > 0 ? newT / oldT : 1;
+            o.total = newT;
+            if (oldT > 0 && newT === 0) o.zeroed = true; // target fully removed: do not fall back to per-store targets
+            o.massMigrant = Math.max(0, (o.massMigrant || 0) - tgt);
+            if (o.m1Total) o.m1Total = o.m1Total * ratio;
+            if (o.m1MassMigrant) o.m1MassMigrant = o.m1MassMigrant * ratio;
+            if (o.achM1Total) o.achM1Total = Math.max(0, o.achM1Total - rev);
+            if (o.achM1MassMigrant) o.achM1MassMigrant = Math.max(0, o.achM1MassMigrant - rev);
+            return o;
+          }
           var rawGroups = state.rtr.excludeUnlimited
             ? allGroups.map(function (g) {
-                return Object.assign({}, g, {
+                var gone = g.stores.filter(isActivationExcluded);
+                var out = Object.assign({}, g, {
                   stores: g.stores.filter(function (s) {
                     return !isActivationExcluded(s);
                   }),
                 });
+                if (gone.length) {
+                  var cmMap = new Map(g.cmTargetMap || []);
+                  var comT = Object.assign({}, g.comTargets || {});
+                  gone.forEach(function (r) {
+                    var tgt = r.target || 0;
+                    var rev = r.revAmt || 0;
+                    if (cmMap.has(r.cm)) cmMap.set(r.cm, trimTarget(cmMap.get(r.cm), tgt, rev));
+                    if (r.com && comT[r.com]) comT[r.com] = trimTarget(comT[r.com], tgt, rev);
+                  });
+                  out.cmTargetMap = cmMap;
+                  out.comTargets = comT;
+                }
+                return out;
               })
             : allGroups;
           var months = rawGroups.map(function (g) {
