@@ -3881,6 +3881,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             visibleCount: 20,
             mappingCoverage: null,
             segToggle: { mass: true, migrant: true, tourist: true },
+            wowDown: null, // week pair shown in the WoW ลดลง box (1 = W2:W1, 2 = W3:W2, 3 = W4:W3); null = latest
+            wowUp: null, // same, for the WoW เพิ่มขึ้น box
             selectedDay: null,
             fileHandle: null,
             // Overview tab: months the user picked (null = default, the latest two)
@@ -9619,9 +9621,136 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             badMomAll.map(badMomExportRow),
             "bad-mom",
           );
+          // ---- Week on week (WoW), same boxes as the 7-11 tab: fixed 7-day blocks of the selected month
+          // (W1 = days 1-7 ... W4 = 22-28). A pair is offered only when BOTH weeks are complete. Uses `stores`
+          // (rtrCurrentStores), so CM / COM / district / mall filters, the Mass/Migrant/Tourist toggles and the
+          // ซิมอันลิมิต switch apply exactly like the cards above.
+          var rtrWowExports = {};
+          (function () {
+            var m = rtrCurrentMonth();
+            var firstDay = Object.keys(m.daily || {})[0];
+            if (!firstDay) return;
+            var mk = String(firstDay).slice(0, 6);
+            var wowCut = m.momCutoffDay || monthMaxDay(m);
+            var wowPairs = [];
+            for (var wp = 1; wp <= 3; wp++) if (wowCut >= 7 * (wp + 1)) wowPairs.push(wp);
+            var wowScope =
+              [state.rtr.currentCM, state.rtr.currentCOM, state.rtr.currentDistrict, state.rtr.currentMallType]
+                .filter(Boolean)
+                .join(" / ") || "ภาพรวม";
+            var tog = state.rtr.segToggle;
+            var allSeg = (tog.mass && tog.migrant && tog.tourist) || (!tog.mass && !tog.migrant && !tog.tourist);
+            function dayGA(r) {
+              if (!r) return 0;
+              if (allSeg) return r.ga || 0;
+              return (tog.mass ? r.mass || 0 : 0) + (tog.migrant ? r.migrant || 0 : 0) + (tog.tourist ? r.tourist || 0 : 0);
+            }
+            function weekGA(st, w) {
+              var tot = 0;
+              for (var d = (w - 1) * 7 + 1; d <= w * 7; d++) tot += dayGA(st.daily[mk + (d < 10 ? "0" + d : "" + d)]);
+              return tot;
+            }
+            function signed(n) {
+              return (n > 0 ? "+" : "") + fmt(n);
+            }
+            function wowCard(box) {
+              var isDown = box === "down";
+              var stateKey = isDown ? "wowDown" : "wowUp";
+              var head =
+                '<div class="insight-card wow-card"><div class="insight-card-head"><span class="insight-card-head-left"><span class="tag ' +
+                (isDown ? "tag-value" : "tag-top") +
+                '">' +
+                (isDown ? "WoW ลดลง" : "WoW เพิ่มขึ้น") +
+                "</span></span>";
+              var baseTitle = isDown ? "ร้านที่ GA ลดลง Week on Week มากที่สุด" : "ร้านที่ GA เพิ่มขึ้น Week on Week มากที่สุด";
+              if (!wowPairs.length)
+                return (
+                  head + "</div><h4>" + baseTitle + '</h4><div class="insight-empty">ยังไม่มีคู่สัปดาห์ที่ข้อมูลครบสำหรับเทียบ (ต้องมีข้อมูลถึงวันที่ 14 ขึ้นไป · ตอนนี้ถึงวันที่ ' +
+                  (wowCut || "-") + ")</div></div>"
+                );
+              var pair = state.rtr[stateKey];
+              if (wowPairs.indexOf(pair) === -1) pair = wowPairs[wowPairs.length - 1];
+              var a = pair,
+                b = pair + 1;
+              var rows = [];
+              stores.forEach(function (st) {
+                var ga0 = weekGA(st, a),
+                  ga1 = weekGA(st, b);
+                if (isDown ? ga0 > 0 && ga1 < ga0 : ga1 > ga0)
+                  rows.push({ s: st, ga0: ga0, ga1: ga1, delta: ga1 - ga0, mom: ga0 > 0 ? (ga1 - ga0) / ga0 : null });
+              });
+              rows.sort(function (x, y) {
+                if (x.delta !== y.delta) return isDown ? x.delta - y.delta : y.delta - x.delta;
+                var xm = x.mom == null ? (isDown ? 0 : -9) : x.mom;
+                var ym = y.mom == null ? (isDown ? 0 : -9) : y.mom;
+                return isDown ? xm - ym : ym - xm;
+              });
+              var shown = rows.slice(0, 10);
+              var title = baseTitle + " (" + rows.length + " ร้าน)";
+              var caption = "วันที่ " + (7 * (b - 1) + 1) + "–" + 7 * b + " เทียบ " + (7 * (a - 1) + 1) + "–" + 7 * a + " · " + m.label;
+              var colsX = ["ร้าน", "รหัสร้าน", "GA W" + b, "GA W" + a, "ผลต่าง GA", "%WoW", "COM"];
+              function exportRows(list) {
+                return list.map(function (x) {
+                  return [x.s.name, x.s.code, fmt(x.ga1), fmt(x.ga0), signed(x.delta), x.mom == null ? "—" : (x.mom > 0 ? "+" : "") + pct(x.mom), firstName(x.s.com)];
+                });
+              }
+              rtrWowExports[box] = {
+                titleBase: (isDown ? "GA ลดลง" : "GA เพิ่มขึ้น") + " W" + a + " : W" + b + " · " + m.label + " · " + wowScope,
+                cols: colsX,
+                list: exportRows(rows),
+                key: "wow-" + box,
+              };
+              var bar = wowPairs
+                .map(function (pp) {
+                  return (
+                    '<button type="button" class="wow-btn" data-wow-box="' + box + '" data-wow-pair="' + pp + '" aria-pressed="' +
+                    (pp === pair ? "true" : "false") + '">W' + (pp + 1) + " : W" + pp + "</button>"
+                  );
+                })
+                .join("");
+              var body = shown.length
+                ? '<ul class="insight-list">' +
+                  shown
+                    .map(function (x) {
+                      return (
+                        '<li class="clickable" tabindex="0" role="button" data-code="' + esc(x.s.code) + '"><span class="n">' + esc(x.s.name) +
+                        '</span><span class="v"><span class="col-num">GA W' + b + " " + fmt(x.ga1) + '</span> · <span class="col-num">W' + a + " " +
+                        fmt(x.ga0) + '</span> · <span class="col-pct">' + pctColored(x.mom) + "</span>" +
+                        (x.s.com ? " · " + comCol(x.s.com) : "") + "</span></li>"
+                      );
+                    })
+                    .join("") +
+                  "</ul>"
+                : '<div class="insight-empty">ไม่พบร้านที่เข้าเงื่อนไขนี้</div>';
+              return (
+                head + (rows.length ? exportMenuHtml("wow:" + box, rows.length) : "") + "</div><h4>" + esc(title) +
+                '</h4><div class="wow-bar" role="group" aria-label="เลือกคู่สัปดาห์ที่เปรียบเทียบ">' + bar + '</div><div class="wow-caption">' +
+                esc(caption) + "</div>" + body + "</div>"
+              );
+            }
+            html += wowCard("down") + wowCard("up");
+          })();
           grid.innerHTML = html;
 
+          Array.prototype.forEach.call(grid.querySelectorAll(".wow-btn"), function (btn) {
+            btn.addEventListener("click", function () {
+              state.rtr[btn.getAttribute("data-wow-box") === "down" ? "wowDown" : "wowUp"] = Number(btn.getAttribute("data-wow-pair"));
+              renderRtrInsights();
+            });
+          });
+
           wireExportMenus(grid, function (token, scope) {
+            if (token.indexOf("wow:") === 0) {
+              var ex = rtrWowExports[token.slice(4)];
+              if (!ex) return;
+              rtrExportCardPng(
+                ex.titleBase + " · " + exportScopeLabel(ex.list, scope),
+                ex.cols,
+                exportScopeRows(ex.list, scope),
+                ex.key + "-" + scope,
+              );
+              return;
+            }
             var entry = rtrExportRegistry[Number(token.split(":")[1])];
             if (!entry) return;
             rtrExportCardPng(
