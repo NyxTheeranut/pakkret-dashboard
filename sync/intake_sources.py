@@ -203,8 +203,23 @@ def main(argv=None):
                 skipped.append((p.name, "empty or still downloading"))
                 continue
             if now - st.st_mtime < cfg["min_age_seconds"]:
-                skipped.append((p.name, "still being written"))
-                continue
+                # A file that finished downloading a moment ago (the browser fetch in fetch_links.py ends right
+                # before this check) used to be skipped AND then tidied away as a temp download, so the newest copy
+                # was thrown out. Wait for it to settle instead: same size and mtime two looks in a row = finished.
+                settled = False
+                for _ in range(20):
+                    time.sleep(1.5)
+                    try:
+                        st2 = p.stat()
+                    except OSError:
+                        break
+                    if st2.st_size == st.st_size and st2.st_mtime == st.st_mtime and time.time() - st2.st_mtime >= 1.5:
+                        settled = True
+                        break
+                    st = st2
+                if not settled:
+                    skipped.append((p.name, "still being written"))
+                    continue
             if not zipfile.is_zipfile(p):
                 hint = "not a valid xlsx file"
                 if "OneDrive" in str(p):
@@ -277,6 +292,8 @@ def main(argv=None):
             qp = Path(q)
             if norm_name(qp.name).casefold() in failed_names:
                 continue                                   # its copy did not verify: keep the download
+            if norm_name(qp.name).casefold() in {norm_name(n).casefold() for n, why in skipped if "still" in why}:
+                continue                                   # skipped as still being written: keep it for the next run
             try:
                 if qp.exists():
                     qp.unlink()
