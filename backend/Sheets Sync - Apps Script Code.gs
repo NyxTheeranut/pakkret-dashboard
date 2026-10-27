@@ -34,7 +34,9 @@
  *   doesn't exist yet -- replace the sample row with real teammate emails.
  * "Access Log" -- who opened the dashboard, how many times per day. One row per
  *   (day, email): date | email | visits | last visit time. A visit = one page
- *   load (the page sends a small "logVisit" call after it has rendered). Rows older than
+ *   load (the page sends a small "logVisit" call after it has rendered). "engaged" counts the
+ *   visits where the person also clicked something (CM/COM/month/tab/filter/export), so a
+ *   quick open-and-close is visible as a visit with no engagement. Rows older than
  *   ACCESS_LOG_DAYS (45 = a month and a half) are deleted on every write, so
  *   the oldest day drops off as each new day starts. Created automatically.
  * "Access Summary" -- rebuilt from "Access Log" on every visit: a people x days grid (last 14 days, shaded) + two charts. Names: optional 2nd column "name" on Viewers. Total visits, active
@@ -101,6 +103,11 @@ function doPost(e) {
     if (body.action === "logVisit") {
       // Sent by the page AFTER it has rendered (fire-and-forget), so counting a visit never slows loading.
       return jsonResponse_(logVisitForViewer_(body.idToken));
+    }
+
+    if (body.action === "logEngaged") {
+      // First real click after loading (CM/COM/month/tab/filter/export) -- tells "opened and closed" from "used it"
+      return jsonResponse_(logVisitForViewer_(body.idToken, "engaged"));
     }
 
     if (body.action === "getValuesBatch") {
@@ -295,7 +302,7 @@ function accessDayKey_(v) {
 
 // Adds one visit for this email today, then drops rows older than ACCESS_LOG_DAYS. Never throws:
 // a logging problem must not stop anyone from seeing the dashboard.
-function logAccess_(email) {
+function logAccess_(email, kind) {
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(5000);
@@ -303,11 +310,13 @@ function logAccess_(email) {
     var sheet = ss.getSheetByName("Access Log");
     if (!sheet) {
       sheet = ss.insertSheet("Access Log");
-      sheet.appendRow(["date", "email", "visits", "last visit"]);
+      sheet.appendRow(["date", "email", "visits", "last visit", "engaged"]);
       sheet.setFrozenRows(1);
       sheet.getRange("A:A").setNumberFormat("@"); // keep the day as plain text, not a date cell
       sheet.getRange("D:D").setNumberFormat("@");
     }
+    if (!sheet.getRange(1, 5).getValue()) sheet.getRange(1, 5).setValue("engaged"); // older logs had 4 columns
+    var engaged = kind === "engaged";
     var now = new Date();
     var today = Utilities.formatDate(now, ACCESS_LOG_TZ, "yyyy-MM-dd");
     var stamp = Utilities.formatDate(now, ACCESS_LOG_TZ, "HH:mm:ss");
@@ -325,10 +334,15 @@ function logAccess_(email) {
       }
     }
     if (hit) {
-      var cur = Number(sheet.getRange(hit, 3).getValue()) || 0;
-      sheet.getRange(hit, 3, 1, 2).setValues([[cur + 1, stamp]]);
+      if (engaged) {
+        var curE = Number(sheet.getRange(hit, 5).getValue()) || 0;
+        sheet.getRange(hit, 5).setValue(curE + 1);
+      } else {
+        var cur = Number(sheet.getRange(hit, 3).getValue()) || 0;
+        sheet.getRange(hit, 3, 1, 2).setValues([[cur + 1, stamp]]);
+      }
     } else {
-      sheet.appendRow([today, lower, 1, stamp]);
+      sheet.appendRow([today, lower, engaged ? 0 : 1, stamp, engaged ? 1 : 0]);
       sheet.getRange(sheet.getLastRow(), 1).setNumberFormat("@").setValue(today);
     }
     // prune: delete rows from the top while their day is before the cutoff
@@ -365,8 +379,9 @@ function buildAccessGrid_(data, names, dayKeys) {
     var email = String(r[1]).trim().toLowerCase();
     var v = Number(r[2]) || 0;
     if (!day || !email) return;
-    var p = people[email] || (people[email] = { email: email, total: 0, byDay: {} });
+    var p = people[email] || (people[email] = { email: email, total: 0, engaged: 0, byDay: {} });
     p.total += v;
+    p.engaged += Number(r[4]) || 0;
     p.byDay[day] = (p.byDay[day] || 0) + v;
     var d = perDay[day] || (perDay[day] = { visits: 0, people: {} });
     d.visits += v;
@@ -384,6 +399,7 @@ function buildAccessGrid_(data, names, dayKeys) {
       return {
         name: nm,
         total: p.total,
+        engaged: p.engaged,
         cells: dayKeys.map(function (k) {
           return p.byDay[k] || "";
         }),
@@ -398,13 +414,14 @@ function buildAccessGrid_(data, names, dayKeys) {
 }
 
 // Rebuilds "Access Summary" on every visit (plain values + built-in colour scale, no formulas to break):
-//   A..P  grid: one row per person, last ACCESS_GRID_DAYS days as columns, shaded by visits, Total = whole window
-//   R:S   visits per person (feeds the bar chart)      U:W  visits / people per day (feeds the day chart)
+//   A..R  grid: one row per person, last ACCESS_GRID_DAYS days as columns, shaded by visits,
+//         then Total (whole window), Engaged (visits with at least one click) and Engaged %
+//   T:V   visits + engaged per person (bar chart)      X:Z  visits / people per day (day chart)
 // Names come from an optional second column "name" on the Viewers tab; otherwise the part of the email before @.
 function rebuildAccessSummary_(ss, logSheet) {
   var sh = ss.getSheetByName("Access Summary") || ss.insertSheet("Access Summary");
   var n = logSheet.getLastRow() - 1;
-  var data = n > 0 ? logSheet.getRange(2, 1, n, 3).getValues() : [];
+  var data = n > 0 ? logSheet.getRange(2, 1, n, 5).getValues() : [];
   var names = {};
   var vs = ss.getSheetByName("Viewers");
   if (vs && vs.getLastRow() >= 2 && vs.getLastColumn() >= 2) {
@@ -432,16 +449,16 @@ function rebuildAccessSummary_(ss, logSheet) {
   // text only where a value could be mistaken for a date ("10-27", "2026-10-27"); counts stay real numbers
   sh.getRange("A:A").setNumberFormat("@");
   sh.getRange("1:1").setNumberFormat("@");
-  sh.getRange("R:R").setNumberFormat("@");
-  sh.getRange("U:U").setNumberFormat("@");
-  var head = ["name"].concat(dayLabels).concat(["Total (" + ACCESS_LOG_DAYS + "d)"]);
+  sh.getRange("T:T").setNumberFormat("@");
+  sh.getRange("X:X").setNumberFormat("@");
+  var head = ["name"].concat(dayLabels).concat(["Total (" + ACCESS_LOG_DAYS + "d)", "Engaged", "Engaged %"]);
   sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight("bold");
   var rows = g.people.map(function (p) {
-    return [p.name].concat(p.cells).concat([p.total]);
+    return [p.name].concat(p.cells).concat([p.total, p.engaged, p.total > 0 ? Math.round((100 * p.engaged) / p.total) + "%" : ""]);
   });
   if (rows.length) {
     sh.getRange(2, 1, rows.length, head.length).setValues(rows);
-    sh.getRange(2, 2, rows.length, ACCESS_GRID_DAYS + 1).setHorizontalAlignment("center");
+    sh.getRange(2, 2, rows.length, ACCESS_GRID_DAYS + 3).setHorizontalAlignment("center");
     var rule = SpreadsheetApp.newConditionalFormatRule()
       .setGradientMinpoint("#ffffff")
       .setGradientMaxpoint("#0f766e")
@@ -454,18 +471,20 @@ function rebuildAccessSummary_(ss, logSheet) {
   sh.setFrozenColumns(1);
   sh.setColumnWidth(1, 150);
   for (var c = 2; c <= head.length; c++) sh.setColumnWidth(c, 54);
-  sh.setColumnWidth(head.length, 84);
+  sh.setColumnWidth(head.length - 2, 84);
+  sh.setColumnWidth(head.length - 1, 66);
+  sh.setColumnWidth(head.length, 78);
 
   // helper tables that feed the two charts (kept to the right, out of the way)
-  sh.getRange(1, 18, 1, 2).setValues([["name", "visits"]]).setFontWeight("bold");
+  sh.getRange(1, 20, 1, 3).setValues([["name", "visits", "engaged"]]).setFontWeight("bold");
   if (g.people.length)
-    sh.getRange(2, 18, g.people.length, 2).setValues(
+    sh.getRange(2, 20, g.people.length, 3).setValues(
       g.people.map(function (p) {
-        return [p.name, p.total];
+        return [p.name, p.total, p.engaged];
       }),
     );
-  sh.getRange(1, 21, 1, 3).setValues([["day", "visits", "people"]]).setFontWeight("bold");
-  if (g.days.length) sh.getRange(2, 21, g.days.length, 3).setValues(g.days);
+  sh.getRange(1, 24, 1, 3).setValues([["day", "visits", "people"]]).setFontWeight("bold");
+  if (g.days.length) sh.getRange(2, 24, g.days.length, 3).setValues(g.days);
 
   try {
     var below = Math.max(rows.length + 3, 6);
@@ -474,12 +493,12 @@ function rebuildAccessSummary_(ss, logSheet) {
       sh
         .newChart()
         .asBarChart()
-        .addRange(sh.getRange(1, 18, np + 1, 2))
+        .addRange(sh.getRange(1, 20, np + 1, 3))
         .setNumHeaders(1)
         .setPosition(below, 1, 0, 0)
-        .setOption("title", "Visits per person (" + ACCESS_LOG_DAYS + " days)")
-        .setOption("legend", { position: "none" })
-        .setOption("colors", ["#0f766e"])
+        .setOption("title", "Visits and engaged visits per person (" + ACCESS_LOG_DAYS + " days)")
+        .setOption("legend", { position: "bottom" })
+        .setOption("colors", ["#9fd3cc", "#0f766e"])
         .setOption("width", 520)
         .setOption("height", Math.max(220, 40 + np * 28))
         .build(),
@@ -488,7 +507,7 @@ function rebuildAccessSummary_(ss, logSheet) {
       sh
         .newChart()
         .asColumnChart()
-        .addRange(sh.getRange(1, 21, Math.max(g.days.length, 1) + 1, 2))
+        .addRange(sh.getRange(1, 24, Math.max(g.days.length, 1) + 1, 2))
         .setNumHeaders(1)
         .setPosition(below, 9, 0, 0)
         .setOption("title", "Visits per day")
@@ -502,10 +521,10 @@ function rebuildAccessSummary_(ss, logSheet) {
 }
 
 // Counts one visit for the signed-in, allow-listed viewer (one page load = one call).
-function logVisitForViewer_(idToken) {
+function logVisitForViewer_(idToken, kind) {
   var email = verifyIdToken_(idToken);
   if (!email || !lookupViewer_(email)) return { ok: false };
-  logAccess_(email);
+  logAccess_(email, kind);
   return { ok: true };
 }
 
