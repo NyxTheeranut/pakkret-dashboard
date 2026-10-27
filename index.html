@@ -3115,9 +3115,19 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               <h2>Overall Performance เทียบ Target</h2>
               <span class="hint" id="perfHint"></span>
               <button
+                class="tgt-switch"
+                id="perfTargetModeBtn"
+                type="button"
+                role="switch"
+                aria-checked="false"
+                aria-label="ใช้เป้า M1 แทน GA"
+                title="สลับการ์ดเทียบเป้าระหว่างฐาน GA กับฐาน M1 (บาท)"
+                style="margin-left: auto"
+              ><span class="tgt-lbl">Target</span><span class="tgt-track" aria-hidden="true"><span class="tgt-thumb"></span><span class="tgt-opt">GA</span><span class="tgt-opt">M1</span></span></button>
+              <button
                 class="file-btn ghost-light"
                 id="rtrSummaryBtn"
-                style="margin-left: auto; align-self: center"
+                style="align-self: center"
               >
                 📄 สรุป 1 หน้า
               </button>
@@ -3881,6 +3891,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             visibleCount: 20,
             mappingCoverage: null,
             segToggle: { mass: true, migrant: true, tourist: true },
+            perfTargetMode: "ga", // "ga" | "m1" -- which target the Overall Performance cards compare against
             wowDown: null, // week pair shown in the WoW ลดลง box (1 = W2:W1, 2 = W3:W2, 3 = W4:W3); null = latest
             wowUp: null, // same, for the WoW เพิ่มขึ้น box
             selectedDay: null,
@@ -7494,8 +7505,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               value: fmtBaht(t.revAmt),
               sub: "มูลค่าแพ็ค " + fmtBaht(t.ap1dAmt),
             },
-            activationCard("1-Day Activation", "ap1d"),
-            activationCard("30-Day Activation", "ap30d"),
+            activationCard("AP1D", "ap1d"),
+            activationCard("AP30D", "ap30d"),
             {
               label: "จำนวนร้าน",
               value: fmt(scope.storeCount),
@@ -7701,7 +7712,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           );
         }
 
+        $("perfTargetModeBtn").addEventListener("click", function () {
+          state.rtr.perfTargetMode = state.rtr.perfTargetMode === "m1" ? "ga" : "m1";
+          renderPerformance();
+        });
         function renderPerformance() {
+          setTargetSwitch($("perfTargetModeBtn"), state.rtr.perfTargetMode);
           var scope = rtrCurrentScope();
           var t = scope.totals;
           // Resolves Target/Actual GA/%Achieve for whatever the Mass/Migrant/Tourist
@@ -7711,6 +7727,32 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // forecast, need/day) reads segInfo instead of t directly from here on, so they
           // all move together instead of Target changing while %Achieve/forecast don't.
           var segInfo = rtrSegTargetInfo(t, state.rtr.segToggle);
+          // Target GA / M1 switch: in M1 mode every card reads the committed M1 target and the actual M1 (baht)
+          // instead of GA. There is no per-segment M1 split at CM / total level, so the segment rows are dropped.
+          var isM1 = state.rtr.perfTargetMode === "m1";
+          if (isM1) {
+            var m1Target = t.targetM1 || 0;
+            var m1Actual = t.m1 || 0;
+            segInfo = {
+              supported: true,
+              target: m1Target,
+              targetedGA: m1Actual,
+              ga: m1Actual,
+              achievePct: m1Target > 0 ? m1Actual / m1Target : null,
+              targetOverridden: true,
+              segLabel: "",
+            };
+          }
+          var fU = isM1 ? fmtBaht : fmt; // number formatter for the card values
+          var uGA = isM1 ? "" : " GA";
+          var sU = isM1
+            ? function (n) {
+                if (n == null) return '<span class="pct-badge pct-badge-muted">—</span>';
+                var v = Math.round(n);
+                if (v === 0) return '<span style="color:var(--muted);">฿0</span>';
+                return '<span style="color:' + (v < 0 ? "var(--alert)" : "var(--accent)") + ';">' + (v > 0 ? "+" : "-") + fmtBaht(Math.abs(v)) + "</span>";
+              }
+            : signedUnits;
           var arpu = arpuOf(t.m1, t.targetedGA, t.ga, t.revGa);
           var momTxt =
             t.momPct == null
@@ -7778,25 +7820,25 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             needSub = "";
           if (fc) {
             landingTxt =
-              fmt(fc.landing) +
+              fU(fc.landing) +
               ' <span style="font-size:14px;">(' +
-              signedUnits(fc.surplus) +
+              sU(fc.surplus) +
               ")</span>";
             landingSub =
               "ถ้ายังทำได้เท่าจังหวะนี้ · เทียบเป้า " +
-              fmt(segInfo.target) +
+              fU(segInfo.target) +
               " → " +
               (fc.surplus < 0 ? "ขาด " : "เกิน ") +
-              fmt(Math.abs(fc.surplus)) +
-              " GA";
+              fU(Math.abs(fc.surplus)) +
+              uGA;
             if (fc.remaining <= 0) {
               needTxt =
                 '<span style="color:var(--accent);">ถึงเป้าแล้ว ✓</span>';
               needSub =
                 "ทำได้ " +
-                fmt(segInfo.targetedGA) +
+                fU(segInfo.targetedGA) +
                 " จากเป้า " +
-                fmt(segInfo.target) +
+                fU(segInfo.target) +
                 " - ที่เหลือคือส่วนเกิน";
             } else if (fc.needPerDay != null) {
               // The card label already says "ต่อวัน", so the value must not repeat "/วัน".
@@ -7810,31 +7852,31 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 '<span style="color:' +
                 needColor +
                 ';">' +
-                fmt(fc.needPerDay) +
+                fU(fc.needPerDay) +
                 "</span>";
               var cmp = "";
               if (fc.currentPerDay != null) {
                 cmp = enough
                   ? " - ตอนนี้ทำได้วันละ " +
-                    fmt(fc.currentPerDay) +
+                    fU(fc.currentPerDay) +
                     " เร็วกว่าที่ต้องการอยู่แล้ว ✓"
                   : " - ตอนนี้ทำได้วันละ " +
-                    fmt(fc.currentPerDay) +
+                    fU(fc.currentPerDay) +
                     " ต้องเร่งขึ้นอีก " +
-                    fmt(fc.needPerDay - fc.currentPerDay) +
+                    fU(fc.needPerDay - fc.currentPerDay) +
                     "/วัน";
               }
               needSub =
                 "ขาดอีก " +
-                fmt(fc.remaining) +
-                " GA ใน " +
+                fU(fc.remaining) +
+                uGA + " ใน " +
                 pacing.daysLeft +
                 " วันที่เหลือ" +
                 cmp;
             } else {
               needTxt = '<span style="color:var(--alert);">หมดเดือนแล้ว</span>';
               needSub =
-                "ขาดอีก " + fmt(fc.remaining) + " GA แต่ไม่เหลือวันให้ทำแล้ว";
+                "ขาดอีก " + fU(fc.remaining) + uGA + " แต่ไม่เหลือวันให้ทำแล้ว";
             }
           }
 
@@ -7855,6 +7897,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // unrestricted view with a committed target, and Actual only when Actual GA is the full GA
           // (committed CM targets), so the Mass + Migrant / Tourist split adds up to the headline.
           var splitOk =
+            !isM1 &&
             segInfo.supported &&
             !segInfo.segLabel &&
             segInfo.target > 0 &&
@@ -7895,7 +7938,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               title: "เทียบเป้า",
               cards: [
                 {
-                  label: "Target GA",
+                  label: isM1 ? "Target M1" : "Target GA",
                   // t.target === 0 means no committed CM target has been published for THIS
                   // month yet (see the CM-ONLY TARGET block above) -- a bare "0" reads as "the
                   // target is zero", not "no target set", and the other 4 cards in this same
@@ -7906,7 +7949,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   // reads much smaller than usual looks like a bug, not the toggle working.
                   value:
                     segInfo.supported && segInfo.target > 0
-                      ? fmt(segInfo.target)
+                      ? fU(segInfo.target)
                       : "—",
                   sub: !segInfo.supported
                     ? "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้"
@@ -7919,14 +7962,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   split: targetSplit,
                 },
                 {
-                  label: "Actual GA",
+                  label: isM1 ? "Actual M1" : "Actual GA",
                   // Scoped to "GA from CMs with a committed target" (targetedGA), not total GA --
                   // with no target published, there's nothing in that scope to sum, so this
                   // shows "—" (not applicable) rather than "0" (which reads as "no sales",
                   // when the cluster's real GA is shown elsewhere on this same page).
                   value:
                     segInfo.supported && segInfo.target > 0
-                      ? fmt(segInfo.targetedGA)
+                      ? fU(segInfo.targetedGA)
                       : "—",
                   sub: !segInfo.supported
                     ? "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้"
@@ -8085,6 +8128,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 fmt(t.noTargetGA) +
                 " นับรวมอยู่ใน %Achieve ผ่านเป้ารวมของ CM แล้ว"
               : "ทุกร้านมีเป้าหมายเฉพาะบุคคล";
+          if (isM1) $("perfHint").textContent = "เทียบเป้า M1 (บาท) ของ CM ที่ตั้งไว้เดือนนี้";
         }
 
         // Required daily rate for one CM, coloured by whether they're already running fast enough:
