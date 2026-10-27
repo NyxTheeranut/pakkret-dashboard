@@ -8173,15 +8173,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         var COM_LB_COLS = [
           { key: "name", label: "COM", align: "left" },
           { key: "stores", label: "ร้าน" },
-          { key: "ga", label: "GA" },
           { key: "target", label: "Target" },
-          { key: "achieve", label: "%Ach (RR)" },
+          { key: "ga", label: "GA" },
           { key: "pace", label: "%MTD" },
           { key: "gap", label: "ขาด/เกิน" },
           { key: "need", label: "ต้องได้อีก/วัน" },
-          { key: "mom", label: "%MOM" },
           { key: "m1", label: "M1" },
           { key: "arpu", label: "ARPU" },
+          { key: "achieve", label: "%Ach (RR)" },
+          { key: "mom", label: "%MOM" },
         ];
         function comLbSortValue(row, key) {
           if (key === "name") return row.com;
@@ -8415,16 +8415,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             revInfoNote(m.revInfo) +
             " · คลิกแถวเพื่อดูเฉพาะ COM นั้น";
 
-          // In M1 mode the Target column moves to sit right behind M1 (header and body share
-          // this one ordering, so they can't drift apart).
+          // Target always sits right before the actual it measures (GA mode: Target, GA; M1 mode: Target, M1),
+          // and %Ach (RR) + %MOM always close the row. Header and body share this one ordering.
           var comLbKeys = COM_LB_COLS.map(function (c) {
             return c.key;
           });
           if (targetMode === "m1") {
             comLbKeys.splice(comLbKeys.indexOf("target"), 1);
-            comLbKeys.splice(comLbKeys.indexOf("m1") + 1, 0, "target");
-            comLbKeys.splice(comLbKeys.indexOf("achieve"), 1);
-            comLbKeys.splice(comLbKeys.indexOf("target") + 1, 0, "achieve");
+            comLbKeys.splice(comLbKeys.indexOf("m1"), 0, "target");
           }
 
           var headerHtml = comLbKeys
@@ -9838,10 +9836,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           { key: "ap30dSubs", label: "AP30D subs" },
           { key: "ap1dConv", label: "%AP1D" },
           { key: "conv", label: "%AP30D" },
-          { key: "mom", label: "%MOM" },
-          { key: "achieve", label: "%Achieve" },
           { key: "m1", label: "M1" },
           { key: "arpu", label: "ARPU" },
+          { key: "achieve", label: "%Achieve" },
+          { key: "mom", label: "%MOM" },
         ];
         // The quadrant's table and its export read %Achieve from the run rate, so say so in the header.
         function rtrColLabel(col, runRate) {
@@ -10562,9 +10560,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               return [
                 cm,
                 fmt(cr.storeCount),
-                fmt(cr.ga),
                 fmt(cr.target),
-                cr.achievePct != null ? pct(cr.achievePct) : "—",
+                fmt(cr.ga),
                 f ? (f.surplus >= 0 ? "+" : "") + fmt(f.surplus) : "—",
                 f
                   ? f.remaining <= 0
@@ -10573,6 +10570,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                       ? fmt(f.needPerDay)
                       : "—"
                   : "—",
+                cr.achievePct != null ? pct(cr.achievePct) : "—",
                 cr.momPct != null
                   ? (cr.momPct > 0 ? "+" : "") + pct(cr.momPct)
                   : "—",
@@ -10612,8 +10610,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   s.name,
                   String(s.code),
                   s.cm || UNMAPPED_CM,
-                  fmt(s.ga),
                   fmt(s.target),
+                  fmt(s.ga),
                   pct(s.achievePct),
                   (s.momPct > 0 ? "+" : "") + pct(s.momPct),
                 ];
@@ -10628,15 +10626,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               m.label +
               " · ออกรายงาน " +
               new Date().toLocaleDateString("th-TH"),
-            headline: headline,
+            headline: orderSummaryHeadline(headline),
             cmCols: [
               "CM",
               "ร้าน",
-              "GA",
               "Target",
-              "%Ach",
+              "GA",
               "ขาด/เกิน",
               "ต้องได้/วัน",
+              "%Ach",
               "%MOM",
             ],
             cmRows: cmRows,
@@ -10644,13 +10642,29 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               "ร้านค้า",
               "รหัส",
               "CM",
-              "GA",
               "Target",
+              "GA",
               "%Achieve",
               "%MOM",
             ],
             riskRows: riskStores,
           };
+        }
+
+        // One-page summary headline: Target first, then the actual GA, then pace / forecast / need, with %Achieve
+        // and MOM always last.
+        function orderSummaryHeadline(h) {
+          function pick(label) {
+            return h.filter(function (x) {
+              return x.label === label;
+            });
+          }
+          var first = pick("Target").concat(pick("GA (ทำได้)"));
+          var last = pick("%Achieve").concat(pick("MOM"));
+          var rest = h.filter(function (x) {
+            return ["Target", "GA (ทำได้)", "%Achieve", "MOM"].indexOf(x.label) === -1;
+          });
+          return first.concat(rest, last);
         }
 
         // Column 0 holds names (proportional), every other column holds figures (monospace, so digits
@@ -12948,9 +12962,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             title:
               "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA AE นี้ที่ราคาแพ็คต่ำกว่า 100",
           },
-          { key: "mom", label: "%MOM" },
           { key: "rev", label: "M1" },
           { key: "arpu", label: "ARPU" },
+          { key: "mom", label: "%MOM" },
         ];
         function aeLbSortValue(row, key) {
           if (key === "name") return row.ae;
@@ -12980,9 +12994,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         var SEV_CM_LB_COLS = [
           { key: "name", label: "CM", align: "left" },
           { key: "stores", label: "ร้าน" },
-          { key: "ga", label: "GA" },
           { key: "target", label: "Target" },
-          { key: "achieve", label: "%Ach (RR)" },
+          { key: "ga", label: "GA" },
           { key: "ap49", label: "AP 49" },
           { key: "ap99", label: "AP 99" },
           { key: "ap199", label: "AP 199" },
@@ -12993,9 +13006,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             title:
               "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA CM นี้ที่ราคาแพ็คต่ำกว่า 100",
           },
-          { key: "mom", label: "%MOM" },
           { key: "rev", label: "M1" },
           { key: "arpu", label: "ARPU" },
+          { key: "achieve", label: "%Ach (RR)" },
+          { key: "mom", label: "%MOM" },
         ];
         function sevCmLbSortValue(row, key) {
           if (key === "name") return row.cm;
@@ -13159,16 +13173,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             (mk ? revInfoNote(state.sev.revInfoByMonth[mk]) : "") +
             " · คลิกแถวเพื่อดูเฉพาะ CM นั้น";
 
-          // In M1 mode the Target column moves to sit right behind M1 (header and body share
-          // this one ordering, so they can't drift apart).
+          // Target always sits right before the actual it measures (GA mode: Target, GA; M1 mode: Target, M1),
+          // and %Ach (RR) + %MOM always close the row.
           var sevCmKeys = SEV_CM_LB_COLS.map(function (c) {
             return c.key;
           });
           if (mode === "m1") {
             sevCmKeys.splice(sevCmKeys.indexOf("target"), 1);
-            sevCmKeys.splice(sevCmKeys.indexOf("rev") + 1, 0, "target");
-            sevCmKeys.splice(sevCmKeys.indexOf("achieve"), 1);
-            sevCmKeys.splice(sevCmKeys.indexOf("target") + 1, 0, "achieve");
+            sevCmKeys.splice(sevCmKeys.indexOf("rev"), 0, "target");
           }
 
           var headerHtml = sevCmKeys
@@ -13552,9 +13564,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 '<td class="num-cell">' +
                 (r.apUnder100Pct != null ? pct(r.apUnder100Pct) : "—") +
                 "</td>" +
-                '<td class="num-cell">' +
-                pctBadge(r.momPct, "mom") +
-                "</td>" +
                 '<td class="num-cell"' +
                 (r.revDeltaPct != null
                   ? ' title="' +
@@ -13574,6 +13583,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 "</td>" +
                 '<td class="num-cell">' +
                 (r.arpu != null ? fmtBaht(r.arpu) : "—") +
+                "</td>" +
+                '<td class="num-cell">' +
+                pctBadge(r.momPct, "mom") +
                 "</td>" +
                 "</tr>"
               );
@@ -14733,9 +14745,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               return [
                 cm,
                 fmt(r.storeCount),
-                fmt(r.ga),
                 r.target != null ? fmt(r.target) : "—",
-                r.achievePct != null ? pct(r.achievePct) : "—",
+                fmt(r.ga),
                 f ? (f.surplus >= 0 ? "+" : "") + fmt(f.surplus) : "—",
                 f
                   ? f.remaining <= 0
@@ -14744,6 +14755,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                       ? fmt(f.needPerDay)
                       : "—"
                   : "—",
+                r.achievePct != null ? pct(r.achievePct) : "—",
                 r.momPct != null
                   ? (r.momPct > 0 ? "+" : "") + pct(r.momPct)
                   : "—",
@@ -14783,8 +14795,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   x.s.name,
                   String(x.s.code),
                   x.s.cm || UNMAPPED_CM,
-                  fmt(x.d.ga),
                   fmt(x.d.target),
+                  fmt(x.d.ga),
                   pct(x.d.achievePct),
                   (x.d.momPct > 0 ? "+" : "") + pct(x.d.momPct),
                 ];
@@ -14797,15 +14809,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               sevExportScopeLabel() +
               " · ออกรายงาน " +
               new Date().toLocaleDateString("th-TH"),
-            headline: headline,
+            headline: orderSummaryHeadline(headline),
             cmCols: [
               "CM",
               "ร้าน",
-              "GA",
               "Target",
-              "%Ach",
+              "GA",
               "ขาด/เกิน",
               "ต้องได้/วัน",
+              "%Ach",
               "%MOM",
             ],
             cmRows: cmRows,
@@ -14813,8 +14825,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               "ร้านค้า",
               "รหัส",
               "CM",
-              "GA",
               "Target",
+              "GA",
               "%Achieve",
               "%MOM",
             ],
@@ -15210,8 +15222,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 
         var SEV_TABLE_COLS = [
           { key: "name", label: "ร้านค้า", align: "left" },
-          { key: "ga", label: "GA" },
           { key: "target", label: "Target" },
+          { key: "ga", label: "GA" },
           { key: "ap49", label: "AP 49" },
           { key: "ap99", label: "AP 99" },
           { key: "ap199", label: "AP 199" },
@@ -15223,11 +15235,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               "(AP 49 + AP 99) ÷ GA -- ส่วนแบ่งของ GA ร้านนี้ที่ราคาแพ็คต่ำกว่า 100",
           },
           { key: "mtd", label: "%MTD" },
-          { key: "achieve", label: "%Achieve" },
           { key: "rev", label: "รายได้" },
           { key: "m1ga", label: "ARPU" },
           { key: "fyai", label: "ฝ่าย", align: "left" },
           { key: "khet", label: "เขต", align: "left" },
+          { key: "achieve", label: "%Achieve" },
         ];
         // On-screen table hides ฝ่าย/เขต (by request -- they stay available for sorting via
         // "เรียงตาม" and for the export, both of which read SEV_TABLE_COLS directly),
