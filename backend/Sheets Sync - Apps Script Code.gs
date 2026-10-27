@@ -34,7 +34,10 @@
  *   doesn't exist yet -- replace the sample row with real teammate emails.
  * "Access Log" -- who opened the dashboard, how many times per day. One row per
  *   (day, email): date | email | visits | last visit time. A visit = one page
- *   load (the page sends a small "logVisit" call after it has rendered). Rows older than
+ *   load (the page sends a small "logVisit" call after it has rendered). "active sec" is the
+ *   time the dashboard was really on screen (visible tab + recent activity), and "own-team sec"
+ *   the part of it spent with the person's own CM/COM name selected (names listed in column C of
+ *   their Viewers row). No clicks are recorded. Rows older than
  *   ACCESS_LOG_DAYS (45 = a month and a half) are deleted on every write, so
  *   the oldest day drops off as each new day starts. Created automatically.
  * "Access Summary" -- rebuilt from "Access Log" on every visit: a people x days grid (last 14 days, shaded) + two charts. Names: optional 2nd column "name" on Viewers. Total visits, active
@@ -101,6 +104,13 @@ function doPost(e) {
     if (body.action === "logVisit") {
       // Sent by the page AFTER it has rendered (fire-and-forget), so counting a visit never slows loading.
       return jsonResponse_(logVisitForViewer_(body.idToken));
+    }
+
+    if (body.action === "logActive") {
+      // Sent by the page every few minutes and when the tab is hidden/closed: seconds the dashboard was really
+      // on screen (visible tab + recent activity), plus seconds per selected CM/COM name. Names are matched to
+      // the person's own team here (Viewers tab) -- the page never learns who "owns" which name.
+      return jsonResponse_(logActiveForViewer_(body.idToken, body.seconds, body.views));
     }
 
     if (body.action === "getValuesBatch") {
@@ -284,6 +294,24 @@ function lookupViewer_(email) {
   return false;
 }
 
+// The person's own team: names in column C of their Viewers row (their CM / COM / AE names, comma or / separated).
+function viewerTeam_(email) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Viewers");
+  var team = {};
+  if (!sheet || sheet.getLastRow() < 2 || sheet.getLastColumn() < 3) return team;
+  var lower = String(email).trim().toLowerCase();
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues().forEach(function (r) {
+    if (String(r[0]).trim().toLowerCase() !== lower) return;
+    String(r[2] || "")
+      .split(/[,/;\n]/)
+      .forEach(function (n) {
+        n = n.trim().toLowerCase();
+        if (n) team[n] = true;
+      });
+  });
+  return team;
+}
+
 // ---------- Access log ----------
 var ACCESS_LOG_DAYS = 45; // a month and a half; older rows are pruned on every write
 var ACCESS_LOG_TZ = "Asia/Bangkok";
@@ -295,7 +323,10 @@ function accessDayKey_(v) {
 
 // Adds one visit for this email today, then drops rows older than ACCESS_LOG_DAYS. Never throws:
 // a logging problem must not stop anyone from seeing the dashboard.
-function logAccess_(email) {
+function logAccess_(email, addVisits, addActiveSec, addOwnSec) {
+  if (addVisits === undefined) addVisits = 1;
+  addActiveSec = addActiveSec || 0;
+  addOwnSec = addOwnSec || 0;
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(5000);
@@ -303,11 +334,12 @@ function logAccess_(email) {
     var sheet = ss.getSheetByName("Access Log");
     if (!sheet) {
       sheet = ss.insertSheet("Access Log");
-      sheet.appendRow(["date", "email", "visits", "last visit"]);
+      sheet.appendRow(["date", "email", "visits", "last visit", "active sec", "own-team sec"]);
       sheet.setFrozenRows(1);
       sheet.getRange("A:A").setNumberFormat("@"); // keep the day as plain text, not a date cell
       sheet.getRange("D:D").setNumberFormat("@");
     }
+    if (!sheet.getRange(1, 5).getValue()) sheet.getRange(1, 5, 1, 2).setValues([["active sec", "own-team sec"]]); // older logs had 4 columns
     var now = new Date();
     var today = Utilities.formatDate(now, ACCESS_LOG_TZ, "yyyy-MM-dd");
     var stamp = Utilities.formatDate(now, ACCESS_LOG_TZ, "HH:mm:ss");
@@ -325,10 +357,17 @@ function logAccess_(email) {
       }
     }
     if (hit) {
-      var cur = Number(sheet.getRange(hit, 3).getValue()) || 0;
-      sheet.getRange(hit, 3, 1, 2).setValues([[cur + 1, stamp]]);
+      var curRow = sheet.getRange(hit, 3, 1, 4).getValues()[0];
+      sheet.getRange(hit, 3, 1, 4).setValues([
+        [
+          (Number(curRow[0]) || 0) + addVisits,
+          stamp,
+          (Number(curRow[2]) || 0) + addActiveSec,
+          (Number(curRow[3]) || 0) + addOwnSec,
+        ],
+      ]);
     } else {
-      sheet.appendRow([today, lower, 1, stamp]);
+      sheet.appendRow([today, lower, addVisits, stamp, addActiveSec, addOwnSec]);
       sheet.getRange(sheet.getLastRow(), 1).setNumberFormat("@").setValue(today);
     }
     // prune: delete rows from the top while their day is before the cutoff
@@ -365,8 +404,11 @@ function buildAccessGrid_(data, names, dayKeys) {
     var email = String(r[1]).trim().toLowerCase();
     var v = Number(r[2]) || 0;
     if (!day || !email) return;
-    var p = people[email] || (people[email] = { email: email, total: 0, byDay: {} });
+    var p = people[email] || (people[email] = { email: email, total: 0, activeSec: 0, ownSec: 0, ownDays: 0, byDay: {} });
     p.total += v;
+    p.activeSec += Number(r[4]) || 0;
+    p.ownSec += Number(r[5]) || 0;
+    if ((Number(r[5]) || 0) >= 30) p.ownDays += 1; // a day counts as "saw own team" with at least 30 s on their own name
     p.byDay[day] = (p.byDay[day] || 0) + v;
     var d = perDay[day] || (perDay[day] = { visits: 0, people: {} });
     d.visits += v;
@@ -383,7 +425,11 @@ function buildAccessGrid_(data, names, dayKeys) {
       var nm = (names && names[p.email]) || p.email.split("@")[0];
       return {
         name: nm,
+        email: p.email,
         total: p.total,
+        activeMin: Math.round(p.activeSec / 60),
+        ownMin: Math.round(p.ownSec / 60),
+        ownDays: p.ownDays,
         cells: dayKeys.map(function (k) {
           return p.byDay[k] || "";
         }),
@@ -404,14 +450,16 @@ function buildAccessGrid_(data, names, dayKeys) {
 function rebuildAccessSummary_(ss, logSheet) {
   var sh = ss.getSheetByName("Access Summary") || ss.insertSheet("Access Summary");
   var n = logSheet.getLastRow() - 1;
-  var data = n > 0 ? logSheet.getRange(2, 1, n, 3).getValues() : [];
+  var data = n > 0 ? logSheet.getRange(2, 1, n, 6).getValues() : [];
   var names = {};
+  var hasTeam = {}; // people with no team in Viewers column C (admins) show "-" for the own-team columns
   var vs = ss.getSheetByName("Viewers");
   if (vs && vs.getLastRow() >= 2 && vs.getLastColumn() >= 2) {
-    vs.getRange(2, 1, vs.getLastRow() - 1, 2).getValues().forEach(function (r) {
+    vs.getRange(2, 1, vs.getLastRow() - 1, Math.min(vs.getLastColumn(), 3)).getValues().forEach(function (r) {
       var e = String(r[0]).trim().toLowerCase();
       var nm = String(r[1] || "").trim();
       if (e && nm) names[e] = nm;
+      if (e && String(r[2] || "").trim()) hasTeam[e] = true;
     });
   }
   var now = new Date();
@@ -432,16 +480,16 @@ function rebuildAccessSummary_(ss, logSheet) {
   // text only where a value could be mistaken for a date ("10-27", "2026-10-27"); counts stay real numbers
   sh.getRange("A:A").setNumberFormat("@");
   sh.getRange("1:1").setNumberFormat("@");
-  sh.getRange("R:R").setNumberFormat("@");
-  sh.getRange("U:U").setNumberFormat("@");
-  var head = ["name"].concat(dayLabels).concat(["Total (" + ACCESS_LOG_DAYS + "d)"]);
+  sh.getRange("V:V").setNumberFormat("@");
+  sh.getRange("Z:Z").setNumberFormat("@");
+  var head = ["name"].concat(dayLabels).concat(["Total (" + ACCESS_LOG_DAYS + "d)", "Active min", "Own team min", "Days saw own team"]);
   sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight("bold");
   var rows = g.people.map(function (p) {
-    return [p.name].concat(p.cells).concat([p.total]);
+    return [p.name].concat(p.cells).concat([p.total, p.activeMin, hasTeam[p.email] ? p.ownMin : "-", hasTeam[p.email] ? p.ownDays : "-"]);
   });
   if (rows.length) {
     sh.getRange(2, 1, rows.length, head.length).setValues(rows);
-    sh.getRange(2, 2, rows.length, ACCESS_GRID_DAYS + 1).setHorizontalAlignment("center");
+    sh.getRange(2, 2, rows.length, ACCESS_GRID_DAYS + 4).setHorizontalAlignment("center");
     var rule = SpreadsheetApp.newConditionalFormatRule()
       .setGradientMinpoint("#ffffff")
       .setGradientMaxpoint("#0f766e")
@@ -454,18 +502,21 @@ function rebuildAccessSummary_(ss, logSheet) {
   sh.setFrozenColumns(1);
   sh.setColumnWidth(1, 150);
   for (var c = 2; c <= head.length; c++) sh.setColumnWidth(c, 54);
-  sh.setColumnWidth(head.length, 84);
+  sh.setColumnWidth(head.length - 3, 84);
+  sh.setColumnWidth(head.length - 2, 80);
+  sh.setColumnWidth(head.length - 1, 96);
+  sh.setColumnWidth(head.length, 120);
 
   // helper tables that feed the two charts (kept to the right, out of the way)
-  sh.getRange(1, 18, 1, 2).setValues([["name", "visits"]]).setFontWeight("bold");
+  sh.getRange(1, 22, 1, 3).setValues([["name", "active min", "own team min"]]).setFontWeight("bold");
   if (g.people.length)
-    sh.getRange(2, 18, g.people.length, 2).setValues(
+    sh.getRange(2, 22, g.people.length, 3).setValues(
       g.people.map(function (p) {
-        return [p.name, p.total];
+        return [p.name, p.activeMin, p.ownMin];
       }),
     );
-  sh.getRange(1, 21, 1, 3).setValues([["day", "visits", "people"]]).setFontWeight("bold");
-  if (g.days.length) sh.getRange(2, 21, g.days.length, 3).setValues(g.days);
+  sh.getRange(1, 26, 1, 3).setValues([["day", "visits", "people"]]).setFontWeight("bold");
+  if (g.days.length) sh.getRange(2, 26, g.days.length, 3).setValues(g.days);
 
   try {
     var below = Math.max(rows.length + 3, 6);
@@ -474,12 +525,12 @@ function rebuildAccessSummary_(ss, logSheet) {
       sh
         .newChart()
         .asBarChart()
-        .addRange(sh.getRange(1, 18, np + 1, 2))
+        .addRange(sh.getRange(1, 22, np + 1, 3))
         .setNumHeaders(1)
         .setPosition(below, 1, 0, 0)
-        .setOption("title", "Visits per person (" + ACCESS_LOG_DAYS + " days)")
-        .setOption("legend", { position: "none" })
-        .setOption("colors", ["#0f766e"])
+        .setOption("title", "Minutes on the dashboard per person (" + ACCESS_LOG_DAYS + " days)")
+        .setOption("legend", { position: "bottom" })
+        .setOption("colors", ["#9fd3cc", "#0f766e"])
         .setOption("width", 520)
         .setOption("height", Math.max(220, 40 + np * 28))
         .build(),
@@ -488,7 +539,7 @@ function rebuildAccessSummary_(ss, logSheet) {
       sh
         .newChart()
         .asColumnChart()
-        .addRange(sh.getRange(1, 21, Math.max(g.days.length, 1) + 1, 2))
+        .addRange(sh.getRange(1, 26, Math.max(g.days.length, 1) + 1, 2))
         .setNumHeaders(1)
         .setPosition(below, 9, 0, 0)
         .setOption("title", "Visits per day")
@@ -505,7 +556,26 @@ function rebuildAccessSummary_(ss, logSheet) {
 function logVisitForViewer_(idToken) {
   var email = verifyIdToken_(idToken);
   if (!email || !lookupViewer_(email)) return { ok: false };
-  logAccess_(email);
+  logAccess_(email, 1, 0, 0);
+  return { ok: true };
+}
+
+// Adds time looked at the dashboard. seconds = active seconds since the page's last report (capped, so a bad
+// client can't inflate it); views = {selected CM/COM/AE name: seconds}. Seconds on a name that is in this
+// person's own team (Viewers column C) also count as "own team" time.
+function logActiveForViewer_(idToken, seconds, views) {
+  var email = verifyIdToken_(idToken);
+  if (!email || !lookupViewer_(email)) return { ok: false };
+  var sec = Math.max(0, Math.min(Number(seconds) || 0, 900));
+  if (!sec) return { ok: true };
+  var team = viewerTeam_(email);
+  var own = 0;
+  Object.keys(views || {})
+    .slice(0, 12)
+    .forEach(function (name) {
+      if (team[String(name).trim().toLowerCase()]) own += Math.max(0, Math.min(Number(views[name]) || 0, sec));
+    });
+  logAccess_(email, 0, sec, Math.min(own, sec));
   return { ok: true };
 }
 

@@ -17010,6 +17010,59 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           } catch (e) {}
         }
 
+        // Time actually spent looking at the dashboard: counted per second only while the tab is visible AND the person
+        // moved / scrolled / typed in the last 20 s (an idle or background tab adds nothing). Also counts seconds with a
+        // CM / COM / AE name selected, so the backend can tell whether they looked at their OWN team. Nothing about
+        // what was clicked is recorded; the activity listeners only refresh an idle timer. Reported every 3 minutes and
+        // when the tab is hidden or closed.
+        var activeSecPending = 0;
+        var activeViews = {};
+        var lastActivityAt = Date.now();
+        ["mousemove", "scroll", "keydown", "touchstart", "click", "wheel"].forEach(function (ev) {
+          window.addEventListener(
+            ev,
+            function () {
+              lastActivityAt = Date.now();
+            },
+            { passive: true, capture: true },
+          );
+        });
+        function selectedViewNames() {
+          var names = [];
+          var onRtr = $("tabBtnRtr") && $("tabBtnRtr").classList.contains("active");
+          var onSev = $("tabBtnSev") && $("tabBtnSev").classList.contains("active");
+          if (onRtr) names = [state.rtr.currentCM, state.rtr.currentCOM];
+          else if (onSev) names = [state.sev.currentCM, state.sev.currentAe];
+          return names.filter(Boolean);
+        }
+        setInterval(function () {
+          if (!VIEWER_ID_TOKEN || !visitPinged) return;
+          if (document.visibilityState !== "visible" || Date.now() - lastActivityAt > 20000) return;
+          activeSecPending += 1;
+          selectedViewNames().forEach(function (n) {
+            activeViews[n] = (activeViews[n] || 0) + 1;
+          });
+        }, 1000);
+        function flushActive() {
+          if (!VIEWER_ID_TOKEN || activeSecPending < 3) return;
+          var body = JSON.stringify({ action: "logActive", idToken: VIEWER_ID_TOKEN, seconds: activeSecPending, views: activeViews });
+          activeSecPending = 0;
+          activeViews = {};
+          try {
+            fetch(VIEWER_SCRIPT_URL, {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: body,
+              keepalive: true,
+            }).catch(function () {});
+          } catch (e) {}
+        }
+        setInterval(flushActive, 180000);
+        document.addEventListener("visibilitychange", function () {
+          if (document.visibilityState === "hidden") flushActive();
+        });
+        window.addEventListener("pagehide", flushActive);
+
         function scriptGetValuesOnce(tab) {
           return fetch(VIEWER_SCRIPT_URL, {
             method: "POST",
