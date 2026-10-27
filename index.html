@@ -17010,30 +17010,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           } catch (e) {}
         }
 
-        // Same idea for "engaged": the first real click after the dashboard has loaded (not the sign-in gate).
-        var engagedPinged = false;
-        function pingEngaged() {
-          if (engagedPinged || !visitPinged || !VIEWER_ID_TOKEN) return;
-          engagedPinged = true;
-          try {
-            fetch(VIEWER_SCRIPT_URL, {
-              method: "POST",
-              headers: { "Content-Type": "text/plain;charset=utf-8" },
-              body: JSON.stringify({ action: "logEngaged", idToken: VIEWER_ID_TOKEN }),
-              keepalive: true,
-            }).catch(function () {});
-          } catch (e) {}
-        }
-        document.addEventListener(
-          "click",
-          function (e) {
-            var t = e.target;
-            if (!t || !t.closest || t.closest("#loginGate")) return;
-            if (t.closest("button, a, tr, .pill, .cm-tab, .top-tab, li.clickable, [data-code], summary")) pingEngaged();
-          },
-          true,
-        );
-
         function scriptGetValuesOnce(tab) {
           return fetch(VIEWER_SCRIPT_URL, {
             method: "POST",
@@ -18676,7 +18652,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           sevStep("กำลังตรวจสอบข้อมูลล่าสุด...");
           scriptBatchCache = null; // fresh load -- discard any previous load's leftovers
           visitPinged = false;
-          engagedPinged = false;
           return scriptReadTab("meta")
             .then(function (meta) {
               // Load every month the sync retention keeps (SYNC.KEEP_MONTHS), not an
