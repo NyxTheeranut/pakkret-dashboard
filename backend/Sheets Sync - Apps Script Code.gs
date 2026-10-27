@@ -37,7 +37,7 @@
  *   load (the page sends a small "logVisit" call after it has rendered). Rows older than
  *   ACCESS_LOG_DAYS (45 = a month and a half) are deleted on every write, so
  *   the oldest day drops off as each new day starts. Created automatically.
- * "Access Summary" -- a formula tab over "Access Log": total visits, active
+ * "Access Summary" -- rebuilt from "Access Log" on every visit: a people x days grid (last 14 days, shaded) + two charts. Names: optional 2nd column "name" on Viewers. Total visits, active
  *   days and last day per email inside that window. Created automatically.
  *   Neither tab is ever served to the page (see isReadableTab_).
  *
@@ -340,7 +340,7 @@ function logAccess_(email) {
       while (old < days.length && accessDayKey_(days[old][0]) < cutoff) old++;
       if (old > 0) sheet.deleteRows(2, old);
     }
-    ensureAccessSummary_(ss);
+    rebuildAccessSummary_(ss, sheet);
   } catch (err) {
     // swallow: logging is best-effort
   } finally {
@@ -350,29 +350,154 @@ function logAccess_(email) {
   }
 }
 
-// One formula tab that always reflects the log: per email, total visits / active days / last day in the window.
-function ensureAccessSummary_(ss) {
-  if (ss.getSheetByName("Access Summary")) return;
-  var sh = ss.insertSheet("Access Summary");
-  sh.getRange("A1").setFormula(
-    "=QUERY('Access Log'!A:C,\"select B, sum(C), count(A), max(A) where B is not null group by B order by sum(C) desc label B 'email', sum(C) 'visits', count(A) 'active days', max(A) 'last day'\",1)",
-  );
-  sh.setFrozenRows(1);
-  // visits per day (all people), with a column chart beside it
-  sh.getRange("F1").setFormula(
-    "=QUERY('Access Log'!A:C,\"select A, sum(C), count(B) where A is not null group by A order by A label A 'day', sum(C) 'visits', count(B) 'people'\",1)",
-  );
-  try {
-    var chart = sh
-      .newChart()
-      .asColumnChart()
-      .addRange(sh.getRange("F1:G60"))
-      .setNumHeaders(1)
-      .setPosition(2, 9, 0, 0)
-      .setOption("title", "Visits per day")
-      .setOption("legend", { position: "none" })
+// ---------- Access Summary ----------
+var ACCESS_GRID_DAYS = 14; // days shown as columns in the grid (the log itself keeps ACCESS_LOG_DAYS)
+
+// Pure data step (no Sheets calls), so it can be checked on its own.
+//   data:   [[day, email, visits], ...] from the log     names: {email: shortName} from the Viewers tab
+//   dayKeys: the ACCESS_GRID_DAYS day labels shown as columns, oldest first
+// Returns people sorted by total visits (whole window), each with their per-day cells, plus per-day totals.
+function buildAccessGrid_(data, names, dayKeys) {
+  var people = {};
+  var perDay = {};
+  data.forEach(function (r) {
+    var day = accessDayKey_(r[0]);
+    var email = String(r[1]).trim().toLowerCase();
+    var v = Number(r[2]) || 0;
+    if (!day || !email) return;
+    var p = people[email] || (people[email] = { email: email, total: 0, byDay: {} });
+    p.total += v;
+    p.byDay[day] = (p.byDay[day] || 0) + v;
+    var d = perDay[day] || (perDay[day] = { visits: 0, people: {} });
+    d.visits += v;
+    d.people[email] = true;
+  });
+  var list = Object.keys(people)
+    .map(function (k) {
+      return people[k];
+    })
+    .sort(function (a, b) {
+      return b.total - a.total || (a.email < b.email ? -1 : 1);
+    })
+    .map(function (p) {
+      var nm = (names && names[p.email]) || p.email.split("@")[0];
+      return {
+        name: nm,
+        total: p.total,
+        cells: dayKeys.map(function (k) {
+          return p.byDay[k] || "";
+        }),
+      };
+    });
+  var days = Object.keys(perDay)
+    .sort()
+    .map(function (k) {
+      return [k, perDay[k].visits, Object.keys(perDay[k].people).length];
+    });
+  return { people: list, days: days };
+}
+
+// Rebuilds "Access Summary" on every visit (plain values + built-in colour scale, no formulas to break):
+//   A..P  grid: one row per person, last ACCESS_GRID_DAYS days as columns, shaded by visits, Total = whole window
+//   R:S   visits per person (feeds the bar chart)      U:W  visits / people per day (feeds the day chart)
+// Names come from an optional second column "name" on the Viewers tab; otherwise the part of the email before @.
+function rebuildAccessSummary_(ss, logSheet) {
+  var sh = ss.getSheetByName("Access Summary") || ss.insertSheet("Access Summary");
+  var n = logSheet.getLastRow() - 1;
+  var data = n > 0 ? logSheet.getRange(2, 1, n, 3).getValues() : [];
+  var names = {};
+  var vs = ss.getSheetByName("Viewers");
+  if (vs && vs.getLastRow() >= 2 && vs.getLastColumn() >= 2) {
+    vs.getRange(2, 1, vs.getLastRow() - 1, 2).getValues().forEach(function (r) {
+      var e = String(r[0]).trim().toLowerCase();
+      var nm = String(r[1] || "").trim();
+      if (e && nm) names[e] = nm;
+    });
+  }
+  var now = new Date();
+  var dayKeys = [];
+  var dayLabels = [];
+  for (var k = ACCESS_GRID_DAYS - 1; k >= 0; k--) {
+    var key = Utilities.formatDate(new Date(now.getTime() - k * 86400000), ACCESS_LOG_TZ, "yyyy-MM-dd");
+    dayKeys.push(key);
+    dayLabels.push(key.slice(5)); // MM-dd
+  }
+  var g = buildAccessGrid_(data, names, dayKeys);
+
+  sh.clear();
+  sh.getCharts().forEach(function (c) {
+    sh.removeChart(c);
+  });
+  sh.setConditionalFormatRules([]);
+  // text only where a value could be mistaken for a date ("10-27", "2026-10-27"); counts stay real numbers
+  sh.getRange("A:A").setNumberFormat("@");
+  sh.getRange("1:1").setNumberFormat("@");
+  sh.getRange("R:R").setNumberFormat("@");
+  sh.getRange("U:U").setNumberFormat("@");
+  var head = ["name"].concat(dayLabels).concat(["Total (" + ACCESS_LOG_DAYS + "d)"]);
+  sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight("bold");
+  var rows = g.people.map(function (p) {
+    return [p.name].concat(p.cells).concat([p.total]);
+  });
+  if (rows.length) {
+    sh.getRange(2, 1, rows.length, head.length).setValues(rows);
+    sh.getRange(2, 2, rows.length, ACCESS_GRID_DAYS + 1).setHorizontalAlignment("center");
+    var rule = SpreadsheetApp.newConditionalFormatRule()
+      .setGradientMinpoint("#ffffff")
+      .setGradientMaxpoint("#0f766e")
+      .setRanges([sh.getRange(2, 2, rows.length, ACCESS_GRID_DAYS)])
       .build();
-    sh.insertChart(chart);
+    sh.setConditionalFormatRules([rule]);
+  }
+  sh.getRange(1, 2, 1, head.length - 1).setHorizontalAlignment("center");
+  sh.setFrozenRows(1);
+  sh.setFrozenColumns(1);
+  sh.setColumnWidth(1, 150);
+  for (var c = 2; c <= head.length; c++) sh.setColumnWidth(c, 54);
+  sh.setColumnWidth(head.length, 84);
+
+  // helper tables that feed the two charts (kept to the right, out of the way)
+  sh.getRange(1, 18, 1, 2).setValues([["name", "visits"]]).setFontWeight("bold");
+  if (g.people.length)
+    sh.getRange(2, 18, g.people.length, 2).setValues(
+      g.people.map(function (p) {
+        return [p.name, p.total];
+      }),
+    );
+  sh.getRange(1, 21, 1, 3).setValues([["day", "visits", "people"]]).setFontWeight("bold");
+  if (g.days.length) sh.getRange(2, 21, g.days.length, 3).setValues(g.days);
+
+  try {
+    var below = Math.max(rows.length + 3, 6);
+    var np = Math.max(g.people.length, 1);
+    sh.insertChart(
+      sh
+        .newChart()
+        .asBarChart()
+        .addRange(sh.getRange(1, 18, np + 1, 2))
+        .setNumHeaders(1)
+        .setPosition(below, 1, 0, 0)
+        .setOption("title", "Visits per person (" + ACCESS_LOG_DAYS + " days)")
+        .setOption("legend", { position: "none" })
+        .setOption("colors", ["#0f766e"])
+        .setOption("width", 520)
+        .setOption("height", Math.max(220, 40 + np * 28))
+        .build(),
+    );
+    sh.insertChart(
+      sh
+        .newChart()
+        .asColumnChart()
+        .addRange(sh.getRange(1, 21, Math.max(g.days.length, 1) + 1, 2))
+        .setNumHeaders(1)
+        .setPosition(below, 9, 0, 0)
+        .setOption("title", "Visits per day")
+        .setOption("legend", { position: "none" })
+        .setOption("colors", ["#0f766e"])
+        .setOption("width", 520)
+        .setOption("height", 260)
+        .build(),
+    );
   } catch (e) {}
 }
 
