@@ -16865,6 +16865,22 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           "https://script.google.com/macros/s/AKfycbzjNSiIzcG2d0o1VcGX-kVoUtj3HBsnyDCMrO1qBimiIBUN5N3qLvQ4rkio30yVkxmv/exec";
         var VIEWER_ID_TOKEN = null;
 
+        // One background "visit" ping per page load, sent after the dashboard has rendered so it never slows loading.
+        // The backend counts it per email per day. Fire-and-forget: any failure is ignored.
+        var visitPinged = false;
+        function pingVisit() {
+          if (visitPinged || !VIEWER_ID_TOKEN) return;
+          visitPinged = true;
+          try {
+            fetch(VIEWER_SCRIPT_URL, {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({ action: "logVisit", idToken: VIEWER_ID_TOKEN }),
+              keepalive: true,
+            }).catch(function () {});
+          } catch (e) {}
+        }
+
         function scriptGetValuesOnce(tab) {
           return fetch(VIEWER_SCRIPT_URL, {
             method: "POST",
@@ -18397,6 +18413,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // localStorage cache hit) to the dashboard -- pulled out of loadFromCloud so both
         // paths render identically instead of the cache path needing its own copy.
         function applyCloudResult(rtrObjs, sevObjs, meta, partial) {
+          setTimeout(pingVisit, 0); // after this render: count the visit once per load
           if (rtrObjs.length) {
             applyRtrFromCloud(rtrObjs);
             renderRtrSheetNote();
@@ -18505,6 +18522,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           rtrStep("กำลังตรวจสอบข้อมูลล่าสุด...");
           sevStep("กำลังตรวจสอบข้อมูลล่าสุด...");
           scriptBatchCache = null; // fresh load -- discard any previous load's leftovers
+          visitPinged = false;
           return scriptReadTab("meta")
             .then(function (meta) {
               // Load every month the sync retention keeps (SYNC.KEEP_MONTHS), not an

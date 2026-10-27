@@ -32,6 +32,14 @@
  * "Viewers" -- who's allowed to read data. One column: email. Created
  *   automatically (with a sample row) the first time anyone signs in, if it
  *   doesn't exist yet -- replace the sample row with real teammate emails.
+ * "Access Log" -- who opened the dashboard, how many times per day. One row per
+ *   (day, email): date | email | visits | last visit time. A visit = one page
+ *   load (the page sends a small "logVisit" call after it has rendered). Rows older than
+ *   ACCESS_LOG_DAYS (45 = a month and a half) are deleted on every write, so
+ *   the oldest day drops off as each new day starts. Created automatically.
+ * "Access Summary" -- a formula tab over "Access Log": total visits, active
+ *   days and last day per email inside that window. Created automatically.
+ *   Neither tab is ever served to the page (see isReadableTab_).
  *
  * ── Auth (viewers) ─────────────────────────────────────────────────────────
  * The page signs the user in with Google Identity Services and sends the
@@ -88,6 +96,11 @@ function doPost(e) {
 
     if (body.action === "getValues") {
       return jsonResponse_(getValuesForViewer_(body.idToken, body.tab));
+    }
+
+    if (body.action === "logVisit") {
+      // Sent by the page AFTER it has rendered (fire-and-forget), so counting a visit never slows loading.
+      return jsonResponse_(logVisitForViewer_(body.idToken));
     }
 
     if (body.action === "getValuesBatch") {
@@ -269,6 +282,106 @@ function lookupViewer_(email) {
       return true;
   }
   return false;
+}
+
+// ---------- Access log ----------
+var ACCESS_LOG_DAYS = 45; // a month and a half; older rows are pruned on every write
+var ACCESS_LOG_TZ = "Asia/Bangkok";
+
+function accessDayKey_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, ACCESS_LOG_TZ, "yyyy-MM-dd");
+  return String(v).trim();
+}
+
+// Adds one visit for this email today, then drops rows older than ACCESS_LOG_DAYS. Never throws:
+// a logging problem must not stop anyone from seeing the dashboard.
+function logAccess_(email) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("Access Log");
+    if (!sheet) {
+      sheet = ss.insertSheet("Access Log");
+      sheet.appendRow(["date", "email", "visits", "last visit"]);
+      sheet.setFrozenRows(1);
+      sheet.getRange("A:A").setNumberFormat("@"); // keep the day as plain text, not a date cell
+      sheet.getRange("D:D").setNumberFormat("@");
+    }
+    var now = new Date();
+    var today = Utilities.formatDate(now, ACCESS_LOG_TZ, "yyyy-MM-dd");
+    var stamp = Utilities.formatDate(now, ACCESS_LOG_TZ, "HH:mm:ss");
+    var lower = String(email).trim().toLowerCase();
+    var last = sheet.getLastRow();
+    var hit = 0;
+    if (last >= 2) {
+      var vals = sheet.getRange(2, 1, last - 1, 3).getValues();
+      for (var i = vals.length - 1; i >= 0; i--) {
+        if (accessDayKey_(vals[i][0]) !== today) break; // rows are in date order: today's are at the bottom
+        if (String(vals[i][1]).trim().toLowerCase() === lower) {
+          hit = i + 2;
+          break;
+        }
+      }
+    }
+    if (hit) {
+      var cur = Number(sheet.getRange(hit, 3).getValue()) || 0;
+      sheet.getRange(hit, 3, 1, 2).setValues([[cur + 1, stamp]]);
+    } else {
+      sheet.appendRow([today, lower, 1, stamp]);
+      sheet.getRange(sheet.getLastRow(), 1).setNumberFormat("@").setValue(today);
+    }
+    // prune: delete rows from the top while their day is before the cutoff
+    var cutoff = Utilities.formatDate(new Date(now.getTime() - ACCESS_LOG_DAYS * 86400000), ACCESS_LOG_TZ, "yyyy-MM-dd");
+    var rows = sheet.getLastRow() - 1;
+    if (rows > 0) {
+      var days = sheet.getRange(2, 1, rows, 1).getValues();
+      var old = 0;
+      while (old < days.length && accessDayKey_(days[old][0]) < cutoff) old++;
+      if (old > 0) sheet.deleteRows(2, old);
+    }
+    ensureAccessSummary_(ss);
+  } catch (err) {
+    // swallow: logging is best-effort
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (e2) {}
+  }
+}
+
+// One formula tab that always reflects the log: per email, total visits / active days / last day in the window.
+function ensureAccessSummary_(ss) {
+  if (ss.getSheetByName("Access Summary")) return;
+  var sh = ss.insertSheet("Access Summary");
+  sh.getRange("A1").setFormula(
+    "=QUERY('Access Log'!A:C,\"select B, sum(C), count(A), max(A) where B is not null group by B order by sum(C) desc label B 'email', sum(C) 'visits', count(A) 'active days', max(A) 'last day'\",1)",
+  );
+  sh.setFrozenRows(1);
+  // visits per day (all people), with a column chart beside it
+  sh.getRange("F1").setFormula(
+    "=QUERY('Access Log'!A:C,\"select A, sum(C), count(B) where A is not null group by A order by A label A 'day', sum(C) 'visits', count(B) 'people'\",1)",
+  );
+  try {
+    var chart = sh
+      .newChart()
+      .asColumnChart()
+      .addRange(sh.getRange("F1:G60"))
+      .setNumHeaders(1)
+      .setPosition(2, 9, 0, 0)
+      .setOption("title", "Visits per day")
+      .setOption("legend", { position: "none" })
+      .build();
+    sh.insertChart(chart);
+  } catch (e) {}
+}
+
+// Counts one visit for the signed-in, allow-listed viewer (one page load = one call).
+function logVisitForViewer_(idToken) {
+  var email = verifyIdToken_(idToken);
+  if (!email || !lookupViewer_(email)) return { ok: false };
+  logAccess_(email);
+  return { ok: true };
 }
 
 // ---------- getValues: the whole point of this script ----------
