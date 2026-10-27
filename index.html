@@ -2810,6 +2810,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 .wow-menu .sub { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--muted, #5a6560); }
 @media (pointer: coarse) { .wow-btn, .wow-menu button { min-height: 44px; } }
 .kpi-card .sub .nowrap { white-space: nowrap; }
+.trend-axis span.wk { font-weight: 700; border-radius: 4px; }
+.trend-axis span.wk i { display: block; font-style: normal; font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1.1; }
+.trend-axis span.wk-sat, .wk-legend b.wk-sat { color: #6b52b0; }
+.trend-axis span.wk-sun, .wk-legend b.wk-sun { color: #b4443a; }
+.trend-axis span.wk-sat { background: rgba(107, 82, 176, 0.09); }
+.trend-axis span.wk-sun { background: rgba(180, 68, 58, 0.09); }
+.wk-legend { margin-left: 10px; white-space: nowrap; }
+.wk-legend b { font-weight: 700; }
+@media (max-width: 720px) { .trend-axis span.wk i { display: none; } }
 .kpi-card.kpi-dual { padding-left: 0; padding-right: 0; }
 .kpi-dual .kpi-halves { display: grid; grid-template-columns: 1fr 1fr; }
 .kpi-dual .kpi-half { padding: 0 14px 0 20px; min-width: 0; }
@@ -4110,6 +4119,36 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           [3.0, "#0F6E62"], // deep teal-green - well stocked
         ];
         // size 'lg' renders the KPI-card sized variant; the colour scale is identical either way.
+        // Weekend marking for the daily bar charts: "sat" / "sun" / "" from a YYYYMMDD key. The axis label gets a
+        // colour (Saturday violet, Sunday red, the usual Thai calendar colours) plus a short weekday tag, and the whole
+        // column gets a faint grey band, so weekends read at a glance without touching the bar colours.
+        function weekendOf(dayKey) {
+          var k = String(dayKey);
+          var g = new Date(Number(k.slice(0, 4)), Number(k.slice(4, 6)) - 1, Number(k.slice(6, 8))).getDay();
+          return g === 6 ? "sat" : g === 0 ? "sun" : "";
+        }
+        function axisSpanHtml(dayKey) {
+          var w = weekendOf(dayKey);
+          var n = String(dayKey).slice(6, 8);
+          return w
+            ? '<span class="wk wk-' + w + '" title="' + (w === "sat" ? "วันเสาร์" : "วันอาทิตย์") + '">' + n + "<i>" + (w === "sat" ? "ส" : "อา") + "</i></span>"
+            : "<span>" + n + "</span>";
+        }
+        function applyWeekendBands(chartRoot, days) {
+          var el = chartRoot && chartRoot.querySelector(".trend-chart");
+          if (!el || !days.length) return;
+          var layers = [];
+          days.forEach(function (d, i) {
+            if (!weekendOf(d)) return;
+            var a = ((i / days.length) * 100).toFixed(3);
+            var b = (((i + 1) / days.length) * 100).toFixed(3);
+            layers.push("linear-gradient(90deg, transparent " + a + "%, rgba(22,32,28,0.055) " + a + "%, rgba(22,32,28,0.055) " + b + "%, transparent " + b + "%)");
+          });
+          el.style.backgroundImage = layers.join(",");
+        }
+        function weekendHintHtml() {
+          return ' <span class="wk-legend"><b class="wk-sat">ส.</b> เสาร์ · <b class="wk-sun">อา.</b> อาทิตย์</span>';
+        }
         function pctBadge(value, kind, size) {
           var sizeCls = size === "lg" ? " pct-badge-lg" : "";
           if (value == null)
@@ -8036,7 +8075,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               ],
             },
             {
-              title: "ภาพรวม",
+              title: "Actual ภาพรวม",
               cards: [
                 {
                   label: "MOM",
@@ -9258,7 +9297,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             ? '<div class="trend-axis">' +
               days
                 .map(function (d) {
-                  return "<span>" + String(d).slice(6, 8) + "</span>";
+                  return axisSpanHtml(d);
                 })
                 .join("") +
               "</div>"
@@ -9270,9 +9309,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               barsHtml +
               "</div>" +
               axisHtml +
-              '<div class="day-hint">คลิกแท่งเพื่อดูรายละเอียดวันนั้น</div>'
+              '<div class="day-hint">คลิกแท่งเพื่อดูรายละเอียดวันนั้น' + weekendHintHtml() + "</div>"
             : '<div class="insight-empty">ไม่มีข้อมูล</div>';
           if (days.length) {
+            applyWeekendBands($("rtrTrendChart"), days);
             attachBarTooltips($("rtrTrendChart"));
             attachBarDayClick($("rtrTrendChart"), function (day) {
               // clicking the already-selected day again deselects it, instead of just re-selecting
@@ -14570,9 +14610,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var groups = targetCards.length
             ? [
                 { title: "เทียบเป้า", cards: targetCards },
-                { title: "ภาพรวม", cards: overviewCards },
+                { title: "Actual ภาพรวม", cards: overviewCards },
               ]
-            : [{ title: "ภาพรวม", cards: overviewCards }];
+            : [{ title: "Actual ภาพรวม", cards: overviewCards }];
           function cardHtml(c) {
             if (c.halves)
               return (
@@ -15116,7 +15156,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             '<div class="trend-axis">' +
             days
               .map(function (d) {
-                return "<span>" + String(d).slice(6, 8) + "</span>";
+                return axisSpanHtml(d);
               })
               .join("") +
             "</div>";
@@ -15129,9 +15169,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             barsHtml +
             "</div>" +
             axisHtml +
-            '<div class="day-hint">คลิกแท่งเพื่อดูรายละเอียดวันนั้น</div>' +
+            '<div class="day-hint">คลิกแท่งเพื่อดูรายละเอียดวันนั้น' + weekendHintHtml() + "</div>" +
             legendHtml +
             '<div class="day-detail" id="sevDayDetail"></div>';
+          applyWeekendBands(panel, days);
           attachBarTooltips(panel);
           // Selecting a day re-scopes the whole dashboard (KPIs, AP/segment mix, AE leaderboard,
           // store table) down to just that day -- not only this popup -- so a click needs the full
