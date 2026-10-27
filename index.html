@@ -2725,6 +2725,38 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 }
 
 </style>
+<style id="redesign-skeleton">
+/* Loading skeleton: while the data downloads, the page shows the empty frame of the dashboard (view pickers, KPI strip, a table)
+   instead of a lone spinner, so the layout does not jump when the numbers arrive. Shimmer = transform only; static under reduced motion. */
+.loading-panel { max-width: none; margin: 4px 0 0; }
+.loading-panel > :not(.skel) { max-width: 460px; margin-left: auto; margin-right: auto; }
+.loading-panel .bars-icon { margin-bottom: 10px; height: 28px; }
+.loading-panel .loading-step { margin-top: 8px; margin-bottom: 0; }
+.skel { margin-top: 26px; text-align: left; pointer-events: none; user-select: none; }
+.skel .sk { position: relative; display: block; overflow: hidden; border-radius: 8px; background: rgba(22, 32, 28, 0.075); }
+.skel .sk::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent); animation: sk-sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+@keyframes sk-sweep { to { transform: translateX(100%); } }
+.skel .sk-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.skel .sk-pill { height: 40px; border-radius: 10px; }
+.skel .sk-card { background: var(--panel, #fcfcfa); border-radius: 16px; box-shadow: 0 1px 2px rgba(22, 32, 28, 0.05), 0 10px 28px -18px rgba(22, 32, 28, 0.25); }
+.skel .sk-kpis { display: grid; grid-template-columns: repeat(5, 1fr); margin: 22px 0 26px; }
+.skel .sk-kpi { padding: 20px 22px 22px; border-right: 1px solid rgba(22, 32, 28, 0.07); display: grid; gap: 12px; align-content: start; }
+.skel .sk-kpi:last-child { border-right: 0; }
+.skel .sk-title { height: 24px; width: 220px; margin-bottom: 14px; }
+.skel .sk-table { padding: 8px 20px 14px; }
+.skel .sk-tr { display: grid; grid-template-columns: 2.2fr repeat(6, 1fr); gap: 18px; align-items: center; padding: 15px 0; border-top: 1px solid rgba(22, 32, 28, 0.07); }
+.skel .sk-tr:first-child { border-top: 0; }
+.skel .sk-tr .sk { height: 12px; }
+.skel .sk-tr.sk-th .sk { height: 10px; opacity: 0.7; }
+@media (max-width: 720px) {
+  .skel .sk-kpis { grid-template-columns: 1fr 1fr; }
+  .skel .sk-kpi { border-right: 0; border-bottom: 1px solid rgba(22, 32, 28, 0.07); }
+  .skel .sk-tr { grid-template-columns: 1.6fr 1fr 1fr; }
+  .skel .sk-tr .sk:nth-child(n + 4) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .skel .sk::after { animation: none; display: none; } }
+</style>
 <style id="redesign-switch">
 /* Target GA / M1 switch (RTR COM table + 7-11 CM table): a labelled two-state switch instead of a text button
    that changes its own wording. Thumb slides (transform only); reduced motion = instant. */
@@ -18418,6 +18450,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // "stuck".
           rtrShow("rtrLoading");
           sevShow("sevLoading");
+          [["rtrLoading", "ข้อมูล RTR"], ["sevLoading", "ข้อมูล 7-11"]].forEach(function (x) {
+            var h = $(x[0]).querySelector("h2");
+            if (h) h.textContent = "กำลังโหลด" + x[1];
+            var pp = $(x[0]).querySelector("p");
+            if (pp) pp.style.display = "none";
+          });
           rtrStep("กำลังตรวจสอบข้อมูลล่าสุด...");
           sevStep("กำลังตรวจสอบข้อมูลล่าสุด...");
           scriptBatchCache = null; // fresh load -- discard any previous load's leftovers
@@ -18658,6 +18696,41 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               showLoginGate();
             });
         });
+
+        // Skeleton frame shown inside both loading panels while data downloads (see .skel in the redesign-skeleton CSS)
+        (function () {
+          function bar(w, h, extra) {
+            return '<i class="sk' + (extra ? " " + extra : "") + '" style="width:' + w + (h ? ";height:" + h : "") + '"></i>';
+          }
+          var pills1 = [112, 128, 112, 128].map(function (w) {
+            return bar(w + "px", "", "sk-pill");
+          }).join("");
+          var pills2 = [150, 190, 170, 150, 170].map(function (w) {
+            return bar(w + "px", "", "sk-pill");
+          }).join("");
+          var kpi = [0, 1, 2, 3, 4].map(function (i) {
+            return '<div class="sk-kpi">' + bar("46%", "11px") + bar(["62%", "74%", "58%", "66%", "40%"][i], "32px") + bar("80%", "10px") + "</div>";
+          }).join("");
+          function tr(head) {
+            var cells = bar(head ? "40%" : ["64%", "52%", "72%", "58%"][Math.floor(Math.random() * 4)]);
+            for (var c = 0; c < 6; c++) cells += bar(head ? "60%" : "70%");
+            return '<div class="sk-tr' + (head ? " sk-th" : "") + '">' + cells + "</div>";
+          }
+          var rows = tr(true);
+          for (var r = 0; r < 6; r++) rows += tr(false);
+          var html =
+            '<div class="skel" aria-hidden="true"><div class="sk-row">' + pills1 + '</div><div class="sk-row">' + pills2 +
+            '</div><div class="sk-card sk-kpis">' + kpi + "</div>" + bar("220px", "", "sk-title") +
+            '<div class="sk-card sk-table">' + rows + "</div></div>";
+          ["rtrLoading", "sevLoading"].forEach(function (id) {
+            var el = $(id);
+            if (el) {
+              el.insertAdjacentHTML("beforeend", html);
+              el.setAttribute("role", "status");
+              el.setAttribute("aria-busy", "true");
+            }
+          });
+        })();
 
         switchTab("rtr");
         applyViewerMode();
