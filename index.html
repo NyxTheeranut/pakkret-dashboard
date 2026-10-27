@@ -2810,6 +2810,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 .wow-menu .sub { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--muted, #5a6560); }
 @media (pointer: coarse) { .wow-btn, .wow-menu button { min-height: 44px; } }
 .kpi-card .sub .nowrap { white-space: nowrap; }
+.kpi-card.kpi-dual { padding-left: 0; padding-right: 0; }
+.kpi-dual .kpi-halves { display: grid; grid-template-columns: 1fr 1fr; }
+.kpi-dual .kpi-half { padding: 0 14px 0 20px; min-width: 0; }
+.kpi-dual .kpi-half + .kpi-half { border-left: 1px solid rgba(22, 32, 28, 0.09); padding-left: 16px; }
+.kpi-dual .kpi-half .kpi-split > div { gap: 6px; }
+.kpi-dual .sub { padding: 0 20px; }
+@media (max-width: 720px) { .kpi-card.kpi-dual { grid-column: 1 / -1; } .kpi-grid:has(.kpi-dual) > .kpi-card:last-child { grid-column: 1 / -1; } .kpi-dual .kpi-half { padding-left: 20px; } .kpi-dual .kpi-half + .kpi-half { padding-left: 20px; } }
 .kpi-card .kpi-grey {
   margin-left: 8px; font-family: inherit; font-size: 13px; font-weight: 500; letter-spacing: 0; line-height: 1;
   color: var(--muted, #5a6560); font-variant-numeric: tabular-nums; white-space: nowrap;
@@ -7927,30 +7934,32 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   split: actualSplit,
                 },
                 {
-                  label: "%Ach",
-                  value: pctBadge(segInfo.achievePct, "achieve", "lg"),
-                  sub: !segInfo.supported
+                  // one box, two halves: real %Ach so far | run-rate %Ach (month projected at today's pace)
+                  halves: [
+                    {
+                      label: "%Ach",
+                      value: pctBadge(segInfo.achievePct, "achieve", "lg"),
+                      sub: "",
+                      split: achSplitReal,
+                    },
+                    {
+                      label: "%Ach (RR)",
+                      value: pctBadge(
+                        segInfo.achievePct != null && pacing && pacing.daysElapsed > 0
+                          ? (segInfo.achievePct * pacing.daysInMonth) / pacing.daysElapsed
+                          : null,
+                        "achieve",
+                        "lg",
+                      ),
+                      sub: "",
+                      split: achSplitRR,
+                    },
+                  ],
+                  note: !segInfo.supported
                     ? "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้"
                     : segInfo.segLabel
                       ? "เฉพาะ " + segInfo.segLabel
                       : "",
-                  split: achSplitReal,
-                },
-                {
-                  label: "%Ach (RR)",
-                  value: pctBadge(
-                    segInfo.achievePct != null && pacing && pacing.daysElapsed > 0
-                      ? (segInfo.achievePct * pacing.daysInMonth) / pacing.daysElapsed
-                      : null,
-                    "achieve",
-                    "lg",
-                  ),
-                  sub: !segInfo.supported
-                    ? "ไม่มีเป้าที่แยกตามเซกเมนต์นี้ได้"
-                    : segInfo.segLabel
-                      ? "เฉพาะ " + segInfo.segLabel
-                      : "",
-                  split: achSplitRR,
                 },
                 { label: "จังหวะเป้าหมาย", value: paceTxt, sub: paceSub },
                 {
@@ -8009,7 +8018,27 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               ],
             },
           ];
+          function halfHtml(h) {
+            return (
+              '<div class="kpi-half"><div class="label">' + esc(h.label) + '</div><div class="value">' + h.value + '</div><div class="sub" aria-hidden="true">&nbsp;</div>' +
+              (h.split
+                ? '<div class="kpi-split">' +
+                  h.split
+                    .map(function (r) {
+                      return "<div><span>" + esc(r[0]) + "</span><b>" + r[1] + "</b></div>";
+                    })
+                    .join("") +
+                  "</div>"
+                : "") +
+              "</div>"
+            );
+          }
           function cardHtml(c) {
+            if (c.halves)
+              return (
+                '<div class="kpi-card kpi-dual"><div class="kpi-halves">' + c.halves.map(halfHtml).join("") + "</div>" +
+                (c.note ? '<div class="sub">' + esc(c.note) + "</div>" : "") + "</div>"
+              );
             return (
               '<div class="kpi-card"><div class="label">' +
               esc(c.label) +
@@ -14228,20 +14257,19 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 : "ทุกร้านมีเป้าหมายเฉพาะบุคคล";
             var achPacing = sevMonthPacing(mk, stores);
             targetCards.push({
-              label: "%Ach",
-              value: pctBadge(achievePct, "achieve", "lg"),
-              sub: "",
-            });
-            targetCards.push({
-              label: "%Ach (RR)",
-              value: pctBadge(
-                achPacing && achPacing.daysElapsed > 0
-                  ? (achievePct * achPacing.daysInMonth) / achPacing.daysElapsed
-                  : null,
-                "achieve",
-                "lg",
-              ),
-              sub: "",
+              halves: [
+                { label: "%Ach", value: pctBadge(achievePct, "achieve", "lg") },
+                {
+                  label: "%Ach (RR)",
+                  value: pctBadge(
+                    achPacing && achPacing.daysElapsed > 0
+                      ? (achievePct * achPacing.daysInMonth) / achPacing.daysElapsed
+                      : null,
+                    "achieve",
+                    "lg",
+                  ),
+                },
+              ],
             });
             // Same pacing badge as RTR's own จังหวะเป้าหมาย card -- reuses the exact pacing
             // object already computed below for the forecast card, just read a step earlier
@@ -14361,6 +14389,16 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               ]
             : [{ title: "ภาพรวม", cards: overviewCards }];
           function cardHtml(c) {
+            if (c.halves)
+              return (
+                '<div class="kpi-card kpi-dual"><div class="kpi-halves">' +
+                c.halves
+                  .map(function (h) {
+                    return '<div class="kpi-half"><div class="label">' + esc(h.label) + '</div><div class="value">' + h.value + "</div></div>";
+                  })
+                  .join("") +
+                "</div></div>"
+              );
             return (
               '<div class="kpi-card"><div class="label">' +
               esc(c.label) +
