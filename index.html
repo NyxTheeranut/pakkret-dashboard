@@ -2619,7 +2619,16 @@ body { background: radial-gradient(900px 380px at 4% -6%, rgba(15, 118, 110, 0.0
 @keyframes sc-shine { from { background-position: 100% 0; } to { background-position: 0% 0; } }
 @keyframes sc-aurora { from { background-position: 0% 0%, 100% 100%; } to { background-position: 100% 100%, 0% 0%; } }
 
-/* decorative effects (spotlight, spinning border, shiny title, aurora) removed */
+/* 1. spotlight: a soft teal glow follows the cursor over KPI cells and action cards */
+.kpi-card, .insight-card { --mx: -999px; --my: -999px; }
+.kpi-card, .kpi-card:hover {
+  background: radial-gradient(260px circle at var(--mx) var(--my), rgba(15, 118, 110, 0.11), transparent 62%), var(--panel);
+}
+.insight-card {
+  background: radial-gradient(320px circle at var(--mx) var(--my), rgba(15, 118, 110, 0.09), transparent 60%), var(--panel);
+}
+
+/* decorative effects (spinning border, shiny title, aurora) removed; the cursor spotlight on cards stays */
 
 /* 6. glass segmented tabs with a sliding indicator (desktop header) */
 @media (min-width: 981px) {
@@ -19060,7 +19069,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         }
       })();
     </script>
-  <script>window.__SCF={spot:0,count:0,ind:1,rv:0};</script>
+  <script>window.__SCF={spot:1,count:0,ind:1,rv:0};</script>
   <script id="redesign-showcase-js">
 /* Showcase effects: spotlight, count-up, sliding tab indicator, scroll reveal. Vanilla, no libraries.
    Every effect is skipped under prefers-reduced-motion; the page's own code is never touched. */
