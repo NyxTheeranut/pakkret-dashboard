@@ -2770,6 +2770,24 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 .wk-legend { margin-left: 10px; white-space: nowrap; }
 .wk-legend b { font-weight: 700; }
 @media (max-width: 720px) { .trend-axis span.wk i { display: none; } }
+/* Export dialog for the "สิ่งที่ควรลงมือทำ" boxes: tick boxes, choose people, row limit; footer stays visible while the list scrolls */
+.modal-box.ax-box { max-width: 520px; }
+.ax-sec { margin: 0 0 20px; }
+.ax-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.ax-links button { padding: 2px 6px; border: 0; background: none; color: var(--accent, #0f766e); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px; }
+.ax-links button:hover { background: var(--accent-soft, #e2f1ee); }
+.ax-list { display: grid; gap: 2px; }
+.ax-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; font-size: 13px; line-height: 1.35; cursor: pointer; }
+.ax-row:hover { background: var(--paper, #f4f5f1); }
+.ax-row input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent, #0f766e); }
+.ax-row .t { flex: 1; min-width: 0; }
+.ax-row em { flex: none; font-style: normal; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ax-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.ax-split { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; cursor: pointer; }
+.ax-split input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent, #0f766e); }
+.ax-foot { position: sticky; bottom: -20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 -18px -20px; padding: 12px 18px 16px; background: var(--panel); border-top: 1px solid var(--line); }
+.ax-sum { font-size: 12px; color: var(--muted); }
+.ax-foot .file-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .kpi-card.kpi-dual { padding-left: 0; padding-right: 0; }
 .kpi-dual .kpi-halves { display: grid; grid-template-columns: 1fr 1fr; }
 .kpi-dual .kpi-half { padding: 0 14px 0 20px; min-width: 0; }
@@ -3305,17 +3323,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               &times;
             </button>
           </div>
-          <div class="modal-body">
-            <div class="modal-hint">เลือกการ์ดที่ต้องการรวมในภาพเดียวกัน</div>
-            <div class="modal-radio-row" id="rtrActionsExportChecks"></div>
-            <button
-              class="file-btn"
-              id="rtrActionsExportGo"
-              style="width: 100%; margin-top: 14px"
-            >
-              Export
-            </button>
-          </div>
+          <div class="modal-body"></div>
         </div>
       </div>
 
@@ -3635,17 +3643,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 &times;
               </button>
             </div>
-            <div class="modal-body">
-              <div class="modal-hint">เลือกการ์ดที่ต้องการรวมในภาพเดียวกัน</div>
-              <div class="modal-radio-row" id="sevActionsExportChecks"></div>
-              <button
-                class="file-btn"
-                id="sevActionsExportGo"
-                style="width: 100%; margin-top: 14px"
-              >
-                Export
-              </button>
-            </div>
+            <div class="modal-body"></div>
           </div>
         </div>
 
@@ -9417,6 +9415,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // already use. Each card supplies its own column set since risk/no-GA/bad-MOM cards show
           // different fields, so this takes ready-built cols/rows rather than a shared row shape.
           var rtrExportRegistry = [];
+          // owner (COM) of each row, parallel to the export rows: lets the export dialog cut any box down to one person
+          function ownerOfRow(x) {
+            return (x.s && x.s.com) || "";
+          }
           function cardHtml(
             tagClass,
             tagText,
@@ -9426,6 +9428,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             exportCols,
             exportRows,
             exportKey,
+            exportOwners,
           ) {
             var body = items.length
               ? '<ul class="insight-list">' +
@@ -9450,6 +9453,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 title: title,
                 cols: exportCols,
                 rows: exportRows,
+                owners: exportOwners || [],
               });
               exportBtn = exportMenuHtml("rtr:" + idx, exportRows.length);
             }
@@ -9597,6 +9601,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             RISK_EXPORT_COLS,
             riskStoresAll.map(riskExportRow),
             "risk-ap30d",
+            riskStoresAll.map(ownerOfRow),
           );
           html += cardHtml(
             "tag-risk",
@@ -9613,6 +9618,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             RISK_EXPORT_COLS,
             riskStoresAp1dAll.map(riskExportRow),
             "risk-ap1d",
+            riskStoresAp1dAll.map(ownerOfRow),
           );
           html += cardHtml(
             "tag-risk",
@@ -9627,6 +9633,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               return noGaExportRow(x.s);
             }),
             "no-ga",
+            noGAAll.map(ownerOfRow),
           );
           html += cardHtml(
             "tag-risk",
@@ -9653,6 +9660,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             BAD_MOM_EXPORT_COLS,
             badMomAll.map(badMomExportRow),
             "bad-mom",
+            badMomAll.map(ownerOfRow),
           );
           // ---- Week on week (WoW), same boxes as the 7-11 tab: fixed 7-day blocks of the selected month
           // (W1 = days 1-7 ... W4 = 22-28). A pair is offered only when BOTH weeks are complete. Uses `stores`
@@ -9731,6 +9739,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 titleBase: (isDown ? "GA ลดลง" : "GA เพิ่มขึ้น") + " W" + a + " : W" + b + " · " + m.label + " · " + wowScope,
                 cols: colsX,
                 list: exportRows(rows),
+                owners: rows.map(ownerOfRow),
+                shortTitle: (isDown ? "GA ลดลง" : "GA เพิ่มขึ้น") + " Week on Week W" + a + " : W" + b,
                 key: "wow-" + box,
               };
               var bar = wowPairs
@@ -9810,7 +9820,24 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           state.rtr._insightsSnapshot = {
             scopeLabel: rtrCurrentScope().label,
             periodLabel: rtrCurrentMonth().label,
-            cards: rtrExportRegistry,
+            // every box on screen, with its FULL list and each row's owner (COM) -- the export dialog filters from here
+            cards: rtrExportRegistry
+              .filter(function (c) {
+                return c.rows.length;
+              })
+              .map(function (c) {
+                return { key: c.key, title: c.title, cols: c.cols, rows: c.rows, owners: c.owners || [] };
+              })
+              .concat(
+                ["down", "up"]
+                  .filter(function (b) {
+                    return rtrWowExports[b] && rtrWowExports[b].list.length;
+                  })
+                  .map(function (b) {
+                    var ex = rtrWowExports[b];
+                    return { key: ex.key, title: ex.shortTitle, cols: ex.cols, rows: ex.list, owners: ex.owners };
+                  }),
+              ),
           };
         }
 
@@ -14038,6 +14065,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 top: exportRows(rows.slice(0, 10)),
                 bottom: exportRows(rows.slice(Math.max(0, rows.length - 10))),
                 count: rows.length,
+                owners: rows.map(function (x) {
+                  return (x.s && x.s.ae) || "";
+                }),
+                shortTitle: (isDown ? "GA ลดลง" : "GA เพิ่มขึ้น") + " Week on Week W" + a + " : W" + b,
                 key: "wow-" + box,
               };
               var bar = wowPairs
@@ -14216,39 +14247,36 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               ]
                 .filter(Boolean)
                 .join(" / ") || "ภาพรวม",
-            cards: [
-              {
-                title: "ร้าน Top 10 ตามยอดขาย (" + periodLabel + ")",
-                items: topGA.slice(0, 10),
-                kind: "ga",
-              },
-              {
-                title: "ร้านที่ GA=0 ในช่วงนี้ (" + zeroGA.length + " ร้าน)",
-                items: zeroGA.slice(0, 10),
-                kind: "ga",
-              },
-            ].concat(
-              mk && !day
-                ? [
-                    {
-                      title:
-                        "ร้านที่ M1 ลดลงจากเดือนก่อนมากที่สุด (" +
-                        revDeclining.length +
-                        " ร้าน)",
-                      items: revDeclining.slice(0, 10),
-                      kind: "rev",
-                    },
-                    {
-                      title:
-                        "ร้านที่ GA ลดลงจากเดือนก่อน (" +
-                        declining.length +
-                        " ร้าน)",
-                      items: declining.slice(0, 10),
-                      kind: "ga",
-                    },
-                  ]
-                : [],
-            ),
+            // every box on screen as a ready table (full list + each row's owner = AE) -- the export dialog filters from here
+            cards: (function () {
+              function table(key, title, items, kind) {
+                var shape = sevInsightsExportShape(kind);
+                return {
+                  key: key,
+                  title: title,
+                  cols: shape.cols,
+                  rows: shape.rows(items),
+                  owners: items.map(function (x) {
+                    return (x.s && x.s.ae) || "";
+                  }),
+                };
+              }
+              var list = [
+                table("top-ga", "ร้าน Top 10 ตามยอดขาย (" + periodLabel + ")", topGA, "ga"),
+                table("ga-0", "ร้านที่ GA=0 ในช่วงนี้", zeroGA, "ga"),
+              ];
+              if (mk && !day) {
+                list.push(table("rev-declining", "ร้านที่ M1 ลดลงจากเดือนก่อนมากที่สุด", revDeclining, "rev"));
+                list.push(table("declining", "ร้านที่ GA ลดลงจากเดือนก่อน", declining, "ga"));
+                ["down", "up"].forEach(function (b) {
+                  var ex = wowExports[b];
+                  if (ex && ex.all.length) list.push({ key: ex.key, title: ex.shortTitle, cols: ex.cols, rows: ex.all, owners: ex.owners });
+                });
+              }
+              return list.filter(function (c) {
+                return c.rows.length;
+              });
+            })(),
           };
 
           Array.prototype.forEach.call(
@@ -16060,225 +16088,204 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           });
         }
 
-        // Lets the person exporting pick which of the 4 cards to include, rather than always
-        // getting all 4 -- opened by the "สิ่งที่ควรลงมือทำ" section's Export button instead of
-        // calling rtrInsightsExportPng directly. Checkboxes are built fresh from the current
-        // snapshot every time this opens (title text included), so a stale count from a
-        // previous filter/month can never show here.
-        function rtrOpenActionsExportModal() {
-          var snap = state.rtr._insightsSnapshot;
-          var wrap = $("rtrActionsExportChecks");
-          if (!snap || !snap.cards.length) {
-            wrap.innerHTML =
-              '<span style="color:var(--muted)">ไม่มีการ์ดให้ export ในมุมมองนี้</span>';
-            $("rtrActionsExportGo").disabled = true;
-          } else {
-            $("rtrActionsExportGo").disabled = false;
-            wrap.innerHTML = snap.cards
-              .map(function (t, i) {
-                return (
-                  '<label><input type="checkbox" class="rtr-actions-export-check" value="' +
-                  i +
-                  '" checked /> ' +
-                  esc(t.title) +
-                  "</label>"
-                );
-              })
-              .join("");
-          }
-          $("rtrActionsExportOverlay").style.display = "flex";
-        }
-        function rtrCloseActionsExportModal() {
-          $("rtrActionsExportOverlay").style.display = "none";
-        }
-
-        // Same 2x2 grid layout as sevInsightsExportPng below, adapted for the fact that RTR's 4
-        // cards do NOT all share one column set (the risk/no-GA cards are 6 columns, the stock
-        // card is 4) -- each table measures and draws with its OWN cols instead of one shared
-        // cols array, but the grid-cell width (colW) still takes the max across all 4 so the two
-        // columns line up the same way sevInsightsExportPng's grid does. tables defaults to
-        // every card (unfiltered) so this still works as a plain "export everything" call if
-        // ever needed, but rtrActionsExportGo below always passes the person's own picks.
-        function rtrInsightsExportPng(tables) {
-          var snap = state.rtr._insightsSnapshot;
-          if (!snap || !snap.cards.length) return;
-          tables = tables || snap.cards;
-          if (!tables.length) return;
-
-          var probe = document.createElement("canvas").getContext("2d");
-          var colW = 0;
-          function measureTableWidth(cols, rows) {
-            var padX = 12;
-            var w = cols.map(function (c) {
-              probe.font = "bold 12px Inter, sans-serif";
-              return probe.measureText(c).width;
-            });
-            rows.forEach(function (r) {
-              r.forEach(function (cell, i) {
-                probe.font = cellFont(i);
-                var m2 = probe.measureText(String(cell)).width;
-                if (m2 > w[i]) w[i] = m2;
-              });
-            });
-            return w.reduce(function (a, b) {
-              return a + b + padX * 2;
-            }, 0);
-          }
-          tables.forEach(function (t) {
-            colW = Math.max(colW, measureTableWidth(t.cols, t.rows));
-            probe.font = "bold 13px Inter, sans-serif";
-            colW = Math.max(colW, probe.measureText(t.title).width);
-          });
-          colW = Math.ceil(colW);
-          function tableHeight(t) {
-            return 20 + (t.rows.length ? 30 + t.rows.length * 26 : 26);
-          }
-          var row0H = Math.max(
-            tableHeight(tables[0]),
-            tables[1] ? tableHeight(tables[1]) : 0,
-          );
-          var row1H = tables[2]
-            ? Math.max(
-                tableHeight(tables[2]),
-                tables[3] ? tableHeight(tables[3]) : 0,
-              )
-            : 0;
-
-          probe.font = "bold 20px Space Grotesk, sans-serif";
-          var titleW = probe.measureText("สิ่งที่ควรลงมือทำ").width;
-          probe.font = "bold 14px Inter, sans-serif";
-          var scopeW = probe.measureText(snap.scopeLabel).width;
-
-          var padPage = 22;
-          var gutter = 30;
-          var gapRow = 24;
-          var numCols = tables.length > 1 ? 2 : 1;
-          var gridW = colW * numCols + (numCols > 1 ? gutter : 0);
-          var W = Math.ceil(Math.max(titleW, scopeW, gridW)) + padPage * 2;
-          var H =
-            padPage +
-            34 +
-            22 +
-            18 +
-            row0H +
-            (row1H ? gapRow + row1H : 0) +
-            padPage;
-
-          var canvas = document.createElement("canvas");
-          canvas.width = W;
-          canvas.height = H;
-          var ctx = canvas.getContext("2d");
-          ctx.fillStyle = "#EEF1F5";
-          ctx.fillRect(0, 0, W, H);
-
-          var y = padPage + 8;
-          ctx.fillStyle = "#121A2B";
-          ctx.font = "bold 20px Space Grotesk, sans-serif";
-          ctx.fillText("สิ่งที่ควรลงมือทำ", padPage, y + 12);
-          y += 26;
-          ctx.fillStyle = "#0F6E62";
-          ctx.font = "bold 14px Inter, sans-serif";
-          ctx.fillText(snap.scopeLabel, padPage, y + 12);
-          y += 22;
-          ctx.fillStyle = "#6B7280";
-          ctx.font = "12.5px Inter, sans-serif";
-          ctx.fillText(snap.periodLabel, padPage, y + 12);
-          y += 34;
-
-          function drawOne(t, x, yStart) {
-            var ty = yStart;
-            ctx.fillStyle = "#121A2B";
-            ctx.font = "bold 13px Inter, sans-serif";
-            ctx.fillText(t.title, x, ty);
-            ty += 20;
-            if (t.rows.length) {
-              drawCanvasTable(ctx, x, ty, t.cols, t.rows);
-            } else {
-              ctx.fillStyle = "#6B7280";
-              ctx.font = "12.5px Inter, sans-serif";
-              ctx.fillText("ไม่พบร้านที่เข้าเงื่อนไขนี้", x, ty + 8);
-            }
-          }
-          var xLeft = padPage,
-            xRight = padPage + colW + gutter;
-          drawOne(tables[0], xLeft, y);
-          if (tables[1]) drawOne(tables[1], xRight, y);
-          if (tables[2]) drawOne(tables[2], xLeft, y + row0H + gapRow);
-          if (tables[3]) drawOne(tables[3], xRight, y + row0H + gapRow);
-
-          canvas.toBlob(function (blob) {
-            var url = URL.createObjectURL(blob);
-            var a = document.createElement("a");
-            a.href = url;
-            a.download = "pak-kret-rtr-actions-" + Date.now() + ".png";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(function () {
-              URL.revokeObjectURL(url);
-            }, 2000);
-          });
-        }
-
-        // 2x2 grid (row-major: card1 top-left, card2 top-right, card3 bottom-left, card4
-        // bottom-right), matching the on-screen .insights-grid's own layout, rather than one
-        // long vertical stack -- reads like an actual screenshot of the dashboard instead of a
-        // scroll, which is the point given these get pasted straight into chat. Both columns
-        // share one width (the widest of all 4 tables) the same way the on-screen CSS grid's
-        // "1fr 1fr" gives both columns equal width; each row's height is only as tall as its
-        // own taller table needs, not stretched to match the other row.
-        // Mirrors rtrOpenActionsExportModal exactly -- lets the person exporting pick which
-        // of the (up to 4) "สิ่งที่ควรลงมือทำ" cards to bundle into one image, instead of
-        // always getting all of them.
-        function sevOpenActionsExportModal() {
-          var snap = state.sev._insightsSnapshot;
-          var wrap = $("sevActionsExportChecks");
-          if (!snap || !snap.cards.length) {
-            wrap.innerHTML =
-              '<span style="color:var(--muted)">ไม่มีการ์ดให้ export ในมุมมองนี้</span>';
-            $("sevActionsExportGo").disabled = true;
-          } else {
-            $("sevActionsExportGo").disabled = false;
-            wrap.innerHTML = snap.cards
-              .map(function (t, i) {
-                return (
-                  '<label><input type="checkbox" class="sev-actions-export-check" value="' +
-                  i +
-                  '" checked /> ' +
-                  esc(t.title) +
-                  "</label>"
-                );
-              })
-              .join("");
-          }
-          $("sevActionsExportOverlay").style.display = "flex";
-        }
-        function sevCloseActionsExportModal() {
-          $("sevActionsExportOverlay").style.display = "none";
-        }
-
-        // cards defaults to every card (unfiltered) so this still works as a plain
-        // "export everything" call if ever needed, but sevActionsExportGo below always
-        // passes the person's own picks.
-        function sevInsightsExportPng(cards) {
-          var snap = state.sev._insightsSnapshot;
-          if (!snap || !snap.cards.length) return;
-          cards = cards || snap.cards;
-          if (!cards.length) return;
-          // Each table keeps its OWN cols (ga-shaped or rev-shaped) instead of one shared
-          // set -- mirrors rtrInsightsExportPng's own reasoning, since a M1 ลดลง card
-          // sitting next to a GA-shaped card means this grid genuinely isn't one column set
-          // anymore. colW (below) still takes the max across all of them so the two visual
-          // columns line up either way.
-          var tables = cards.map(function (c) {
-            var shape = sevInsightsExportShape(c.kind);
+        // ===== Export dialog for "สิ่งที่ควรลงมือทำ" (RTR + 7-11) =====================================================
+        // The section's Export button opens ONE dialog: tick which boxes to include, choose whose stores (every COM / AE,
+        // or only some of them), pick all rows or Top 10, and get either one image per person or one combined image.
+        // Everything is cut from state.<tab>._insightsSnapshot (each box's FULL list + the owner of every row), so what is
+        // exported can never drift from what the boxes on screen are built from, and it follows the CM / COM / month filters.
+        var axPrefs = {}; // remembered per tab while the page stays open: which boxes were un-ticked, people, split, row limit
+        var axTrigger = null;
+        function axCfg(tab) {
+          if (tab === "rtr")
             return {
-              title: c.title,
-              cols: shape.cols,
-              rows: shape.rows(c.items),
+              snap: state.rtr._insightsSnapshot,
+              overlay: "rtrActionsExportOverlay",
+              who: "COM",
+              prefix: "pak-kret-rtr-actions",
+              people: function () {
+                var set = {};
+                rtrCurrentStores().forEach(function (s) {
+                  if (s.com) set[s.com] = 1;
+                });
+                return Object.keys(set).sort();
+              },
             };
+          return {
+            snap: state.sev._insightsSnapshot,
+            overlay: "sevActionsExportOverlay",
+            who: "AE",
+            prefix: "pak-kret-7-11-actions",
+            people: function () {
+              var set = {};
+              sevCurrentStores().forEach(function (s) {
+                if (s.ae && s.ae !== UNMAPPED_AE) set[s.ae] = 1;
+              });
+              return Object.keys(set).sort();
+            },
+          };
+        }
+        function axBaseTitle(t) {
+          return String(t).replace(/\s*\(\s*[\d,]+\s*ร้าน\s*\)\s*$/, "");
+        }
+        function axShortName(name, all) {
+          var first = String(name).trim().split(/\s+/)[0] || name;
+          var clash = all.filter(function (n) {
+            return String(n).trim().split(/\s+/)[0] === first;
+          }).length;
+          return clash > 1 ? name : first;
+        }
+        function axPrefOf(tab) {
+          return axPrefs[tab] || (axPrefs[tab] = { off: {}, people: {}, split: true, limit: "all" });
+        }
+        function axOpen(tab, trigger) {
+          axTrigger = trigger || null;
+          var cfg = axCfg(tab);
+          var snap = cfg.snap;
+          var ov = $(cfg.overlay);
+          var box = ov.querySelector(".modal-box");
+          box.classList.add("ax-box");
+          box.setAttribute("role", "dialog");
+          box.setAttribute("aria-modal", "true");
+          box.setAttribute("aria-label", "Export สิ่งที่ควรลงมือทำ");
+          var body = box.querySelector(".modal-body");
+          if (!snap || !snap.cards.length) {
+            body.innerHTML = '<div class="modal-hint">ไม่มีกล่องให้ export ในมุมมองนี้</div>';
+            ov.style.display = "flex";
+            return;
+          }
+          var pref = axPrefOf(tab);
+          var people = cfg.people();
+          Object.keys(pref.people).forEach(function (n) {
+            if (people.indexOf(n) === -1) delete pref.people[n]; // a remembered person who is out of the current filters
           });
-
+          var rowsHtml = snap.cards
+            .map(function (c) {
+              return (
+                '<label class="ax-row"><input type="checkbox" data-ax-box="' + esc(c.key) + '"' + (pref.off[c.key] ? "" : " checked") +
+                ' /><span class="t">' + esc(axBaseTitle(c.title)) + "</span><em>" + c.rows.length + " ร้าน</em></label>"
+              );
+            })
+            .join("");
+          var chipsHtml =
+            '<button type="button" class="wow-btn" data-ax-person="" aria-pressed="' + (Object.keys(pref.people).length ? "false" : "true") + '">ทุกคน</button>' +
+            people
+              .map(function (n) {
+                return (
+                  '<button type="button" class="wow-btn" data-ax-person="' + esc(n) + '" title="' + esc(n) + '" aria-pressed="' +
+                  (pref.people[n] ? "true" : "false") + '">' + esc(axShortName(n, people)) + "</button>"
+                );
+              })
+              .join("");
+          body.innerHTML =
+            '<div class="ax-sec"><div class="ax-h"><span>กล่องที่จะ export</span><span class="ax-links"><button type="button" data-ax-all="1">เลือกทั้งหมด</button><button type="button" data-ax-all="0">ล้าง</button></span></div><div class="ax-list">' +
+            rowsHtml + "</div></div>" +
+            '<div class="ax-sec"><div class="ax-h"><span>ของใคร (' + cfg.who + ")</span></div>" +
+            '<div class="ax-chips" role="group" aria-label="เลือก ' + cfg.who + '">' + chipsHtml + "</div>" +
+            '<label class="ax-split" id="axSplitRow"><input type="checkbox" id="axSplit"' + (pref.split ? " checked" : "") + ' /> แยกเป็นไฟล์ละคน</label></div>' +
+            '<div class="ax-sec"><div class="ax-h"><span>จำนวนแถวต่อกล่อง</span></div><div class="ax-chips" role="group" aria-label="จำนวนแถว">' +
+            '<button type="button" class="wow-btn" data-ax-limit="all" aria-pressed="' + (pref.limit === "all" ? "true" : "false") + '">ทั้งหมด</button>' +
+            '<button type="button" class="wow-btn" data-ax-limit="10" aria-pressed="' + (pref.limit === "10" ? "true" : "false") + '">Top 10</button></div></div>' +
+            '<div class="ax-foot"><span class="ax-sum" id="axSummary" aria-live="polite"></span><button type="button" class="file-btn" id="axGo">Export</button></div>';
+          function refresh() {
+            var boxes = [].filter.call(body.querySelectorAll("[data-ax-box]"), function (el) {
+              return el.checked;
+            });
+            Object.keys(pref.off).forEach(function (k) {
+              delete pref.off[k];
+            });
+            [].forEach.call(body.querySelectorAll("[data-ax-box]"), function (el) {
+              if (!el.checked) pref.off[el.getAttribute("data-ax-box")] = true;
+            });
+            var n = Object.keys(pref.people).length;
+            var splitRow = body.querySelector("#axSplitRow");
+            splitRow.style.display = n > 1 ? "" : "none";
+            pref.split = body.querySelector("#axSplit").checked;
+            var files = n > 1 && pref.split ? n : 1;
+            body.querySelector("#axSummary").textContent = boxes.length ? files + " ไฟล์ · " + boxes.length + " กล่อง" : "เลือกอย่างน้อย 1 กล่อง";
+            body.querySelector("#axGo").disabled = !boxes.length;
+            [].forEach.call(body.querySelectorAll("[data-ax-person]"), function (b) {
+              var key = b.getAttribute("data-ax-person");
+              b.setAttribute("aria-pressed", key === "" ? (n ? "false" : "true") : pref.people[key] ? "true" : "false");
+            });
+            [].forEach.call(body.querySelectorAll("[data-ax-limit]"), function (b) {
+              b.setAttribute("aria-pressed", b.getAttribute("data-ax-limit") === pref.limit ? "true" : "false");
+            });
+          }
+          body.onclick = function (e) {
+            var t = e.target.closest("button");
+            if (!t) return;
+            if (t.hasAttribute("data-ax-all")) {
+              var on = t.getAttribute("data-ax-all") === "1";
+              [].forEach.call(body.querySelectorAll("[data-ax-box]"), function (el) {
+                el.checked = on;
+              });
+            } else if (t.hasAttribute("data-ax-person")) {
+              var key = t.getAttribute("data-ax-person");
+              if (key === "") pref.people = {};
+              else if (pref.people[key]) delete pref.people[key];
+              else pref.people[key] = true;
+            } else if (t.hasAttribute("data-ax-limit")) {
+              pref.limit = t.getAttribute("data-ax-limit");
+            } else if (t.id === "axGo") {
+              axRun(tab);
+              axClose(tab);
+              return;
+            }
+            refresh();
+          };
+          body.onchange = refresh;
+          refresh();
+          ov.style.display = "flex";
+          var first = body.querySelector("[data-ax-box]");
+          if (first) first.focus();
+        }
+        function axClose(tab) {
+          var cfg = axCfg(tab);
+          $(cfg.overlay).style.display = "none";
+          if (axTrigger) axTrigger.focus();
+        }
+        // Builds the tables for each file (one per person, or one combined) and paints them.
+        function axRun(tab) {
+          var cfg = axCfg(tab);
+          var snap = cfg.snap;
+          if (!snap) return;
+          var pref = axPrefOf(tab);
+          var cards = snap.cards.filter(function (c) {
+            return !pref.off[c.key];
+          });
+          if (!cards.length) return;
+          var chosen = Object.keys(pref.people);
+          var jobs = [];
+          if (!chosen.length) jobs.push({ people: null, label: "" });
+          else if (chosen.length > 1 && pref.split) chosen.forEach(function (n) {
+            jobs.push({ people: [n], label: n });
+          });
+          else jobs.push({ people: chosen, label: chosen.length > 1 ? chosen.length + " " + cfg.who : chosen[0] });
+          jobs.forEach(function (job, i) {
+            var tables = cards.map(function (c) {
+              var idx = [];
+              c.rows.forEach(function (r, k) {
+                if (!job.people || job.people.indexOf(c.owners[k]) !== -1) idx.push(k);
+              });
+              var total = idx.length;
+              if (pref.limit === "10") idx = idx.slice(0, 10);
+              return {
+                title: axBaseTitle(c.title) + (pref.limit === "10" && total > 10 ? " (Top 10 จาก " + total + " ร้าน)" : " (" + total + " ร้าน)"),
+                cols: c.cols,
+                rows: idx.map(function (k) {
+                  return c.rows[k];
+                }),
+              };
+            });
+            var scope = job.label ? cfg.who + ": " + job.label + " · " + snap.scopeLabel : snap.scopeLabel;
+            var file = cfg.prefix + (job.label ? "-" + String(job.label).trim().split(/\s+/)[0] : "") + "-" + Date.now() + "-" + (i + 1) + ".png";
+            setTimeout(function () {
+              actionsGridPng(tables, scope, snap.periodLabel, file);
+            }, i * 450); // spaced out so the browser does not drop a burst of downloads
+          });
+        }
+        // Paints any number of tables in two columns (row-major), same look as the on-screen insights grid.
+        function actionsGridPng(tables, scopeLabel, periodLabel, filename) {
           var probe = document.createElement("canvas").getContext("2d");
           var colW = 0;
           function measureTableWidth(cols, rows) {
@@ -16307,44 +16314,30 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           function tableHeight(t) {
             return 20 + (t.rows.length ? 30 + t.rows.length * 26 : 26);
           }
-          var row0H = Math.max(
-            tableHeight(tables[0]),
-            tables[1] ? tableHeight(tables[1]) : 0,
-          );
-          var row1H = tables[2]
-            ? Math.max(
-                tableHeight(tables[2]),
-                tables[3] ? tableHeight(tables[3]) : 0,
-              )
-            : 0;
-
+          var rowsOfTables = [];
+          for (var q = 0; q < tables.length; q += 2) rowsOfTables.push(tables.slice(q, q + 2));
+          var rowH = rowsOfTables.map(function (pair) {
+            return Math.max.apply(null, pair.map(tableHeight));
+          });
           probe.font = "bold 20px Space Grotesk, sans-serif";
           var titleW = probe.measureText("สิ่งที่ควรลงมือทำ").width;
           probe.font = "bold 14px Inter, sans-serif";
-          var scopeW = probe.measureText(snap.scopeLabel).width;
-
-          var padPage = 22;
-          var gutter = 30; // gap between the two columns
-          var gapRow = 24; // gap between the two rows
+          var scopeW = probe.measureText(scopeLabel).width;
+          var padPage = 22,
+            gutter = 30,
+            gapRow = 24;
           var numCols = tables.length > 1 ? 2 : 1;
           var gridW = colW * numCols + (numCols > 1 ? gutter : 0);
           var W = Math.ceil(Math.max(titleW, scopeW, gridW)) + padPage * 2;
-          var H =
-            padPage +
-            34 + // title
-            22 + // scope label (current filter, e.g. "ภาพรวม" / a CM name / "CM / AE")
-            18 + // subtitle (period)
-            row0H +
-            (row1H ? gapRow + row1H : 0) +
-            padPage;
-
+          var H = padPage + 34 + 22 + 18 + rowH.reduce(function (a, b) {
+            return a + b;
+          }, 0) + gapRow * Math.max(0, rowH.length - 1) + padPage;
           var canvas = document.createElement("canvas");
           canvas.width = W;
           canvas.height = H;
           var ctx = canvas.getContext("2d");
           ctx.fillStyle = "#EEF1F5";
           ctx.fillRect(0, 0, W, H);
-
           var y = padPage + 8;
           ctx.fillStyle = "#121A2B";
           ctx.font = "bold 20px Space Grotesk, sans-serif";
@@ -16352,39 +16345,36 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           y += 26;
           ctx.fillStyle = "#0F6E62";
           ctx.font = "bold 14px Inter, sans-serif";
-          ctx.fillText(snap.scopeLabel, padPage, y + 12);
+          ctx.fillText(scopeLabel, padPage, y + 12);
           y += 22;
           ctx.fillStyle = "#6B7280";
           ctx.font = "12.5px Inter, sans-serif";
-          ctx.fillText(snap.periodLabel, padPage, y + 12);
+          ctx.fillText(periodLabel, padPage, y + 12);
           y += 34;
-
           function drawOne(t, x, yStart) {
             var ty = yStart;
             ctx.fillStyle = "#121A2B";
             ctx.font = "bold 13px Inter, sans-serif";
             ctx.fillText(t.title, x, ty);
             ty += 20;
-            if (t.rows.length) {
-              drawCanvasTable(ctx, x, ty, t.cols, t.rows);
-            } else {
+            if (t.rows.length) drawCanvasTable(ctx, x, ty, t.cols, t.rows);
+            else {
               ctx.fillStyle = "#6B7280";
               ctx.font = "12.5px Inter, sans-serif";
               ctx.fillText("ไม่พบร้านที่เข้าเงื่อนไขนี้", x, ty + 8);
             }
           }
-          var xLeft = padPage,
-            xRight = padPage + colW + gutter;
-          drawOne(tables[0], xLeft, y);
-          if (tables[1]) drawOne(tables[1], xRight, y);
-          if (tables[2]) drawOne(tables[2], xLeft, y + row0H + gapRow);
-          if (tables[3]) drawOne(tables[3], xRight, y + row0H + gapRow);
-
+          var yy = y;
+          rowsOfTables.forEach(function (pair, ri) {
+            drawOne(pair[0], padPage, yy);
+            if (pair[1]) drawOne(pair[1], padPage + colW + gutter, yy);
+            yy += rowH[ri] + gapRow;
+          });
           canvas.toBlob(function (blob) {
             var url = URL.createObjectURL(blob);
             var a = document.createElement("a");
             a.href = url;
-            a.download = "pak-kret-7-11-actions-" + Date.now() + ".png";
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -16393,6 +16383,22 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             }, 2000);
           });
         }
+        ["rtr", "sev"].forEach(function (tab) {
+          var btn = $(tab + "InsightsExportBtn");
+          var ov = $(tab + "ActionsExportOverlay");
+          btn.addEventListener("click", function () {
+            axOpen(tab, btn);
+          });
+          $(tab + "ActionsExportClose").addEventListener("click", function () {
+            axClose(tab);
+          });
+          ov.addEventListener("click", function (e) {
+            if (e.target === ov) axClose(tab);
+          });
+          document.addEventListener("keydown", function (e) {
+            if (e.key === "Escape" && ov.style.display !== "none") axClose(tab);
+          });
+        });
 
         function sevExportPng(rowsData) {
           var cols = SEV_EXPORT_COLS;
@@ -16549,60 +16555,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           }, 500);
         }
 
-        $("rtrInsightsExportBtn").addEventListener(
-          "click",
-          rtrOpenActionsExportModal,
-        );
-        $("rtrActionsExportClose").addEventListener(
-          "click",
-          rtrCloseActionsExportModal,
-        );
-        $("rtrActionsExportOverlay").addEventListener("click", function (e) {
-          if (e.target.id === "rtrActionsExportOverlay")
-            rtrCloseActionsExportModal();
-        });
-        $("rtrActionsExportGo").addEventListener("click", function () {
-          var snap = state.rtr._insightsSnapshot;
-          if (!snap) return;
-          var picked = Array.prototype.map
-            .call(
-              document.querySelectorAll(".rtr-actions-export-check:checked"),
-              function (el) {
-                return snap.cards[Number(el.value)];
-              },
-            )
-            .filter(Boolean);
-          if (!picked.length) return;
-          rtrInsightsExportPng(picked);
-          rtrCloseActionsExportModal();
-        });
-        $("sevInsightsExportBtn").addEventListener(
-          "click",
-          sevOpenActionsExportModal,
-        );
-        $("sevActionsExportClose").addEventListener(
-          "click",
-          sevCloseActionsExportModal,
-        );
-        $("sevActionsExportOverlay").addEventListener("click", function (e) {
-          if (e.target.id === "sevActionsExportOverlay")
-            sevCloseActionsExportModal();
-        });
-        $("sevActionsExportGo").addEventListener("click", function () {
-          var snap = state.sev._insightsSnapshot;
-          if (!snap) return;
-          var picked = Array.prototype.map
-            .call(
-              document.querySelectorAll(".sev-actions-export-check:checked"),
-              function (el) {
-                return snap.cards[Number(el.value)];
-              },
-            )
-            .filter(Boolean);
-          if (!picked.length) return;
-          sevInsightsExportPng(picked);
-          sevCloseActionsExportModal();
-        });
         $("sevExportBtn").addEventListener("click", sevOpenExportModal);
         $("sevExportClose").addEventListener("click", sevCloseExportModal);
         $("sevExportSort").addEventListener("change", function () {
