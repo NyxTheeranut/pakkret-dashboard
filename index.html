@@ -16134,6 +16134,18 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           }).length;
           return clash > 1 ? name : first;
         }
+        // People (out of `candidates`) who have at least one row in the ticked boxes -- someone with nothing to act on
+        // is skipped instead of producing an empty image.
+        function axActivePeople(snap, pref, candidates) {
+          var cards = snap.cards.filter(function (c) {
+            return !pref.off[c.key];
+          });
+          return candidates.filter(function (n) {
+            return cards.some(function (c) {
+              return c.owners.indexOf(n) !== -1;
+            });
+          });
+        }
         function axPrefOf(tab) {
           return axPrefs[tab] || (axPrefs[tab] = { off: {}, people: {}, split: true, limit: "all" });
         }
@@ -16181,7 +16193,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             rowsHtml + "</div></div>" +
             '<div class="ax-sec"><div class="ax-h"><span>ของใคร (' + cfg.who + ")</span></div>" +
             '<div class="ax-chips" role="group" aria-label="เลือก ' + cfg.who + '">' + chipsHtml + "</div>" +
-            '<label class="ax-split" id="axSplitRow"><input type="checkbox" id="axSplit"' + (pref.split ? " checked" : "") + ' /> แยกเป็นไฟล์ละคน</label></div>' +
+            '<label class="ax-split" id="axSplitRow"><input type="checkbox" id="axSplit"' + (pref.split ? " checked" : "") + ' /> <span id="axSplitTxt">แยกเป็นไฟล์ละคน</span></label></div>' +
             '<div class="ax-sec"><div class="ax-h"><span>จำนวนแถวต่อกล่อง</span></div><div class="ax-chips" role="group" aria-label="จำนวนแถว">' +
             '<button type="button" class="wow-btn" data-ax-limit="all" aria-pressed="' + (pref.limit === "all" ? "true" : "false") + '">ทั้งหมด</button>' +
             '<button type="button" class="wow-btn" data-ax-limit="10" aria-pressed="' + (pref.limit === "10" ? "true" : "false") + '">Top 10</button></div></div>' +
@@ -16196,16 +16208,24 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             [].forEach.call(body.querySelectorAll("[data-ax-box]"), function (el) {
               if (!el.checked) pref.off[el.getAttribute("data-ax-box")] = true;
             });
-            var n = Object.keys(pref.people).length;
+            var picked = Object.keys(pref.people);
+            // "ทุกคน" means every person in view: with the split ticked that is one image per person
+            var pool = picked.length ? picked : people;
+            var active = axActivePeople(snap, pref, pool);
             var splitRow = body.querySelector("#axSplitRow");
-            splitRow.style.display = n > 1 ? "" : "none";
+            splitRow.style.display = pool.length > 1 ? "" : "none";
+            body.querySelector("#axSplitTxt").textContent = picked.length
+              ? "แยกเป็นไฟล์ละคน"
+              : "แยกเป็นไฟล์ละคน (ทุกคนในมุมมองนี้ คนละรูป)";
             pref.split = body.querySelector("#axSplit").checked;
-            var files = n > 1 && pref.split ? n : 1;
-            body.querySelector("#axSummary").textContent = boxes.length ? files + " ไฟล์ · " + boxes.length + " กล่อง" : "เลือกอย่างน้อย 1 กล่อง";
+            var files = pool.length > 1 && pref.split ? Math.max(active.length, 1) : 1;
+            body.querySelector("#axSummary").textContent = boxes.length
+              ? files + " ไฟล์ · " + boxes.length + " กล่อง" + (pool.length > 1 && pref.split && active.length < pool.length ? " · ข้ามคนที่ไม่มีรายการ" : "")
+              : "เลือกอย่างน้อย 1 กล่อง";
             body.querySelector("#axGo").disabled = !boxes.length;
             [].forEach.call(body.querySelectorAll("[data-ax-person]"), function (b) {
               var key = b.getAttribute("data-ax-person");
-              b.setAttribute("aria-pressed", key === "" ? (n ? "false" : "true") : pref.people[key] ? "true" : "false");
+              b.setAttribute("aria-pressed", key === "" ? (picked.length ? "false" : "true") : pref.people[key] ? "true" : "false");
             });
             [].forEach.call(body.querySelectorAll("[data-ax-limit]"), function (b) {
               b.setAttribute("aria-pressed", b.getAttribute("data-ax-limit") === pref.limit ? "true" : "false");
@@ -16255,11 +16275,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           });
           if (!cards.length) return;
           var chosen = Object.keys(pref.people);
+          var everyone = cfg.people();
+          var pool = chosen.length ? chosen : everyone;
           var jobs = [];
-          if (!chosen.length) jobs.push({ people: null, label: "" });
-          else if (chosen.length > 1 && pref.split) chosen.forEach(function (n) {
-            jobs.push({ people: [n], label: n });
-          });
+          if (pool.length > 1 && pref.split) {
+            var active = axActivePeople(snap, pref, pool);
+            (active.length ? active : pool).forEach(function (n) {
+              jobs.push({ people: [n], label: n });
+            });
+          } else if (!chosen.length) jobs.push({ people: null, label: "" });
           else jobs.push({ people: chosen, label: chosen.length > 1 ? chosen.length + " " + cfg.who : chosen[0] });
           jobs.forEach(function (job, i) {
             var tables = cards.map(function (c) {
