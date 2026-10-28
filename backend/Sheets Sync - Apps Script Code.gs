@@ -135,8 +135,18 @@ function doPost(e) {
 
     return jsonResponse_({ ok: false, error: "unknown action" });
   } catch (err) {
-    return jsonResponse_({ ok: false, error: String(err) });
+    return errorResponse_(err);
   }
+}
+
+// Only messages we wrote for the caller go back as-is; anything else (Apps Script / Sheets internals,
+// quota names, "script property is not set") is logged for the owner and answered with a generic code.
+var CALLER_ERROR_RE = /^(forbidden|not_signed_in|no_access)/;
+function errorResponse_(err) {
+  var msg = String((err && err.message) || err);
+  if (CALLER_ERROR_RE.test(msg)) return jsonResponse_({ ok: false, error: msg });
+  console.error(msg);
+  return jsonResponse_({ ok: false, error: "server_error" });
 }
 
 // update_territory_sheet.py isn't a person signing in -- it's a script on the
@@ -169,9 +179,21 @@ function requireSyncSecret_(secret) {
 // that string, so no viewer-side change is needed for this. Deletes every
 // tab name in deleteTabs -- retention/pruning is the Python script's
 // decision, this just carries it out.
+// Tab names the publisher may write or delete: the monthly data tabs and "meta" -- never Viewers,
+// Access Log, Access Summary or anything else. If the sync secret ever leaked, this is what keeps it
+// from being a way to edit the allowlist.
+function isPublishableTab_(name) {
+  return name === "meta" || /^(rtr|sev)-/.test(String(name));
+}
+
 function publishTerritory_(payload) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tables = payload.tables || {};
+  Object.keys(tables)
+    .concat(payload.deleteTabs || [])
+    .forEach(function (name) {
+      if (!isPublishableTab_(name)) throw new Error("forbidden: tab not publishable: " + name);
+    });
   Object.keys(tables).forEach(function (tabName) {
     var t = tables[tabName];
     var sheet = ss.getSheetByName(tabName);

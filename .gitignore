@@ -17,3 +17,6 @@ RTR/
 7-11/
 *preview*.html
 drive-file-test.html
+
+# local-only dev pages (not published)
+/dev/
