@@ -10111,7 +10111,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // as a read-only summary in the modal, same reasoning as the 7-11 export.
         // =====================================================================
         var RTR_EXPORT_COLS = RTR_TABLE_COLS.slice(0, 1)
-          .concat([{ key: "code", label: "รหัสร้าน" }])
+          .concat([
+            { key: "code", label: "รหัสร้าน" },
+            { key: "com", label: "COM", align: "left" },
+          ])
           .concat(RTR_TABLE_COLS.slice(1));
 
         function rtrExportScopeLabel() {
@@ -10195,6 +10198,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         function rtrExportCellText(col, s) {
           if (col.key === "name") return s.name;
           if (col.key === "code") return s.code;
+          if (col.key === "com") return s.com || "";
           if (col.key === "ga") return fmt(rtrStoreSegGA(s));
           if (col.key === "target") return s.hasTarget ? fmt(s.target) : "—";
           if (col.key === "achieve") {
