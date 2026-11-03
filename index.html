@@ -10209,10 +10209,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (col.key === "ap30dSubs") return fmt(s.ap30d);
           if (col.key === "ap1dConv")
             return s.ga > 0 ? pct(s.ap1d / s.ga) : "—";
-          if (col.key === "m1") return fmtBaht(s.m1);
+          if (col.key === "m1") return fmt(s.m1);
           if (col.key === "arpu") {
             var pa = arpuOf(s.m1, s.ga, s.ga, revGaOf(s));
-            return pa != null ? fmtBaht(pa) : "—";
+            return pa != null ? fmt(pa) : "—";
           }
           if (col.key === "conv") return s.ga > 0 ? pct(s.ap30d / s.ga) : "—";
           return "";
@@ -15778,7 +15778,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (col.key === "khet") return s.khet;
           if (col.key === "fyai") return s.fyai;
           if (col.key === "ga") return fmt(d.ga);
-          if (col.key === "rev") return fmtBaht(d.revAmt);
+          if (col.key === "rev") return fmt(d.revAmt);
           if (col.key === "ap49") return fmt(d.ap49);
           if (col.key === "ap99") return fmt(d.ap99);
           if (col.key === "ap199") return fmt(d.ap199);
@@ -15790,7 +15790,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             return d.target == null ? "—" : fmt(d.target);
           if (col.key === "achieve")
             return d.achievePct == null ? "—" : pct(d.achievePct);
-          if (col.key === "m1ga") return d.m1ga == null ? "—" : fmtBaht(d.m1ga);
+          if (col.key === "m1ga") return d.m1ga == null ? "—" : fmt(d.m1ga);
           return "";
         }
 
@@ -15845,8 +15845,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             return [
               x.s.name,
               x.s.code,
-              fmtBaht(x.sv.revAmt),
-              x.prevRevAmt != null ? fmtBaht(x.prevRevAmt) : "—",
+              fmt(x.sv.revAmt),
+              x.prevRevAmt != null ? fmt(x.prevRevAmt) : "—",
               x.revMomPct == null
                 ? "—"
                 : (x.revMomPct > 0 ? "+" : "") + pct(x.revMomPct),
@@ -16530,6 +16530,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             }),
             rowsData.map(function (x) {
               return SEV_EXPORT_COLS.map(function (c) {
+                if (c.key === "rev") return plainNum(x.d.revAmt);
+                if (c.key === "m1ga")
+                  return x.d.m1ga == null ? "—" : plainNum(x.d.m1ga);
                 return sevExportCellText(c, x.s, x.d);
               });
             }),
