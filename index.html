@@ -15569,8 +15569,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // Same as SEV_TABLE_COLS but with a รหัสร้าน (store code) column inserted right after the
         // name, since the live table already shows the code as a subtitle under the store name (no
         // extra column needed there) but a flat PNG/PDF export needs it as its own explicit column.
+        // Also gets a COM (s.ae) column so each exported store carries its COM's name.
         var SEV_EXPORT_COLS = SEV_TABLE_COLS.slice(0, 1)
-          .concat([{ key: "code", label: "รหัสร้าน" }])
+          .concat([
+            { key: "code", label: "รหัสร้าน" },
+            { key: "ae", label: "COM", align: "left" },
+          ])
           .concat(SEV_TABLE_COLS.slice(1));
 
         function sevExportScopeLabel() {
@@ -15770,6 +15774,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         function sevExportCellText(col, s, d) {
           if (col.key === "name") return s.name;
           if (col.key === "code") return s.code;
+          if (col.key === "ae") return s.ae || "";
           if (col.key === "khet") return s.khet;
           if (col.key === "fyai") return s.fyai;
           if (col.key === "ga") return fmt(d.ga);
