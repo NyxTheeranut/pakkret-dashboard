@@ -3263,6 +3263,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 <option value="ap1dConv">เรียงตาม %AP1D</option>
                 <option value="conv">เรียงตาม %AP30D</option>
                 <option value="lmtdGa">เรียงตาม GA (LMTD)</option>
+                <option value="ap300">เรียงตาม AP 300+</option>
                 <option value="mom">เรียงตาม %MOM</option>
                 <option value="arpu">เรียงตาม ARPU</option>
               </select>
@@ -9186,14 +9187,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   '<tr class="clickable" tabindex="0" role="button" data-code="' +
                   esc(s.code) +
                   '">' +
-                  RTR_QUADRANT_COLS.map(function (col) {
+                  RTR_TABLE_COLS.map(function (col) {
                     return rtrTableCellHtml(col, s, true);
                   }).join("") +
                   "</tr>"
                 );
               })
               .join("");
-            var rzHeaderHtml = RTR_QUADRANT_COLS.map(function (col) {
+            var rzHeaderHtml = RTR_TABLE_COLS.map(function (col) {
               var isActive = rzKey === col.key;
               var arrow = isActive
                 ? state.rtr.redZoneSortDir === "asc"
@@ -10106,6 +10107,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           { key: "target", label: "Target" },
           { key: "ga", label: "GA" },
           { key: "lmtdGa", label: "GA (LMTD)" },
+          { key: "ap300", label: "AP 300+" }, // AP1D subs in the 300+ baht band (a count)
           { key: "ap1dSubs", label: "AP1D subs" },
           { key: "ap30dSubs", label: "AP30D subs" },
           { key: "ap1dConv", label: "%AP1D" },
@@ -10115,11 +10117,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           { key: "achieve", label: "%Achieve" },
           { key: "mom", label: "%MOM" },
         ];
-        // The quadrant's store table = the main columns plus AP 300+ (AP1D subs at 300+ baht) right after GA (LMTD).
-        // Kept out of RTR_TABLE_COLS so the main store table, its sort list and the export stay as they were.
-        var RTR_QUADRANT_COLS = RTR_TABLE_COLS.slice(0, 4)
-          .concat([{ key: "ap300", label: "AP 300+" }])
-          .concat(RTR_TABLE_COLS.slice(4));
         // The quadrant's table and its export read %Achieve from the run rate, so say so in the header.
         function rtrColLabel(col, runRate) {
           return runRate && col.key === "achieve" ? "%Ach (RR)" : col.label;
@@ -10473,6 +10470,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (col.key === "lmtdGa")
             return s.lmtdGa == null ? "—" : fmt(s.lmtdGa);
           if (col.key === "mom") return s.momPct == null ? "—" : pct(s.momPct);
+          if (col.key === "ap300") return fmt((s.tiers && s.tiers[7]) || 0);
           if (col.key === "ap1dSubs") return fmt(s.ap1d);
           if (col.key === "ap30dSubs") return fmt(s.ap30d);
           if (col.key === "ap1dConv")
@@ -10502,6 +10500,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             return s.hasTarget ? plainNum(s.target) : "—";
           if (col.key === "lmtdGa")
             return s.lmtdGa == null ? "—" : plainNum(s.lmtdGa);
+          if (col.key === "ap300") return plainNum((s.tiers && s.tiers[7]) || 0);
           if (col.key === "ap1dSubs") return plainNum(s.ap1d);
           if (col.key === "ap30dSubs") return plainNum(s.ap30d);
           if (col.key === "m1") return plainNum(s.m1);
