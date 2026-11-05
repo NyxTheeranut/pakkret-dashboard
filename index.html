@@ -9186,14 +9186,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   '<tr class="clickable" tabindex="0" role="button" data-code="' +
                   esc(s.code) +
                   '">' +
-                  RTR_TABLE_COLS.map(function (col) {
+                  RTR_QUADRANT_COLS.map(function (col) {
                     return rtrTableCellHtml(col, s, true);
                   }).join("") +
                   "</tr>"
                 );
               })
               .join("");
-            var rzHeaderHtml = RTR_TABLE_COLS.map(function (col) {
+            var rzHeaderHtml = RTR_QUADRANT_COLS.map(function (col) {
               var isActive = rzKey === col.key;
               var arrow = isActive
                 ? state.rtr.redZoneSortDir === "asc"
@@ -10115,6 +10115,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           { key: "achieve", label: "%Achieve" },
           { key: "mom", label: "%MOM" },
         ];
+        // The quadrant's store table = the main columns plus AP 300+ (AP1D subs at 300+ baht) right after GA (LMTD).
+        // Kept out of RTR_TABLE_COLS so the main store table, its sort list and the export stay as they were.
+        var RTR_QUADRANT_COLS = RTR_TABLE_COLS.slice(0, 4)
+          .concat([{ key: "ap300", label: "AP 300+" }])
+          .concat(RTR_TABLE_COLS.slice(4));
         // The quadrant's table and its export read %Achieve from the run rate, so say so in the header.
         function rtrColLabel(col, runRate) {
           return runRate && col.key === "achieve" ? "%Ach (RR)" : col.label;
@@ -10185,6 +10190,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               '<td class="num-cell">' + (a != null ? fmtBaht(a) : "—") + "</td>"
             );
           }
+          if (k === "ap300")
+            return '<td class="num-cell">' + fmt((s.tiers && s.tiers[7]) || 0) + "</td>";
           if (k === "ap1dSubs")
             return '<td class="num-cell">' + fmt(s.ap1d) + "</td>";
           if (k === "ap30dSubs")
@@ -10213,6 +10220,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           }
           if (key === "lmtdGa") return s.lmtdGa == null ? -1 : s.lmtdGa;
           if (key === "mom") return s.momPct == null ? -2 : s.momPct;
+          if (key === "ap300") return (s.tiers && s.tiers[7]) || 0;
           if (key === "ap1dSubs") return s.ap1d;
           if (key === "ap30dSubs") return s.ap30d;
           if (key === "ap1dConv") return s.ga > 0 ? s.ap1d / s.ga : 0;
