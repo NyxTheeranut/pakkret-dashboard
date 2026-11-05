@@ -3179,7 +3179,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 role="switch"
                 aria-checked="false"
                 aria-label="Target ฐาน M1"
-                title="สลับ Target/%Achieve ระหว่างฐาน GA กับฐาน M1 (%MOM/pace/forecast อิง GA เสมอ)"
+                title="สลับ Target/%Achieve/%MOM ระหว่างฐาน GA กับฐาน M1 (pace/forecast อิง GA เสมอ)"
               ><span class="tgt-lbl">Target</span><span class="tgt-track" aria-hidden="true"><span class="tgt-thumb"></span><span class="tgt-opt">GA</span><span class="tgt-opt">M1</span></span></button>
               <span class="hint" id="comLeaderboardHint"></span>
             </div>
@@ -4321,6 +4321,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             if (dayOfMonth(d) <= maxDay) t += daily[d][field] || 0;
           });
           return t;
+        }
+
+        // M1 (revenue) month-over-month, like-for-like: both months summed over days 1..cutoff (the settled window).
+        // null when the previous month has no revenue in that window.
+        function revMomOf(curDaily, prevDaily, cutoff) {
+          var prev = fieldUpToDay(prevDaily, cutoff, "revAmt");
+          return prev > 0 ? (fieldUpToDay(curDaily, cutoff, "revAmt") - prev) / prev : null;
         }
 
         function inTargetCluster(v) {
@@ -6518,6 +6525,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             // When the current month IS complete the cutoff is its last day, so this
             // degenerates to the plain full-month comparison on its own.
             m.momCutoffDay = monthMaxDay(m);
+            // M1 (revenue) MOM needs a settled window: the newest days carry GA but little revenue yet, so both
+            // months are cut at the last day whose revenue-per-GA still looks settled (see revenueMatureCutoff).
+            var perDayRev = {};
+            Object.keys(m.daily || {}).forEach(function (d) {
+              perDayRev[dayOfMonth(d)] = [m.daily[d].ga || 0, m.daily[d].revAmt || 0];
+            });
+            m.revCutoffDay = revenueMatureCutoff(perDayRev, m.momCutoffDay);
             var prevGAByCode = {};
             if (prevMonth)
               prevMonth.stores.forEach(function (s) {
@@ -6679,6 +6693,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 prevClusterGA > 0
                   ? (m.totals.ga - prevClusterGA) / prevClusterGA
                   : null;
+              m.totals.revMomPct = revMomOf(m.daily, prevMonth.daily, m.revCutoffDay);
               SEGMENT_MOM_FIELDS.forEach(function (f) {
                 var prevSeg = fieldUpToDay(prevMonth.daily, m.momCutoffDay, f);
                 m.totals[f + "MomPct"] =
@@ -6691,6 +6706,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   ? gaUpToDay(prevCr.daily, m.momCutoffDay)
                   : 0;
                 cr.momPct = prevCmGA > 0 ? (cr.ga - prevCmGA) / prevCmGA : null;
+                cr.revMomPct = revMomOf(cr.daily, prevCr ? prevCr.daily : null, m.revCutoffDay);
                 SEGMENT_MOM_FIELDS.forEach(function (f) {
                   var prevSeg = prevCr
                     ? fieldUpToDay(prevCr.daily, m.momCutoffDay, f)
@@ -6701,11 +6717,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               });
             } else {
               m.totals.momPct = null;
+              m.totals.revMomPct = null;
               SEGMENT_MOM_FIELDS.forEach(function (f) {
                 m.totals[f + "MomPct"] = null;
               });
               Object.keys(m.cmRollup).forEach(function (cmName) {
                 m.cmRollup[cmName].momPct = null;
+                m.cmRollup[cmName].revMomPct = null;
                 SEGMENT_MOM_FIELDS.forEach(function (f) {
                   m.cmRollup[cmName][f + "MomPct"] = null;
                 });
@@ -7044,7 +7062,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // returned, so every existing view (KPI cards, quadrant chart, trend chart) keeps working
         // unchanged regardless of which filters are active. Used whenever a district/mallType filter
         // is on, since those don't have a pre-computed rollup the way cmRollup does for CM alone.
-        function sumStoresToTotals(stores, prevMonthStores, prevMaxDay) {
+        function sumStoresToTotals(stores, prevMonthStores, prevMaxDay, revCutoff) {
           var t = {
             ga: 0,
             ap1d: 0,
@@ -7108,6 +7126,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               return a + (prevMaxDay ? gaUpToDay(s.daily, prevMaxDay) : s.ga);
             }, 0);
             t.momPct = prevGA > 0 ? (t.ga - prevGA) / prevGA : null;
+            var rc = revCutoff || prevMaxDay;
+            var prevRevSum = prevMonthStores.reduce(function (a, s) {
+              return a + (rc ? fieldUpToDay(s.daily, rc, "revAmt") : s.revAmt || 0);
+            }, 0);
+            var curRevSum = stores.reduce(function (a, s) {
+              return a + (rc ? fieldUpToDay(s.daily, rc, "revAmt") : s.revAmt || 0);
+            }, 0);
+            t.revMomPct = prevRevSum > 0 ? (curRevSum - prevRevSum) / prevRevSum : null;
             // Same like-for-like MOM as GA above, per Mass/Migrant/Tourist segment -- see
             // finalizeRtrMonths' SEGMENT_MOM_FIELDS block for the other two rtrCurrentScope()
             // paths this has to stay consistent with.
@@ -7124,6 +7150,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             });
           } else {
             t.momPct = null;
+            t.revMomPct = null;
             t.massMomPct = null;
             t.migrantMomPct = null;
             t.touristMomPct = null;
@@ -7200,7 +7227,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 return true;
               })
             : null;
-          var totals = sumStoresToTotals(stores, prevStores, m.momCutoffDay);
+          var totals = sumStoresToTotals(stores, prevStores, m.momCutoffDay, m.revCutoffDay);
           return {
             totals: totals,
             daily: totals.daily,
@@ -7803,12 +7830,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               }
             : signedUnits;
           var arpu = arpuOf(t.m1, t.targetedGA, t.ga, t.revGa);
+          var momVal = isM1 ? t.revMomPct : t.momPct; // %MOM follows the GA / M1 switch
           var momTxt =
-            t.momPct == null
+            momVal == null
               ? rtrCurrentMonth().hasPrevMonth
                 ? "ไม่มีเทียบ"
                 : "เดือนแรกในไฟล์ ไม่มีเดือนก่อนหน้าให้เทียบ"
-              : pctColored(t.momPct);
+              : pctColored(momVal);
           var mIdx = state.rtr.currentMonthIdx;
           var prevMonth = mIdx > 0 ? state.rtr.months[mIdx - 1] : null;
           var pacing = rtrMonthPacing(rtrCurrentMonth(), prevMonth);
@@ -8094,10 +8122,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   // full-month one, and nobody can tell which they're looking at without being told.
                   sub: rtrCurrentMonth().hasPrevMonth
                     ? "เทียบเดือนก่อน ช่วงวันที่ 1-" +
-                      (rtrCurrentMonth().momCutoffDay ||
-                        monthMaxDay(rtrCurrentMonth())) +
-                      " เท่ากัน (GA)"
-                    : "เทียบเดือนก่อนหน้า (GA)",
+                      (isM1
+                        ? rtrCurrentMonth().revCutoffDay || monthMaxDay(rtrCurrentMonth())
+                        : rtrCurrentMonth().momCutoffDay || monthMaxDay(rtrCurrentMonth())) +
+                      " เท่ากัน (" + (isM1 ? "M1 เฉพาะวันที่รายได้เข้าครบแล้ว" : "GA") + ")"
+                    : "เทียบเดือนก่อนหน้า (" + (isM1 ? "M1" : "GA") + ")",
                 },
                 {
                   label: "M1",
@@ -8305,6 +8334,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           setTargetSwitch($("comTargetModeBtn"), targetMode);
           var m = rtrCurrentMonth();
           var byCom = {};
+          var comPrevM = state.rtr.currentMonthIdx > 0 ? state.rtr.months[state.rtr.currentMonthIdx - 1] : null;
+          var comPrevByCode = {};
+          if (comPrevM) comPrevM.stores.forEach(function (ps) { comPrevByCode[ps.code] = ps; });
           m.stores.forEach(function (s) {
             // Stores with no COM (outside the routing workbook's own cluster, or that file
             // temporarily missing) simply aren't part of this comparison -- not an error.
@@ -8334,6 +8366,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 hasAnyTarget: false,
                 lmtdSum: 0,
                 hasLmtd: false,
+                revCur: 0,
+                revPrev: 0,
               });
             row.storeCount++;
             row.ga += s.ga;
@@ -8351,6 +8385,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               row.lmtdSum += s.lmtdGa;
               row.hasLmtd = true;
             }
+            // M1 MOM inputs: this store's revenue vs its own last month, both over the settled window
+            row.revCur += fieldUpToDay(s.daily, m.revCutoffDay || 31, "revAmt");
+            var ps = comPrevByCode[s.code];
+            if (ps) row.revPrev += fieldUpToDay(ps.daily, m.revCutoffDay || 31, "revAmt");
           });
           var comNames = Object.keys(byCom);
           // With a CM picked, one COM is a real answer ("this CM's COM"), not a pointless
@@ -8432,9 +8470,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               rrPct: rrPct,
               segSupported: segSupported,
               momPct:
-                r.hasLmtd && r.lmtdSum > 0
-                  ? (r.ga - r.lmtdSum) / r.lmtdSum
-                  : null,
+                targetMode === "m1"
+                  ? r.revPrev > 0
+                    ? (r.revCur - r.revPrev) / r.revPrev
+                    : null
+                  : r.hasLmtd && r.lmtdSum > 0
+                    ? (r.ga - r.lmtdSum) / r.lmtdSum
+                    : null,
               m1: cr.m1,
               arpu: arpu,
               paceDelta: paceDelta,
@@ -10717,7 +10759,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var out = {};
           var cutoff = rtrCurrentMonth().momCutoffDay;
           Object.keys(cur).forEach(function (cm) {
-            out[cm] = sumStoresToTotals(cur[cm], prev[cm] || null, cutoff);
+            out[cm] = sumStoresToTotals(cur[cm], prev[cm] || null, cutoff, rtrCurrentMonth().revCutoffDay);
           });
           return out;
         }
