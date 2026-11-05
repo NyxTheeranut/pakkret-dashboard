@@ -2713,6 +2713,48 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 }
 @media (prefers-reduced-motion: reduce) { .skel .sk::after { animation: none; display: none; } }
 </style>
+<style id="apmix-compare">
+/* AP Mix & Portion compare: this month vs last month, plus a clickable CM / COM (AE) breakdown.
+   Static widths only (no width animation); colour is never the only signal (arrows + signed pp). */
+.apx-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.apx-scope { font-size: 14px; font-weight: 600; color: var(--ink, #16201c); }
+.apx-note { font-size: 12.5px; color: var(--muted); }
+.apx-back { font: inherit; font-size: 12.5px; color: var(--accent); background: none; border: 1px solid var(--line, rgba(22,32,28,.16)); border-radius: 999px; padding: 3px 12px; cursor: pointer; }
+.apx-back:hover { border-color: var(--accent); }
+.apx-bars { display: grid; gap: 6px; margin-bottom: 14px; }
+.apx-bar-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+.apx-bars .seg-stack { margin: 0; height: 22px; }
+.apx-bars .apx-prev .seg-stack { height: 12px; opacity: 0.55; }
+.apx-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 18px; }
+.apx-table th { text-align: right; font-weight: 500; font-size: 12.5px; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--line, rgba(22,32,28,.12)); }
+.apx-table th:first-child, .apx-table td:first-child { text-align: left; }
+.apx-table td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--line, rgba(22,32,28,.08)); font-variant-numeric: tabular-nums; }
+.apx-table td:first-child { display: flex; align-items: center; gap: 8px; }
+.apx-table i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+.apx-d { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.apx-d.up { color: var(--accent); }
+.apx-d.down { color: var(--alert); }
+.apx-d.flat { color: var(--muted); font-weight: 500; }
+.apx-gtitle { font-size: 13.5px; font-weight: 600; margin: 4px 0 4px; }
+.apx-ghint { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+.apx-groups { display: grid; gap: 6px; }
+.apx-group { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr) auto auto; align-items: center; gap: 12px; width: 100%;
+  font: inherit; text-align: left; color: inherit; background: var(--panel, #fcfcfa); border: 1px solid var(--line, rgba(22,32,28,.12));
+  border-radius: 10px; padding: 8px 12px; cursor: pointer; touch-action: manipulation; transition: border-color 0.15s, background-color 0.15s; }
+.apx-group:hover { border-color: var(--accent); }
+.apx-group:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.apx-group[aria-pressed="true"] { border-color: var(--accent); background: rgba(15, 118, 110, 0.07); }
+.apx-gname { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.apx-gbar { display: flex; height: 12px; border-radius: 4px; overflow: hidden; background: rgba(22, 32, 28, 0.06); }
+.apx-gnum { font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.apx-gtot { font-size: 12.5px; color: var(--muted); white-space: nowrap; min-width: 4.5em; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .apx-group { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  .apx-gbar { grid-column: 1 / -1; order: 3; }
+  .apx-table th, .apx-table td { padding: 6px 6px; }
+}
+@media (prefers-reduced-motion: reduce) { .apx-group { transition: none; } }
+</style>
 <style id="redesign-switch">
 /* Target GA / M1 switch (RTR COM table + 7-11 CM table): a labelled two-state switch instead of a text button
    that changes its own wording. Thumb slides (transform only); reduced motion = instant. */
@@ -2728,6 +2770,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
   box-shadow: 0 1px 2px rgba(22, 32, 28, 0.3); transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
 .tgt-switch.is-m1 .tgt-thumb { transform: translateX(100%); }
 .tgt-switch.tgt-wide .tgt-track { width: 124px; }
+.tgt-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .section-head .tgt-switch { margin-left: auto; }
 .tgt-switch .tgt-opt { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; letter-spacing:0; color: var(--muted, #5a6560); transition: color 0.22s; }
 .tgt-switch:not(.is-m1) .tgt-opt:nth-child(2), .tgt-switch.is-m1 .tgt-opt:nth-child(3) { color: #fff; }
@@ -3069,6 +3112,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             <div class="section-head">
               <h2>เลือกมุมมอง</h2>
               <span class="hint">Overview = รวมทุก CM ในพื้นที่นี้</span>
+              <div class="tgt-stack">
               <button
                 class="tgt-switch tgt-wide"
                 id="rtrUnlimitedBtn"
@@ -3078,6 +3122,16 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 aria-label="ไม่รวมซิมอันลิมิต ในข้อมูล RTR ทั้งหมด"
                 title="รวม/ไม่รวมห้างหุ้นส่วนจำกัด ซิมอันลิมิต ในข้อมูล RTR ทุกส่วน (การ์ด ตาราง กราฟ Overview) เป้า CM ไม่เปลี่ยน"
               ><span class="tgt-lbl">ซิมอันลิมิต</span><span class="tgt-track" aria-hidden="true"><span class="tgt-thumb"></span><span class="tgt-opt">รวม</span><span class="tgt-opt">ไม่รวม</span></span></button>
+              <button
+                class="tgt-switch tgt-wide"
+                id="rtrTouristBtn"
+                type="button"
+                role="switch"
+                aria-checked="false"
+                aria-label="ไม่รวมซิม Tourist ในข้อมูล RTR ทั้งหมด"
+                title="รวม/ไม่รวมซิม Tourist ในข้อมูล RTR (GA, AP, เป้า GA ของ CM/COM) รายได้ / M1 แยกตามกลุ่มไม่ได้ จึงไม่เปลี่ยน"
+              ><span class="tgt-lbl">ซิม Tourist</span><span class="tgt-track" aria-hidden="true"><span class="tgt-thumb"></span><span class="tgt-opt">รวม</span><span class="tgt-opt">ไม่รวม</span></span></button>
+              </div>
             </div>
             <div class="cm-tabs" id="rtrCmTabs"></div>
             <div class="ae-row" id="rtrDistrictRow"></div>
@@ -3861,6 +3915,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             excludeUnlimited: (function () {
               try {
                 return localStorage.getItem("pk_excl_unlimited") === "1";
+              } catch (e) {
+                return false;
+              }
+            })(),
+            excludeTourist: (function () {
+              try {
+                return localStorage.getItem("pk_excl_tourist") === "1";
               } catch (e) {
                 return false;
               }
@@ -6959,8 +7020,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         function districtLabel(s) {
           return s.district || "ไม่ระบุพื้นที่";
         }
-        function rtrCurrentStores() {
-          var m = rtrCurrentMonth();
+        function rtrCurrentStores(mo) {
+          var m = mo || rtrCurrentMonth();
           return m.stores.filter(function (s) {
             if (state.rtr.currentCM && s.cm !== state.rtr.currentCM)
               return false;
@@ -8202,12 +8263,17 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var b = $("rtrUnlimitedBtn");
           b.setAttribute("aria-checked", state.rtr.excludeUnlimited ? "true" : "false");
           b.classList.toggle("is-m1", !!state.rtr.excludeUnlimited);
+          var t = $("rtrTouristBtn");
+          t.setAttribute("aria-checked", state.rtr.excludeTourist ? "true" : "false");
+          t.classList.toggle("is-m1", !!state.rtr.excludeTourist);
         }
-        $("rtrUnlimitedBtn").addEventListener("click", function () {
+        // Both RTR include/exclude switches (ซิมอันลิมิต, ซิม Tourist) re-run the same cloud pipeline.
+        [["rtrUnlimitedBtn", "excludeUnlimited", "pk_excl_unlimited"], ["rtrTouristBtn", "excludeTourist", "pk_excl_tourist"]].forEach(function (sw) {
+        $(sw[0]).addEventListener("click", function () {
           if (!state.rtr._rawGroups) return;
-          state.rtr.excludeUnlimited = !state.rtr.excludeUnlimited;
+          state.rtr[sw[1]] = !state.rtr[sw[1]];
           try {
-            localStorage.setItem("pk_excl_unlimited", state.rtr.excludeUnlimited ? "1" : "0");
+            localStorage.setItem(sw[2], state.rtr[sw[1]] ? "1" : "0");
           } catch (e) {}
           var keep = {
             cm: state.rtr.currentCM,
@@ -8231,6 +8297,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           state.rtr.currentMallType = keep.mall;
           renderRtrSheetNote();
           renderRtrDashboard();
+        });
         });
         function renderComLeaderboard() {
           var wrap = $("comLeaderboardWrap");
@@ -8613,8 +8680,155 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             "</div>"
           );
         }
+        // ---- AP Mix & Portion with compare. Shared by the RTR and 7-11 cards.
+        // o = { scope, note, back:{label,fn}|null, buckets:[{label,color,now,prev}], hasPrev, countDelta,
+        //       groupTitle, groupHint, groups:[{name,on,now:[...],prev:[...]|null}], onPick(name), host }
+        function pct1(n) {
+          return (n * 100).toFixed(1) + "%";
+        }
+        function apxDelta(d) {
+          if (d == null || !isFinite(d)) return '<span class="apx-d flat">-</span>';
+          var pp = d * 100;
+          if (Math.abs(pp) < 0.05) return '<span class="apx-d flat">0.0 pp</span>';
+          return (
+            '<span class="apx-d ' + (pp > 0 ? "up" : "down") + '">' +
+            (pp > 0 ? "&#9650; +" : "&#9660; ") + pp.toFixed(1) + " pp</span>"
+          );
+        }
+        function apxPctDelta(now, prev) {
+          if (!(prev > 0)) return "";
+          var c = (now - prev) / prev;
+          return ' <span class="apx-d ' + (c > 0.0005 ? "up" : c < -0.0005 ? "down" : "flat") + '">' +
+            (c > 0.0005 ? "&#9650; +" : c < -0.0005 ? "&#9660; " : "") + (c * 100).toFixed(0) + "%</span>";
+        }
+        function apxStack(vals, colors, cls) {
+          var t = vals.reduce(function (a, b) { return a + b; }, 0);
+          return (
+            '<div class="' + cls + '">' +
+            vals.map(function (v, i) {
+              return t > 0 && v > 0 ? '<div style="width:' + (v / t) * 100 + "%; background:" + colors[i] + ';"></div>' : "";
+            }).join("") + "</div>"
+          );
+        }
+        function renderApxPanel(o) {
+          var bs = o.buckets;
+          var colors = bs.map(function (b) { return b.color; });
+          var nowV = bs.map(function (b) { return b.now; });
+          var prevV = bs.map(function (b) { return b.prev || 0; });
+          var tN = nowV.reduce(function (a, b) { return a + b; }, 0);
+          var tP = prevV.reduce(function (a, b) { return a + b; }, 0);
+          var hasPrev = o.hasPrev && tP > 0;
+          var html =
+            '<div class="apx-head"><span class="apx-scope">' + esc(o.scope) + "</span>" +
+            (o.back ? '<button type="button" class="apx-back" data-apx-back="1">' + esc(o.back) + "</button>" : "") +
+            '<span class="apx-note">' + esc(o.note) + "</span></div>" +
+            '<div class="apx-bars"><div class="apx-bar-row"><span>เดือนนี้</span>' + apxStack(nowV, colors, "seg-stack") + "</div>" +
+            (hasPrev ? '<div class="apx-bar-row"><span>เดือนก่อน</span><div class="apx-prev">' + apxStack(prevV, colors, "seg-stack") + "</div></div>" : "") +
+            "</div>" +
+            '<table class="apx-table"><thead><tr><th scope="col">ช่วงราคา</th><th scope="col">Actual</th><th scope="col">สัดส่วน</th>' +
+            (hasPrev ? '<th scope="col">เดือนก่อน</th><th scope="col">เปลี่ยน</th>' : "") +
+            "</tr></thead><tbody>" +
+            bs.map(function (b) {
+              var shN = tN > 0 ? b.now / tN : 0, shP = tP > 0 ? (b.prev || 0) / tP : 0;
+              return (
+                '<tr><td><i style="background:' + b.color + '"></i>' + esc(b.label) + "</td><td>" + fmt(b.now) +
+                (hasPrev && o.countDelta ? apxPctDelta(b.now, b.prev || 0) : "") + "</td><td>" + pct1(shN) + "</td>" +
+                (hasPrev ? "<td>" + pct1(shP) + "</td><td>" + apxDelta(shN - shP) + "</td>" : "") + "</tr>"
+              );
+            }).join("") + "</tbody></table>";
+          if (o.groups && o.groups.length > 1) {
+            var top = bs.length - 1;
+            html += '<div class="apx-gtitle">' + esc(o.groupTitle) + '</div><div class="apx-ghint">' + esc(o.groupHint) + '</div><div class="apx-groups">' +
+              o.groups.map(function (g) {
+                var gt = g.now.reduce(function (a, b) { return a + b; }, 0);
+                var gp = g.prev ? g.prev.reduce(function (a, b) { return a + b; }, 0) : 0;
+                var sh = gt > 0 ? g.now[top] / gt : 0;
+                var dd = gp > 0 && hasPrev ? apxDelta(sh - g.prev[top] / gp) : "";
+                return (
+                  '<button type="button" class="apx-group" data-apx="' + esc(g.name) + '" aria-pressed="' + (g.on ? "true" : "false") + '">' +
+                  '<span class="apx-gname">' + esc(g.name) + "</span>" + apxStack(g.now, colors, "apx-gbar") +
+                  '<span class="apx-gnum">' + esc(bs[top].label) + " " + pct1(sh) + " " + dd + "</span>" +
+                  '<span class="apx-gtot">' + fmt(gt) + "</span></button>"
+                );
+              }).join("") + "</div>";
+          }
+          o.host.innerHTML = html;
+          Array.prototype.forEach.call(o.host.querySelectorAll("[data-apx]"), function (b) {
+            b.addEventListener("click", function () { o.onPick(b.getAttribute("data-apx")); });
+          });
+          var back = o.host.querySelector("[data-apx-back]");
+          if (back) back.addEventListener("click", o.onBack);
+        }
+        function rtrApBuckets(stores) {
+          var b = [0, 0, 0];
+          stores.forEach(function (s) {
+            b[0] += s.tiers[0] + s.tiers[1] + s.tiers[2] + s.tiers[3] + s.tiers[4] + s.tiers[5];
+            b[1] += s.tiers[6];
+            b[2] += s.tiers[7];
+          });
+          return b;
+        }
         function renderApMix() {
-          $("apMixChart").innerHTML = apMixHtml(rtrCurrentStores());
+          var idx = state.rtr.currentMonthIdx;
+          var prevM = idx > 0 ? state.rtr.months[idx - 1] : null;
+          var nowB = rtrApBuckets(rtrCurrentStores());
+          var prevB = prevM ? rtrApBuckets(rtrCurrentStores(prevM)) : null;
+          var host = $("apMixChart");
+          if (nowB[0] + nowB[1] + nowB[2] === 0) {
+            host.innerHTML = '<div class="insight-empty">ไม่มีข้อมูล AP1D ในมุมมองนี้</div>';
+            return;
+          }
+          var labels = ["AP < 250", "AP 250-300", "AP > 300"];
+          var colors = ["var(--accent)", "var(--warn)", "var(--alert)"];
+          var byCom = !!state.rtr.currentCM;
+          var field = byCom ? "com" : "cm";
+          function pool(m) {
+            return m.stores.filter(function (s) {
+              if (byCom && s.cm !== state.rtr.currentCM) return false;
+              if (state.rtr.currentDistrict && districtLabel(s) !== state.rtr.currentDistrict) return false;
+              if (state.rtr.currentMallType && mallTypeLabel(s) !== state.rtr.currentMallType) return false;
+              return !!s[field];
+            });
+          }
+          var curPool = pool(rtrCurrentMonth());
+          var prevPool = prevM ? pool(prevM) : [];
+          var names = {};
+          curPool.forEach(function (s) { (names[s[field]] = names[s[field]] || []).push(s); });
+          var groups = Object.keys(names).map(function (n) {
+            var pp = prevPool.filter(function (s) { return s[field] === n; });
+            return {
+              name: n,
+              on: byCom ? state.rtr.currentCOM === n : false,
+              now: rtrApBuckets(names[n]),
+              prev: pp.length ? rtrApBuckets(pp) : null,
+            };
+          }).sort(function (a, b) {
+            return b.now[0] + b.now[1] + b.now[2] - (a.now[0] + a.now[1] + a.now[2]);
+          });
+          function reset() {
+            state.rtr.currentDistrict = null;
+            state.rtr.currentMallType = null;
+            state.rtr.visibleCount = 20;
+            renderRtrDashboard();
+          }
+          renderApxPanel({
+            host: host,
+            scope: state.rtr.currentCOM ? "COM " + state.rtr.currentCOM : state.rtr.currentCM ? "CM " + state.rtr.currentCM : "ภาพรวม",
+            note: prevM ? "สัดส่วนเทียบกับทั้งเดือนก่อน (pp = จุดเปอร์เซ็นต์)" : "ยังไม่มีเดือนก่อนให้เทียบ",
+            back: state.rtr.currentCM ? "กลับไปดูทุก CM" : null,
+            onBack: function () { state.rtr.currentCM = null; state.rtr.currentCOM = null; reset(); },
+            buckets: labels.map(function (l, i) { return { label: l, color: colors[i], now: nowB[i], prev: prevB ? prevB[i] : 0 }; }),
+            hasPrev: !!prevB,
+            countDelta: false,
+            groupTitle: byCom ? "เทียบแยกตาม COM" : "เทียบแยกตาม CM",
+            groupHint: "กดที่แถวเพื่อดู AP Mix ของ" + (byCom ? " COM คนนั้น (กดซ้ำเพื่อยกเลิก)" : " CM คนนั้น แล้วแตกเป็น COM"),
+            groups: groups,
+            onPick: function (name) {
+              if (byCom) state.rtr.currentCOM = state.rtr.currentCOM === name ? null : name;
+              else { state.rtr.currentCM = name; state.rtr.currentCOM = null; }
+              reset();
+            },
+          });
         }
 
         // Mass/Migrant/Tourist proportion bar -- shared by the page-level สัดส่วนกลุ่มลูกค้า card
@@ -12815,54 +13029,69 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               '<div class="insight-empty">ไม่มีข้อมูลในมุมมองนี้</div>';
             return;
           }
-          // Same style as the RTR tab's AP Mix chart. 4 separate buckets: exact 49/99/199, plus a
-          // distinct "> 199" bucket for real prices genuinely higher than 199 (350/399/699 baht
-          // bundles etc). Only rows where SIM_TYPE genuinely has no price info at all are left out.
+          // 4 separate buckets: exact 49/99/199, plus a distinct "> 199" bucket for real prices genuinely
+          // higher than 199 (350/399/699 baht bundles etc). Only rows where SIM_TYPE genuinely has no price
+          // info at all are left out. Month-over-month is like-for-like (same days of the month, see
+          // sevPrevMonthMetric), only when one month and no single day is selected.
           var bucketed = ap49 + ap99 + ap199 + apOver199;
-          var buckets = [ap49, ap99, ap199, apOver199];
-          var labels = ["AP 49", "AP 99", "AP 199", "AP > 199"];
-          var colors = [
-            "var(--accent)",
-            "var(--warn)",
-            "var(--alert)",
-            "rgba(18,26,43,0.35)",
-          ];
           if (bucketed === 0) {
             $("sevApMixChart").innerHTML =
               '<div class="insight-empty">ไม่พบราคาที่อ่านได้จาก SIM_TYPE ในมุมมองนี้</div>';
             return;
           }
-          var html =
-            '<div class="seg-stack">' +
-            buckets
-              .map(function (v, i) {
-                var w = (v / bucketed) * 100;
-                return w > 0
-                  ? '<div style="width:' +
-                      w +
-                      "%; background:" +
-                      colors[i] +
-                      ';"></div>'
-                  : "";
-              })
-              .join("") +
-            '</div><div class="seg-legend">' +
-            buckets
-              .map(function (v, i) {
-                return v > 0
-                  ? '<span><i style="background:' +
-                      colors[i] +
-                      '"></i>' +
-                      labels[i] +
-                      " " +
-                      fmt(v) +
-                      " (" +
-                      pct(v / bucketed) +
-                      ")</span>"
-                  : "";
-              })
-              .join("") +
-            "</div>";
+          var keys = ["ap49", "ap99", "ap199", "apOver199"];
+          var labels = ["AP 49", "AP 99", "AP 199", "AP > 199"];
+          var colors = ["var(--accent)", "var(--warn)", "var(--alert)", "rgba(18,26,43,0.35)"];
+          var avail = state.sev.monthsAvailable || [];
+          var canPrev = !day && !!mk && avail.indexOf(mk) > 0;
+          function sums(list, prev) {
+            return keys.map(function (k) {
+              var t = 0;
+              list.forEach(function (s) {
+                t += prev ? sevPrevMonthMetric(s, k) || 0 : sevScopedValue(s, mk, day)[k];
+              });
+              return t;
+            });
+          }
+          var nowB = sums(stores, false);
+          var prevB = canPrev ? sums(stores, true) : null;
+          var byAe = !!state.sev.currentCM;
+          var field = byAe ? "ae" : "cm";
+          var pool = sevFilteredStores(["cm", "ae"]).filter(function (s) {
+            return (!byAe || s.cm === state.sev.currentCM) && !!s[field];
+          });
+          var names = {};
+          pool.forEach(function (s) { (names[s[field]] = names[s[field]] || []).push(s); });
+          var groups = Object.keys(names).map(function (n) {
+            return { name: n, on: byAe ? state.sev.currentAe === n : false, now: sums(names[n], false), prev: canPrev ? sums(names[n], true) : null };
+          }).sort(function (a, b) {
+            return b.now.reduce(function (x, y) { return x + y; }, 0) - a.now.reduce(function (x, y) { return x + y; }, 0);
+          });
+          renderApxPanel({
+            host: $("sevApMixChart"),
+            scope: state.sev.currentAe ? "COM (AE) " + state.sev.currentAe : state.sev.currentCM ? "CM " + state.sev.currentCM : "ภาพรวม",
+            note: canPrev ? "เทียบวันเดียวกันของเดือนก่อน (pp = จุดเปอร์เซ็นต์)" : "เลือกเดือนเดียวและไม่เลือกวัน เพื่อเทียบเดือนก่อน",
+            back: state.sev.currentCM ? "กลับไปดูทุก CM" : null,
+            onBack: function () { state.sev.currentCM = null; state.sev.currentAe = null; renderSevDashboard(); },
+            buckets: labels.map(function (l, i) { return { label: l, color: colors[i], now: nowB[i], prev: prevB ? prevB[i] : 0 }; }),
+            hasPrev: !!prevB,
+            countDelta: true,
+            groupTitle: byAe ? "เทียบแยกตาม COM (AE)" : "เทียบแยกตาม CM",
+            groupHint: "กดที่แถวเพื่อดู AP Mix ของ" + (byAe ? " COM (AE) คนนั้น (กดซ้ำเพื่อยกเลิก)" : " CM คนนั้น แล้วแตกเป็น COM (AE)"),
+            groups: groups,
+            onPick: function (name) {
+              if (byAe) state.sev.currentAe = state.sev.currentAe === name ? null : name;
+              else {
+                state.sev.currentCM = name;
+                state.sev.currentKhet = null;
+                state.sev.currentFyai = null;
+                state.sev.currentGm = null;
+                state.sev.currentAe = null;
+              }
+              renderSevDashboard();
+            },
+          });
+          var html = "";
           if (bucketed < totalGa)
             html +=
               '<div class="day-hint">' +
@@ -12870,7 +13099,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               " GA ไม่มีราคาระบุใน SIM_TYPE เลย (" +
               pct((totalGa - bucketed) / totalGa) +
               ") ไม่ได้นับในกราฟนี้</div>";
-          $("sevApMixChart").innerHTML = html;
+          if (html) $("sevApMixChart").insertAdjacentHTML("beforeend", html);
         }
 
         // Mass/Migrant/Tourist is already aggregated per store (s.mass/s.migrant/s.tourist, same
@@ -18435,6 +18664,55 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 return out;
               })
             : allGroups;
+          // "ไม่รวมซิม Tourist" switch: Tourist GA leaves every store and day (GA = Mass + Migrant), AP1D/AP30D fall
+          // back to the Mass+Migrant-only figures the sheet already carries, and the Tourist part of each CM/COM
+          // GA target is taken off. Revenue, M1, pack value and SIM types are not split by segment in the data,
+          // so they stay as they are. Stores are copied, never edited, so switching back restores everything.
+          if (state.rtr.excludeTourist) {
+            var noTouristTarget = function (t) {
+              if (!t) return t;
+              var o = Object.assign({}, t);
+              var oldT = o.total || 0;
+              o.total = Math.max(0, oldT - (o.tourist || 0));
+              o.tourist = 0;
+              if (oldT > 0 && o.total === 0) o.zeroed = true;
+              return o;
+            };
+            rawGroups = rawGroups.map(function (g) {
+              var out = Object.assign({}, g, {
+                stores: g.stores.map(function (s) {
+                  var c = Object.assign({}, s);
+                  c.ga = Math.max(0, (s.ga || 0) - (s.tourist || 0));
+                  c.revGa = Math.min(s.revGa == null ? c.ga : s.revGa, c.ga);
+                  c.tourist = 0;
+                  if (s.ap1dMM != null) c.ap1d = s.ap1dMM;
+                  if (s.ap30dMM != null) c.ap30d = s.ap30dMM;
+                  c.daily = {};
+                  Object.keys(s.daily || {}).forEach(function (d) {
+                    var dd = Object.assign({}, s.daily[d]);
+                    dd.ga = Math.max(0, (dd.ga || 0) - (dd.tourist || 0));
+                    if (dd.revGa != null) dd.revGa = Math.min(dd.revGa, dd.ga);
+                    dd.tourist = 0;
+                    c.daily[d] = dd;
+                  });
+                  return c;
+                }),
+              });
+              if (g.cmTargetMap) {
+                var cmMap = new Map();
+                g.cmTargetMap.forEach(function (v, k) {
+                  cmMap.set(k, noTouristTarget(v));
+                });
+                out.cmTargetMap = cmMap;
+              }
+              var comT = {};
+              Object.keys(g.comTargets || {}).forEach(function (k) {
+                comT[k] = noTouristTarget(g.comTargets[k]);
+              });
+              out.comTargets = comT;
+              return out;
+            });
+          }
           var months = rawGroups.map(function (g) {
             var agg = buildRtrAggregatesFromStores(g.stores);
             return {
