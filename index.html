@@ -8454,7 +8454,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             };
             cr.achievePct = cr.target > 0 ? cr.targetedGA / cr.target : null;
             var segInfo = rtrSegTargetInfo(cr, state.rtr.segToggle);
-            var arpu = arpuOf(cr.m1, cr.targetedGA, cr.ga, cr.revGa);
+            var arpu = arpuOf(cr.m1, cr.ga, cr.ga, cr.revGa);
             var target, achievePct, segSupported;
             if (targetMode === "m1") {
               target = cr.targetM1 > 0 ? cr.targetM1 : null;
