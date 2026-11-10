@@ -5000,6 +5000,25 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // has no actual or no target for the month is recorded as null, not zero.
         // Every month keeps its own 7-11 CM target, so a past month still shows its target
         // once a newer month carries one.
+        // Total GA target for the stores in view: the sum of per-store targets, or -- for a month
+        // with no per-store target file yet -- the committed targets of the CMs those stores
+        // belong to.
+        function sevTotalTarget(stores, mk) {
+          var tot = 0;
+          stores.forEach(function (s) {
+            if (s.hasTarget && s.targetMonthKey === mk) tot += s.target;
+          });
+          if (tot > 0) return tot;
+          var cmT = sevCmTargetsFor(mk),
+            seen = {};
+          stores.forEach(function (s) {
+            if (!seen[s.cm] && cmT[s.cm]) {
+              seen[s.cm] = true;
+              tot += cmT[s.cm].ga || 0;
+            }
+          });
+          return tot;
+        }
         function sevCmTargetsFor(mk) {
           if (!mk) return {};
           return state.sev.cmTargetsByMonth[mk] || {};
@@ -12806,6 +12825,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // first page. Sorting and "โหลดเพิ่ม" call renderSevTable() directly and so keep their
           // place, matching how the RTR table behaves.
           state.sev.visibleCount = 20;
+          sevApplyStoreTargets();
           computeSevMomCutoff(); // must run before anything that reads MOM
           renderSevHealth();
           renderSevCmTabs();
@@ -12874,6 +12894,24 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // Detection: trailing days whose ARPU is under half the month's median ARPU are treated
         // as not yet settled. A completely matured month has no such tail and keeps its last day.
         var sevRevCutoffDay = null;
+        // Point every store's target/hasTarget/targetMonthKey at the selected month's own
+        // target, so a past month keeps its per-store targets once a newer month brings its own.
+        function sevApplyStoreTargets() {
+          var mk = state.sev.currentMonthKey;
+          if (!mk) return;
+          state.sev.stores.forEach(function (s) {
+            if (!s.targetByMonth) return;
+            if (s.targetByMonth[mk] != null) {
+              s.target = s.targetByMonth[mk];
+              s.hasTarget = true;
+              s.targetMonthKey = mk;
+            } else {
+              s.target = 0;
+              s.hasTarget = false;
+              s.targetMonthKey = null;
+            }
+          });
+        }
         function computeSevMomCutoff() {
           var mk = state.sev.currentMonthKey;
           if (!mk) {
@@ -14699,11 +14737,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // rollup, so this stays correct under ANY filter combination (khet/ฝ่าย/GM/AE), not just
           // a single-CM selection.
           var totTarget = 0;
-          if (mk && !day) {
-            stores.forEach(function (s) {
-              if (s.hasTarget && s.targetMonthKey === mk) totTarget += s.target;
-            });
-          }
+          if (mk && !day) totTarget = sevTotalTarget(stores, mk);
           var kpiHint = "";
           if (totTarget > 0) {
             var achievePct = totGa / totTarget;
@@ -14740,7 +14774,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               }
             });
             kpiHint =
-              noTargetCount > 0
+              noTargetCount === stores.length
+                ? "เดือนนี้ยังไม่มีเป้ารายร้าน - ใช้เป้ารวมของ CM"
+                : noTargetCount > 0
                 ? noTargetCount +
                   " ร้านไม่มีเป้าหมายเฉพาะบุคคล (ส่วนใหญ่เป็นร้านขายส่ง) - GA รวม " +
                   fmt(noTargetGA) +
@@ -14928,11 +14964,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           stores.forEach(function (s) {
             totGa += sevScopedValue(s, mk, day).ga;
           });
-          if (mk && !day) {
-            stores.forEach(function (s) {
-              if (s.hasTarget && s.targetMonthKey === mk) totTarget += s.target;
-            });
-          }
+          if (mk && !day) totTarget = sevTotalTarget(stores, mk);
           var achievePct = totTarget > 0 ? totGa / totTarget : null;
           var momPct = null;
           if (mk && !day) {
@@ -18898,6 +18930,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 t.hasTarget = true;
                 t.targetMonthKey = s.targetMonthKey;
               }
+              // Each month keeps its own store target; the single target/targetMonthKey above
+              // is only the newest, so sevApplyStoreTargets() swaps in the selected month's.
+              if (s.hasTarget && s.targetMonthKey)
+                (t.targetByMonth || (t.targetByMonth = {}))[s.targetMonthKey] = s.target;
             });
           });
           // grand totals across every month present, so "ทุกเดือนรวมกัน" still works
