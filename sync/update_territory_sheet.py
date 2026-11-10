@@ -374,7 +374,7 @@ def parse_target_blocks(header):
     return blocks
 
 
-def parse_kpi_setup_targets(rows2d, name_col="cm"):
+def parse_kpi_setup_targets(rows2d, name_col="cm", sum_rows=False):
     """The 'KPI Set Up' sheet: a leadership-committed target per CM, laid out
     as a two-row header repeated once per month, at three granularities (PBH/
     CM/RSR) -- only the CM-level block, and only when its own 'Total' row's
@@ -400,13 +400,18 @@ def parse_kpi_setup_targets(rows2d, name_col="cm"):
     other (in principle) still gets whichever side is real -- not previously
     read at all, this was the actual gap behind "RTR has no M1 target"."""
     results = {}
-    for g_idx, g_row in enumerate(rows2d):
-        if not g_row:
-            continue
-        anchors = [{"idx": i, "text": norm_header(v)} for i, v in enumerate(g_row) if norm_header(v)]
-        target_anchor = next((a for a in anchors if a["text"].startswith("target ga")), None)
-        if not target_anchor:
-            continue
+    def target_ga_anchors():
+        # One header row can carry several months side by side (Oct and Nov in the same row of
+        # "Performance COM"), so every "Target GA (<Month>)" anchor is read, not just the first.
+        for g_idx, g_row in enumerate(rows2d):
+            if not g_row:
+                continue
+            anchors = [{"idx": i, "text": norm_header(v)} for i, v in enumerate(g_row) if norm_header(v)]
+            for a in anchors:
+                if a["text"].startswith("target ga"):
+                    yield g_idx, g_row, anchors, a
+
+    for g_idx, g_row, anchors, target_anchor in target_ga_anchors():
         if g_idx + 1 >= len(rows2d) or not rows2d[g_idx + 1]:
             continue
         s_row = rows2d[g_idx + 1]
@@ -498,7 +503,7 @@ def parse_kpi_setup_targets(rows2d, name_col="cm"):
                 continue
             val = num(get(row, total_ga_idx))
             if val > 0:
-                targets[cm_name] = {
+                entry = {
                     "total": val,
                     "massMigrant": num(get(row, mass_migrant_idx)) if mass_migrant_idx != -1 else 0,
                     "tourist": num(get(row, tourist_idx)) if tourist_idx != -1 else 0,
@@ -509,6 +514,12 @@ def parse_kpi_setup_targets(rows2d, name_col="cm"):
                     "achM1MassMigrant": num(get(row, ach_m1_mm_idx)) if ach_m1_mm_idx != -1 else 0,
                     "achM1Tourist": num(get(row, ach_m1_tr_idx)) if ach_m1_tr_idx != -1 else 0,
                 }
+                if sum_rows and cm_name in targets:
+                    # sum_rows: one name spans several rows (a CM listed once per COM), so add up
+                    for k2, v2 in entry.items():
+                        targets[cm_name][k2] += v2
+                else:
+                    targets[cm_name] = entry
 
         if trustworthy and targets:
             results[month_abbr] = targets
@@ -1275,6 +1286,14 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
                                  or {}).items():
                     com_targets.setdefault(mo, {}).update(coms)
                     print(f"    COM targets for {mo} from {pname}: {len(coms)} COMs")
+                # A month whose CM-level block is not filled in yet (Nov'26: only the PBH and COM
+                # blocks carry it) -- a CM's target is its COMs' targets added up. Checked against
+                # Oct'26: matches the sheet's own CM block for 24 of 26 CMs.
+                for mo, cms in (parse_kpi_setup_targets(sheet_to_rows(wb_r[pname]), name_col="cm_name",
+                                                        sum_rows=True) or {}).items():
+                    if mo not in kpi_setup_targets:
+                        kpi_setup_targets[mo] = cms
+                        print(f"    CM targets for {mo} = sum of its COMs' targets in {pname}: {len(cms)} CMs")
             for rname in [n for n in wb_r.sheetnames if MONTH_RE.match(n.strip())]:
                 r_date = parse_sheet_date(rname)
                 if not r_date:
