@@ -4998,6 +4998,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         }
         // Per-CM figures for one month, from each channel's own numbers. A side that
         // has no actual or no target for the month is recorded as null, not zero.
+        // Every month keeps its own 7-11 CM target, so a past month still shows its target
+        // once a newer month carries one.
+        function sevCmTargetsFor(mk) {
+          if (!mk) return {};
+          return state.sev.cmTargetsByMonth[mk] || {};
+        }
         function ovCmData(key) {
           var rm = ovRtrMonth(key);
           var sevHas = (state.sev.monthsAvailable || []).indexOf(key) !== -1;
@@ -13360,8 +13366,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var targetActive =
             !day &&
             mk &&
-            mk === state.sev.cmTargetMonthKey &&
-            Object.keys(state.sev.cmTargets).length > 0;
+            Object.keys(sevCmTargetsFor(mk)).length > 0;
           var byCm = {};
           stores.forEach(function (s) {
             var v = sevScopedValue(s, mk, day);
@@ -13431,7 +13436,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 : null;
             r.momPct = mode === "m1" ? m1MomPct : gaMomPct;
             r.arpu = arpuOf(r.revAmt, r.ga, r.ga, r.revGa);
-            var tgt = targetActive ? state.sev.cmTargets[cm] : null;
+            var tgt = targetActive ? sevCmTargetsFor(mk)[cm] : null;
             r.target = tgt ? (mode === "m1" ? tgt.m1 : tgt.ga) || null : null;
             var achieveBasis = mode === "m1" ? r.revAmt : r.ga;
             r.achievePct =
@@ -15003,8 +15008,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var targetActive =
             mk &&
             !day &&
-            mk === state.sev.cmTargetMonthKey &&
-            Object.keys(state.sev.cmTargets).length > 0;
+            Object.keys(sevCmTargetsFor(mk)).length > 0;
           var byCm = {};
           stores.forEach(function (s) {
             var v = sevScopedValue(s, mk, day);
@@ -15038,7 +15042,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               // interactive toggle-able leaderboard) -- cmTargets[cm] is now {ga, m1}, so pull
               // .ga explicitly rather than assigning the whole record.
               r.target = targetActive
-                ? (state.sev.cmTargets[cm] && state.sev.cmTargets[cm].ga) ||
+                ? (sevCmTargetsFor(mk)[cm] && sevCmTargetsFor(mk)[cm].ga) ||
                   null
                 : null;
               r.achievePct = r.target > 0 ? r.ga / r.target : null;

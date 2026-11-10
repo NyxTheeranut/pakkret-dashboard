@@ -1976,6 +1976,45 @@ def aggregate_sev_cm_target_rows(rows2d, cm_to_target, stats):
                 rec["m1"] = m1_target
 
 
+def looks_like_sev_ae_summary_sheet(rows2d):
+    """AE Monitoring's own 'Summary' sheet: three stacked per-person blocks (PBH, CM, CO) that share
+    one column layout. Only the CM block is used, found by a header row holding Province, CM,
+    Nickname and Target Overall together (the PBH and CO blocks carry 'PBH' / 'CO' there)."""
+    for row in rows2d[:120]:
+        if not row:
+            continue
+        normed = [norm_header(c) for c in row]
+        if "province" in normed and "cm" in normed and "nickname" in normed and "target overall" in normed:
+            return True
+    return False
+
+
+def aggregate_sev_ae_summary_rows(rows2d, cm_to_target, stats):
+    """Reads the CM block of the Summary sheet: 'Target Overall' = the CM's GA target for the file's
+    month, 'TG <Mon>'YY' = its M1 target. The block ends at the first row with no CM name (its own
+    total row). Backup source only -- see process_sev_files, it is used for a month no other
+    CM-target source covers (e.g. a new month before its 'LE by store' file exists)."""
+    for i, row in enumerate(rows2d):
+        if not row:
+            continue
+        normed = [norm_header(c) for c in row]
+        if not ("province" in normed and "cm" in normed and "nickname" in normed and "target overall" in normed):
+            continue
+        cm_col = normed.index("cm")
+        ga_col = normed.index("target overall")
+        m1_col = next((j for j, h in enumerate(normed) if re.match(r"^tg [a-z]{3}'\d{2}$", h)), None)
+        for r in range(i + 1, len(rows2d)):
+            rw = rows2d[r]
+            name = get(rw, cm_col)
+            if name is None or str(name).strip() == "":
+                break
+            ga = num(get(rw, ga_col))
+            m1 = num(get(rw, m1_col)) if m1_col is not None else 0
+            if ga > 0 or m1 > 0:
+                cm_to_target[str(name).strip()] = {"ga": round(ga, 2), "m1": round(m1, 2)}
+                stats["rows"] += 1
+
+
 def looks_like_sev_cm_ga_summary_sheet(rows2d):
     """An ad hoc BI export's own per-CM GA summary (seen as the 'CM' sheet in a file named
     e.g. 'Data Synergy Oct26_New.xlsx' -- naming varies month to month, so detected by
@@ -2149,6 +2188,9 @@ def process_sev_files(paths):
     # authoritative cm_to_target/le_cm_to_target sheets don't have yet (e.g. a brand new CM
     # a recent reorg introduced that those files haven't caught up to).
     cm_ga_summary_to_target, cm_ga_summary_stats = {}, {"rows": 0}
+    # Backup for a month with no CM target from any source above: AE Monitoring's own Summary sheet,
+    # kept per month (its filename's month) so one file never overwrites another month's CMs.
+    ae_summary_by_month, ae_summary_stats = {}, {"rows": 0}
     sheet_errors = []
 
     # ---- pass 1: cheap metadata only (sheet names, header row, and -- for anything that
@@ -2250,7 +2292,8 @@ def process_sev_files(paths):
         if (looks_like_sev_cm_target_sheet(sh["name"]) or looks_like_sev_target_sheet(sh["name"])
                 or looks_like_roster_sheet(sh["rows2D"]) or looks_like_sev_monitor_store_sheet(sh["rows2D"])
                 or looks_like_sev_le_by_store_sheet(sh["rows2D"]) or looks_like_sev_le_cm_target_sheet(sh["rows2D"])
-                or looks_like_sev_cm_ga_summary_sheet(sh["rows2D"])):
+                or looks_like_sev_cm_ga_summary_sheet(sh["rows2D"])
+                or looks_like_sev_ae_summary_sheet(sh["rows2D"])):
             other_sheets.append(sh)
         else:
             sh["dayCounts"] = sev_count_rows_by_day(sh["rows2D"])
@@ -2290,7 +2333,11 @@ def process_sev_files(paths):
     cm_ga_summary_file_name = None
     for sh in other_sheets:
         try:
-            if looks_like_sev_cm_ga_summary_sheet(sh["rows2D"]):
+            if looks_like_sev_ae_summary_sheet(sh["rows2D"]):
+                ae_mk = parse_month_from_filename(sh["fileName"])
+                if ae_mk:
+                    aggregate_sev_ae_summary_rows(sh["rows2D"], ae_summary_by_month.setdefault(ae_mk, {}), ae_summary_stats)
+            elif looks_like_sev_cm_ga_summary_sheet(sh["rows2D"]):
                 before = len(cm_ga_summary_to_target)
                 aggregate_sev_cm_ga_summary_rows(sh["rows2D"], cm_ga_summary_to_target, cm_ga_summary_stats)
                 if cm_ga_summary_file_name is None and len(cm_ga_summary_to_target) > before:
@@ -2512,6 +2559,17 @@ def process_sev_files(paths):
                 # the authoritative GA target sources above carry no M1 target -- this sheet's M1 block does
                 month_targets[cm]["m1"] = v["m1"]
                 m1_filled_cms.append(cm)
+
+    # Lowest precedence of all: only a month that NO other source gave any CM target for (typically the
+    # current month before its "LE by store" file exists). A month that already has targets is left alone.
+    ae_filled_months = []
+    for ae_mk, ae_targets in sorted(ae_summary_by_month.items()):
+        if ae_targets and not cm_target_by_month.get(ae_mk):
+            cm_target_by_month[ae_mk] = {cm: dict(v) for cm, v in ae_targets.items()}
+            ae_filled_months.append(ae_mk)
+    if ae_summary_by_month:
+        print(f"  AE Monitoring Summary sheet: {ae_summary_stats['rows']} CM row(s) read; "
+              f"used as the CM target for: {ae_filled_months if ae_filled_months else '(no month needed it)'}")
 
     print(f"  {stats['totalRows']} rows scanned, {stats['clusterRows']} in cluster, "
           f"{len(stores)} stores mapped ({unmapped_count} unmapped / GA {unmapped_ga:.0f} dropped)")
