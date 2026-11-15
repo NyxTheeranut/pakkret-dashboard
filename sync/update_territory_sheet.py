@@ -301,12 +301,23 @@ def parse_month_from_filename(name):
     return f"{2000 + int(m.group(2))}{MONTH_ABBR[abbr] + 1:02d}"
 
 
+def month_year(m, d, fallback):
+    """A month's year: from its sheet name ("Sep.26"), else from its own data's day keys
+    (TM_KEY_DAY is YYYYMMDD), else `fallback`. A sheet named just "Oct" must not take the
+    year the script happens to run in -- run in January, a Q4 file's "Oct" would become
+    next October and push real months out of the KEEP_MONTHS window."""
+    if d and d["year"]:
+        return d["year"]
+    days = [str(k) for k in (m.get("daily") or {}) if str(k)[:4].isdigit()]
+    return int(max(days)[:4]) if days else fallback
+
+
 def sort_months_chronologically(months):
     years = [d["year"] for d in (parse_sheet_date(m["sheetName"]) for m in months) if d and d["year"]]
     inferred_year = Counter(years).most_common(1)[0][0] if years else date.today().year
     for m in months:
-        d = parse_sheet_date(m["sheetName"]) or {"monthIndex": 0, "year": inferred_year}
-        m["_sortKey"] = (d["year"] or inferred_year) * 100 + d["monthIndex"]
+        d = parse_sheet_date(m["sheetName"]) or {"monthIndex": 0, "year": None}
+        m["_sortKey"] = month_year(m, d, inferred_year) * 100 + d["monthIndex"]
     months.sort(key=lambda m: m["_sortKey"])
     return months
 
@@ -2681,7 +2692,7 @@ def build_payload(rtr_months, sev_stores, sev_months_available, cm_targets_by_mo
         # (e.g. "Apr" rather than "Apr.26") falls back to the CURRENT real year here, not
         # the majority-vote inferred year sortMonthsChronologically used for ordering --
         # those are deliberately two different fallbacks in the original JS.
-        year = d["year"] or date.today().year
+        year = month_year(m, d, date.today().year)
         key = f"rtr-{year}-{d['monthIndex'] + 1:02d}"
         rtr_keys.append(key)
         for suffix, table in build_rtr_month_tables(m).items():

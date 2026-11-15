@@ -40,7 +40,7 @@
  *   their Viewers row). No clicks are recorded. Rows older than
  *   ACCESS_LOG_DAYS (45 = a month and a half) are deleted on every write, so
  *   the oldest day drops off as each new day starts. Created automatically.
- * "Access Summary" -- rebuilt from "Access Log" on every visit: a people x days grid (last 14 days, shaded) + two charts. Names: optional 2nd column "name" on Viewers. Total visits, active
+ * "Access Summary" -- rebuilt from "Access Log" on every visit (page load, not the active-time reports): a people x days grid (last 14 days, shaded) + two charts. Names: optional 2nd column "name" on Viewers. Total visits, active
  *   days and last day per email inside that window. Created automatically.
  *   Neither tab is ever served to the page (see isReadableTab_).
  *
@@ -344,8 +344,10 @@ function accessDayKey_(v) {
 }
 
 // Adds one visit for this email today, then drops rows older than ACCESS_LOG_DAYS. Never throws:
-// a logging problem must not stop anyone from seeing the dashboard.
-function logAccess_(email, addVisits, addActiveSec, addOwnSec) {
+// a logging problem must not stop anyone from seeing the dashboard. The Access Summary is rebuilt
+// only on a visit (rebuild true), not on every 3-minute active-time report: the rebuild holds the
+// script lock for seconds, and reports queued behind it past waitLock's 5 s were dropped.
+function logAccess_(email, addVisits, addActiveSec, addOwnSec, rebuild) {
   if (addVisits === undefined) addVisits = 1;
   addActiveSec = addActiveSec || 0;
   addOwnSec = addOwnSec || 0;
@@ -401,7 +403,7 @@ function logAccess_(email, addVisits, addActiveSec, addOwnSec) {
       while (old < days.length && accessDayKey_(days[old][0]) < cutoff) old++;
       if (old > 0) sheet.deleteRows(2, old);
     }
-    rebuildAccessSummary_(ss, sheet);
+    if (rebuild) rebuildAccessSummary_(ss, sheet);
   } catch (err) {
     // swallow: logging is best-effort
   } finally {
@@ -578,7 +580,7 @@ function rebuildAccessSummary_(ss, logSheet) {
 function logVisitForViewer_(idToken) {
   var email = verifyIdToken_(idToken);
   if (!email || !lookupViewer_(email)) return { ok: false };
-  logAccess_(email, 1, 0, 0);
+  logAccess_(email, 1, 0, 0, true);
   return { ok: true };
 }
 
@@ -597,7 +599,7 @@ function logActiveForViewer_(idToken, seconds, views) {
     .forEach(function (name) {
       if (team[String(name).trim().toLowerCase()]) own += Math.max(0, Math.min(Number(views[name]) || 0, sec));
     });
-  logAccess_(email, 0, sec, Math.min(own, sec));
+  logAccess_(email, 0, sec, Math.min(own, sec), false);
   return { ok: true };
 }
 
