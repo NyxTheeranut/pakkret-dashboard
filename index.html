@@ -5005,24 +5005,71 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // in view (an AE/khet filter) or with no CM target counts its visible stores' own
         // per-store targets instead, since a CM-wide figure can't be split across a subset.
         function sevTotalTarget(stores, mk) {
+          return sevTargetParts(stores, mk).total;
+        }
+        // {total, cmTargetCMs: CMs counted by their CM target, storeTargetStores: stores counted
+        // by their own per-store target}
+        function sevTargetParts(stores, mk) {
           var cmT = sevCmTargetsFor(mk),
             inView = {},
             book = {};
+          // Stores carry only their CURRENT CM. A month whose CM targets don't cover every
+          // current CM was set for a different org chart (Aug'26: 2 CMs, now 4), so a CM's
+          // target then doesn't match the stores it has now -- use per-store targets, or for
+          // a month with none, the CM targets of the CMs in view, as before.
+          if (!sevCmOrgMatches(mk)) {
+            var t0 = 0,
+              n0 = 0,
+              seen = {};
+            stores.forEach(function (s) {
+              if (s.hasTarget && s.targetMonthKey === mk) {
+                t0 += s.target;
+                n0++;
+              }
+            });
+            if (t0 > 0) return { total: t0, cmTargetCMs: 0, storeTargetStores: n0 };
+            var c0 = 0;
+            stores.forEach(function (s) {
+              if (!seen[s.cm] && cmT[s.cm] && cmT[s.cm].ga > 0) {
+                seen[s.cm] = true;
+                t0 += cmT[s.cm].ga;
+                c0++;
+              }
+            });
+            return { total: t0, cmTargetCMs: c0, storeTargetStores: 0 };
+          }
           stores.forEach(function (s) {
             inView[s.cm] = (inView[s.cm] || 0) + 1;
           });
           state.sev.stores.forEach(function (s) {
             if (inView[s.cm]) book[s.cm] = (book[s.cm] || 0) + 1;
           });
-          var tot = 0;
+          var tot = 0,
+            cmCount = 0,
+            storeCount = 0;
           Object.keys(inView).forEach(function (cm) {
-            if (inView[cm] === book[cm] && cmT[cm] && cmT[cm].ga > 0) tot += cmT[cm].ga;
+            if (inView[cm] === book[cm] && cmT[cm] && cmT[cm].ga > 0) {
+              tot += cmT[cm].ga;
+              cmCount++;
+            }
           });
           stores.forEach(function (s) {
             var whole = inView[s.cm] === book[s.cm] && cmT[s.cm] && cmT[s.cm].ga > 0;
-            if (!whole && s.hasTarget && s.targetMonthKey === mk) tot += s.target;
+            if (!whole && s.hasTarget && s.targetMonthKey === mk) {
+              tot += s.target;
+              storeCount++;
+            }
           });
-          return tot;
+          return { total: tot, cmTargetCMs: cmCount, storeTargetStores: storeCount };
+        }
+        // True when month mk has a CM target for every CM the stores belong to now.
+        function sevCmOrgMatches(mk) {
+          var cmT = sevCmTargetsFor(mk),
+            ok = Object.keys(cmT).length > 0;
+          state.sev.stores.forEach(function (s) {
+            if (ok && s.cm && s.cm !== UNMAPPED_CM &&!cmT[s.cm]) ok = false;
+          });
+          return ok;
         }
         function sevCmTargetsFor(mk) {
           if (!mk) return {};
@@ -7655,45 +7702,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             .join("");
         }
 
-        // What fraction of a full month's GA had normally landed by day N, learned from the PREVIOUS
-        // month's own daily curve. Straight-line pacing (daysElapsed/daysInMonth) systematically reads
-        // "behind" mid-month because real GA skews toward month-end (payday cycles, month-end pushes),
-        // which would cause false alarms; borrowing last month's actual shape removes that bias.
-        // The shape is taken cluster-wide even when a CM/district filter is active: month timing is a
-        // calendar effect shared across CMs (it's the LEVEL that differs per CM), and one CM's daily
-        // curve is noisy enough that the cluster shape is the more stable estimate.
-        function rtrPacingCurveFrac(prevMonth, daysElapsed) {
-          if (!prevMonth || !prevMonth.daily) return null;
-          var pd = prevMonth.daily;
-          var keys = Object.keys(pd);
-          if (!keys.length) return null;
-          // Only trust the shape if the previous month is essentially complete. A partially-loaded
-          // prev month has a truncated total, so its cumulative fraction would reach ~1 far too early
-          // and make the forecast wildly optimistic -- fall back to linear rather than guess.
-          var pdt = parseSheetDate(prevMonth.sheetName);
-          if (!pdt) return null;
-          var pDaysInMonth = new Date(
-            pdt.year || new Date().getFullYear(),
-            pdt.monthIndex + 1,
-            0,
-          ).getDate();
-          var maxDay = 0;
-          keys.forEach(function (d) {
-            var n = parseInt(String(d).slice(6, 8), 10);
-            if (n > maxDay) maxDay = n;
-          });
-          if (maxDay < pDaysInMonth - 2) return null;
-          var total = 0,
-            upto = 0;
-          keys.forEach(function (d) {
-            var v = pd[d].ga || 0;
-            total += v;
-            if (parseInt(String(d).slice(6, 8), 10) <= daysElapsed) upto += v;
-          });
-          if (total <= 0) return null;
-          var frac = upto / total;
-          return frac > 0 && frac <= 1 ? frac : null;
-        }
 
         // Estimates how far into the currently loaded month's data actually reaches (via the last day
         // that has any daily GA entry, not today's real-world date -- a past month or a month with a
@@ -7713,18 +7721,17 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var year = d.year || new Date().getFullYear();
           var daysInMonth = new Date(year, d.monthIndex + 1, 0).getDate();
           if (!daysInMonth) return null;
-          var curve = rtrPacingCurveFrac(prevMonth, daysElapsed);
+          // Linear, the same basis as %Ach (RR) and the month-end forecast.
           return {
             daysElapsed: daysElapsed,
             daysInMonth: daysInMonth,
             daysLeft: Math.max(0, daysInMonth - daysElapsed),
-            expectedPct:
-              curve != null ? curve : Math.min(1, daysElapsed / daysInMonth),
-            method: curve != null ? "curve" : "linear",
+            expectedPct: Math.min(1, daysElapsed / daysInMonth),
+            method: "linear",
           };
         }
 
-        // Projects where the month lands if the rest of it behaves like the expected curve, and works
+        // Projects where the month lands at today's run rate (same basis as %Ach (RR)), and works
         // out the run rate still needed to hit target. This is the number a sales manager actually
         // assigns work from ("we need 62/day for the last 13 days"), which a bare %Achieve can't give.
         // Uses targetedGA/target (not total GA) so it stays consistent with how %Achieve is computed --
@@ -7925,7 +7932,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             var basis =
               pacing.method === "curve"
                 ? "เทียบรูปแบบรายวันจริงของเดือนก่อน"
-                : "เทียบแบบเฉลี่ยเท่ากันทุกวัน เพราะไม่มีเดือนก่อนให้อ้างอิง";
+                : "เทียบแบบเฉลี่ยเท่ากันทุกวัน เหมือน %Ach (RR)";
             paceTxt =
               pctColored(delta) +
               ' <span style="font-size:13px;color:var(--muted);">' +
@@ -12998,7 +13005,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             revInfoCutoff((state.sev.revInfoByMonth || {})[mk], sevRevCutoffDay) || null;
         }
 
-        // 7-11's run-rate/forecast, mirroring RTR's rtrPacingCurveFrac/rtrMonthPacing/rtrForecast
+        // 7-11's run-rate/forecast, mirroring RTR's rtrMonthPacing/rtrForecast
         // (see those for the reasoning) but built as its own parallel set rather than reusing them
         // directly -- RTR's versions read a pre-aggregated per-month object shape (m.daily/
         // m.sheetName) that 7-11's per-STORE daily maps don't have, and 7-11's target coverage is
@@ -13006,71 +13013,19 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // historically-partial coverage, so there's no need for RTR's targetedGA-vs-full-GA
         // override distinction here -- total scoped GA vs total scoped target is always the fair
         // comparison.
-        //
-        // What fraction of the PREVIOUS month's GA (summed across the given, already-filtered
-        // stores) had landed by the same day-of-month cutoff -- a better "expected progress" curve
-        // than pure linear daysElapsed/daysInMonth when last month's shape is available and
-        // essentially complete.
-        function sevPacingCurveFrac(prevDaily, prevMonthKey, daysElapsed) {
-          if (!prevDaily || !prevMonthKey) return null;
-          var keys = Object.keys(prevDaily);
-          if (!keys.length) return null;
-          var year = parseInt(prevMonthKey.slice(0, 4), 10);
-          var monthIdx = parseInt(prevMonthKey.slice(4, 6), 10) - 1;
-          var pDaysInMonth = new Date(year, monthIdx + 1, 0).getDate();
-          var maxDay = 0;
-          keys.forEach(function (d) {
-            var n = dayOfMonth(d);
-            if (n > maxDay) maxDay = n;
-          });
-          if (maxDay < pDaysInMonth - 2) return null; // prev month not essentially complete
-          var total = 0,
-            upto = 0;
-          keys.forEach(function (d) {
-            var v = prevDaily[d] || 0;
-            total += v;
-            if (dayOfMonth(d) <= daysElapsed) upto += v;
-          });
-          if (total <= 0) return null;
-          var frac = upto / total;
-          return frac > 0 && frac <= 1 ? frac : null;
-        }
-        // Previous month's daily GA totals, summed across `stores` (the CURRENT filter's stores,
-        // so the curve reflects the same scope the forecast is being computed for) -- null if
-        // there's no earlier month loaded at all.
-        function sevPrevMonthDailyTotals(stores, monthKey) {
-          var avail = state.sev.monthsAvailable;
-          var idx = avail.indexOf(monthKey);
-          if (idx <= 0) return null;
-          var prevKey = avail[idx - 1];
-          var daily = {};
-          stores.forEach(function (s) {
-            Object.keys(s.daily).forEach(function (d) {
-              if (d.slice(0, 6) === prevKey)
-                daily[d] = (daily[d] || 0) + (s.daily[d].ga || 0);
-            });
-          });
-          return { monthKey: prevKey, daily: daily };
-        }
         function sevMonthPacing(mk, stores) {
           if (!sevMomCutoffDay) return null;
           var year = parseInt(mk.slice(0, 4), 10);
           var monthIdx = parseInt(mk.slice(4, 6), 10) - 1;
           var daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
           if (!daysInMonth) return null;
-          var prev = sevPrevMonthDailyTotals(stores, mk);
-          var curve = prev
-            ? sevPacingCurveFrac(prev.daily, prev.monthKey, sevMomCutoffDay)
-            : null;
+          // Linear, the same basis as %Ach (RR) and the month-end forecast.
           return {
             daysElapsed: sevMomCutoffDay,
             daysInMonth: daysInMonth,
             daysLeft: Math.max(0, daysInMonth - sevMomCutoffDay),
-            expectedPct:
-              curve != null
-                ? curve
-                : Math.min(1, sevMomCutoffDay / daysInMonth),
-            method: curve != null ? "curve" : "linear",
+            expectedPct: Math.min(1, sevMomCutoffDay / daysInMonth),
+            method: "linear",
           };
         }
         function sevForecast(totGa, totTarget, pacing) {
@@ -13534,7 +13489,18 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             r.momPct = mode === "m1" ? m1MomPct : gaMomPct;
             r.arpu = arpuOf(r.revAmt, r.ga, r.ga, r.revGa);
             var tgt = targetActive ? sevCmTargetsFor(mk)[cm] : null;
-            r.target = tgt ? (mode === "m1" ? tgt.m1 : tgt.ga) || null : null;
+            // GA target: same resolution as the Overall card (sevTargetParts), so a CM row and
+            // the card for that CM always show the same target.
+            r.target = (mode === "m1" ? tgt : targetActive)
+              ? (mode === "m1"
+                  ? tgt.m1
+                  : sevTotalTarget(
+                      stores.filter(function (s) {
+                        return s.cm === cm;
+                      }),
+                      mk,
+                    )) || null
+              : null;
             var achieveBasis = mode === "m1" ? r.revAmt : r.ga;
             r.achievePct =
               targetActive && r.target > 0 ? achieveBasis / r.target : null;
@@ -13807,12 +13773,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           }
           section.style.display = "block";
           // Productivity's numerator is a RUN-RATE projection (sevMonthPacing/sevForecast's
-          // "landing" math -- projected full-month GA at the current pace, using last month's
-          // day-of-month shape when available, linear otherwise), not the raw actual-so-far GA.
-          // Computed ONCE from the whole scoped `stores` list, then applied per AE below -- a
-          // per-AE curve fitted from just that AE's own history would be noisy for anyone with a
-          // small book; the expected-progress-through-the-month shape is a property of the
-          // calendar/business, not of an individual AE. Only defined for a single, still-running
+          // "landing" math -- projected full-month GA at today's linear run rate, the same basis
+          // as %Ach (RR)), not the raw actual-so-far GA. Only defined for a single, still-running
           // month (mk && !day) -- projecting a "full month" total from an all-months rollup or a
           // single day isn't a coherent question, so productivity reads "—" in those views.
           var pacing = mk && !day ? sevMonthPacing(mk, stores) : null;
@@ -14820,10 +14782,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             // tabs read consistently) -- a store with no individual target (mostly
             // wholesale accounts, same population RTR sees) still has its GA folded into
             // totGa above, so it's already inside %Achieve even without a personal target
-            // of its own. Note: unlike RTR, 7-11 has no separate CM-level committed target
-            // to literally attribute this to -- totTarget here is a straight sum of PER-
-            // STORE targets (targetByMonth) -- so "ผ่านเป้ารวมของ CM" is kept only for
-            // wording parity with RTR, not because 7-11 has that exact mechanism.
+            // of its own. totTarget is the CM-level target for every CM fully in view and
+            // per-store targets only for a CM cut by a narrower filter (see sevTargetParts).
             var noTargetCount = 0,
               noTargetGA = 0;
             stores.forEach(function (s) {
@@ -14832,8 +14792,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 noTargetGA += sevScopedValue(s, mk, day).ga;
               }
             });
+            var tParts = sevTargetParts(stores, mk);
             kpiHint =
-              noTargetCount === stores.length
+              tParts.cmTargetCMs > 0 && tParts.storeTargetStores === 0
+                ? "ใช้เป้าระดับ CM (ตัวเดียวกับตารางเปรียบเทียบ CM) - GA ทุกร้านนับรวมใน %Achieve"
+                : tParts.cmTargetCMs > 0
+                ? "ใช้เป้าระดับ CM สำหรับ CM ที่เห็นครบทุกร้าน และเป้ารายร้าน " +
+                  fmt(tParts.storeTargetStores) +
+                  " ร้านสำหรับส่วนที่เหลือ"
+                : noTargetCount === stores.length
                 ? "เดือนนี้ยังไม่มีเป้ารายร้าน - ใช้เป้ารวมของ CM"
                 : noTargetCount > 0
                 ? noTargetCount +
@@ -14868,7 +14835,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               var paceBasis =
                 pacing.method === "curve"
                   ? "เทียบรูปแบบรายวันจริงของเดือนก่อน"
-                  : "เทียบแบบเฉลี่ยเท่ากันทุกวัน เพราะไม่มีเดือนก่อนให้อ้างอิง";
+                  : "เทียบแบบเฉลี่ยเท่ากันทุกวัน เหมือน %Ach (RR)";
               paceTxt =
                 pctColored(paceDelta) +
                 ' <span style="font-size:13px;color:var(--muted);">' +
@@ -15133,8 +15100,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               // interactive toggle-able leaderboard) -- cmTargets[cm] is now {ga, m1}, so pull
               // .ga explicitly rather than assigning the whole record.
               r.target = targetActive
-                ? (sevCmTargetsFor(mk)[cm] && sevCmTargetsFor(mk)[cm].ga) ||
-                  null
+                ? sevTotalTarget(
+                    stores.filter(function (s) {
+                      return s.cm === cm;
+                    }),
+                    mk,
+                  ) || null
                 : null;
               r.achievePct = r.target > 0 ? r.ga / r.target : null;
               var f = sevForecast(r.ga, r.target || 0, pacing);
@@ -18787,8 +18758,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             o.total = newT;
             if (oldT > 0 && newT === 0) o.zeroed = true; // target fully removed: do not fall back to per-store targets
             o.massMigrant = Math.max(0, (o.massMigrant || 0) - tgt);
-            if (o.m1Total) o.m1Total = o.m1Total * ratio;
-            if (o.m1MassMigrant) o.m1MassMigrant = o.m1MassMigrant * ratio;
+            if (o.m1Total) {
+              // the M1 cut comes off Mass + Migrant (where the GA cut lands), so the split still adds up
+              var m1Cut = o.m1Total * (1 - ratio);
+              o.m1Total -= m1Cut;
+              if (o.m1MassMigrant) o.m1MassMigrant = Math.max(0, o.m1MassMigrant - m1Cut);
+            }
             if (o.achM1Total) o.achM1Total = Math.max(0, o.achM1Total - rev);
             if (o.achM1MassMigrant) o.achM1MassMigrant = Math.max(0, o.achM1MassMigrant - rev);
             return o;
@@ -18818,8 +18793,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             : allGroups;
           // "ไม่รวมซิม Tourist" switch: Tourist GA leaves every store and day (GA = Mass + Migrant), AP1D/AP30D fall
           // back to the Mass+Migrant-only figures the sheet already carries, and the Tourist part of each CM/COM
-          // GA target is taken off. Revenue, M1, pack value and SIM types are not split by segment in the data,
-          // so they stay as they are. Stores are copied, never edited, so switching back restores everything.
+          // GA target is taken off, and so is the Tourist part of the CM/COM M1 target and actual. Per-store
+          // revenue, pack value and SIM types are not split by segment in the data, so they stay as they are. Stores are copied, never edited, so switching back restores everything.
           if (state.rtr.excludeTourist) {
             var noTouristTarget = function (t) {
               if (!t) return t;
@@ -18828,6 +18803,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               o.total = Math.max(0, oldT - (o.tourist || 0));
               o.tourist = 0;
               if (oldT > 0 && o.total === 0) o.zeroed = true;
+              // M1 target and actual are split Mass+Migrant / Tourist on the sheet, so the
+              // Tourist part leaves both, like the GA target.
+              if (o.m1Total && o.m1Tourist) o.m1Total = Math.max(0, o.m1Total - o.m1Tourist);
+              if (o.achM1Total && o.achM1Tourist) o.achM1Total = Math.max(0, o.achM1Total - o.achM1Tourist);
+              o.m1Tourist = 0;
+              o.achM1Tourist = 0;
               return o;
             };
             rawGroups = rawGroups.map(function (g) {
