@@ -1393,7 +1393,14 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
                                     canonical_to_mall_type, canonical_to_stock)
         print(f" done ({result['rowCount']} rows, {active_count} active + "
               f"{len(result['stores']) - active_count} dormant = {len(result['stores'])} roster stores)")
-        months.append({"sheetName": name, "label": parse_sheet_label(name), **result})
+        label = parse_sheet_label(name)
+        d = parse_sheet_date(name)
+        if d and not d["year"]:
+            # "Oct" -> "Oct 2026", the year taken from the month's own data like month_year
+            year = month_year(result, d, None)
+            if year:
+                label += f" {year}"
+        months.append({"sheetName": name, "label": label, **result})
     wb.close()
 
     if not months:

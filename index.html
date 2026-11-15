@@ -2474,6 +2474,13 @@ main section:nth-child(n+6) { animation-delay: 0.15s; }
 }
 .table-scroll-box tbody td:first-child { z-index: 1; }
 .table-scroll-box thead th:first-child { z-index: 3; }
+/* The edge-shadow background above is painted over by the cells' own background, so on a phone
+   nothing showed that more columns sit to the right. has-more (set by the script while the table
+   can still scroll right) fades the right edge instead. */
+.table-scroll-box.has-more {
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 32px);
+  mask-image: linear-gradient(to left, transparent 0, #000 32px);
+}
 .table-scroll-box tbody tr.clickable:hover td:first-child { background: #e8f1ee; }
 
 /* 5. no two-line numbers or short statuses */
@@ -2884,20 +2891,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           >
             ออกจากระบบ
           </button>
-        </div>
-        <div class="empty-panel" id="rtrEmpty">
-          <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
-          <h2>เชื่อมต่อไฟล์ RTR</h2>
-          <p>
-            ไฟล์ Commit Target GA Mass Migrant - ระบบจะอ่านเฉพาะชีตรายเดือน
-            (Jul.26, Jun.26, ...) และชีต mapping ร้าน↔CM (RTR Target GA (MM) /
-            RTR Target GA (Tourist)) แล้วกรองมาเฉพาะ cluster Pak Kret, Bang Bua
-            Thong, Sai Noi
-          </p>
-          <div class="req-cols">
-            คอลัมน์ที่ต้องมีในชีตรายเดือน: PARTNER_CODE · PARTNER_NAME · GA ·
-            GROUP_SIM · D_CLUSTER · TM_KEY_DAY
-          </div>
         </div>
         <div class="loading-panel" id="rtrLoading" style="display: none">
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
@@ -3316,22 +3309,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           >
             ออกจากระบบ
           </button>
-        </div>
-        <div class="empty-panel" id="sevEmpty">
-          <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
-          <h2>เชื่อมต่อไฟล์ยอดขาย 7-11</h2>
-          <p>
-            เลือกไฟล์รายไตรมาส (Q1/Q2/Q3 ...) ได้ทีละหลายไฟล์ —
-            ระบบจะกรองมาเฉพาะพื้นที่ Pak Kret, Bang Bua Thong, Sai Noi (จาก
-            TDS_PROVINCE) แล้วรวมทุกไฟล์เข้าด้วยกัน<br />ใส่ไฟล์
-            7-Eleven_Store_Database.xlsx เข้าไปด้วย (เลือกพร้อมกันได้เลย)
-            เพื่อดึงมุมมองแยกตาม CM กลับมา - ระบบจะรู้เองว่าไฟล์ไหนเป็นไฟล์ไหน
-          </p>
-          <div class="req-cols">
-            คอลัมน์ที่ต้องมี (ไฟล์ยอดขาย): TM_KEY_DAY · TDS_PROVINCE ·
-            DISTRICT_EN · PARTNER_CODE · PARTNER_NAME · GROUP_SIM · Sum of GA ·
-            Sum of REV_AMT
-          </div>
         </div>
         <div class="loading-panel" id="sevLoading" style="display: none">
           <div class="bars-icon"><i></i><i></i><i></i><i></i></div>
@@ -4121,12 +4098,19 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             year: m[2] ? 2000 + parseInt(m[2], 10) : null,
           };
         }
+        // A month's {monthIndex, year}. The Sheet tab key ("rtr-2027-01") carries the real year,
+        // which a sheet named just "Jan" does not; the sheet name is only the fallback.
+        function rtrMonthDate(m) {
+          var k = /^rtr-(\d{4})-(\d{2})$/.exec(m.tabKey || "");
+          if (k) return { monthIndex: parseInt(k[2], 10) - 1, year: parseInt(k[1], 10) };
+          return parseSheetDate(m.sheetName);
+        }
         // sort months chronologically ascending; sheets with no year in their name (e.g. "Apr")
         // inherit the most common year seen among the dated sheets, so ordering stays sensible
         function sortMonthsChronologically(months) {
           var years = months
             .map(function (m) {
-              return parseSheetDate(m.sheetName);
+              return rtrMonthDate(m);
             })
             .filter(function (d) {
               return d && d.year;
@@ -4147,7 +4131,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               })[0]
             : new Date().getFullYear();
           months.forEach(function (m) {
-            var d = parseSheetDate(m.sheetName) || {
+            var d = rtrMonthDate(m) || {
               monthIndex: 0,
               year: inferredYear,
             };
@@ -4270,7 +4254,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // missing side.
         // =====================================================================
         function ovMonthKeyOfRtr(m) {
-          var d = parseSheetDate(m.sheetName);
+          var d = rtrMonthDate(m);
           if (!d) return null;
           var y = d.year || new Date().getFullYear();
           return String(y) + (d.monthIndex + 1 < 10 ? "0" : "") + String(d.monthIndex + 1);
@@ -4910,7 +4894,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             $("ovFilters").innerHTML = "";
             $("ovSortRow").innerHTML = "";
             $("ovKpis").innerHTML = "";
-            $("ovCmTable").innerHTML = '<div class="insight-empty">ยังไม่มีข้อมูล - โหลดไฟล์ RTR หรือ 7-11 ก่อน</div>';
+            $("ovCmTable").innerHTML = '<div class="insight-empty">ยังไม่มีข้อมูล RTR หรือ 7-11 ในชีต</div>';
             $("ovM1Table").innerHTML = "";
             $("ovTrend").innerHTML = "";
             $("ovBarChart").innerHTML = "";
@@ -5017,7 +5001,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 
 
         function rtrShow(which) {
-          ["rtrEmpty", "rtrLoading", "rtrCloud"].forEach(function (id) {
+          ["rtrLoading", "rtrCloud"].forEach(function (id) {
             $(id).style.display = "none";
           });
           $("rtrDashboard").style.display = "none";
@@ -5895,7 +5879,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             var btn = document.createElement("button");
             btn.className =
               "pill" + (i === state.rtr.currentMonthIdx ? " active" : "");
-            btn.textContent = m.label + " · " + fmt(m.rowCount) + " แถว";
+            btn.textContent = m.label;
             btn.addEventListener("click", function () {
               state.rtr.currentMonthIdx = i;
               state.rtr.visibleCount = 20;
@@ -6260,7 +6244,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             10,
           );
           if (!daysElapsed) return null;
-          var d = parseSheetDate(m.sheetName) || { monthIndex: 0, year: null };
+          var d = rtrMonthDate(m) || { monthIndex: 0, year: null };
           var year = d.year || new Date().getFullYear();
           var daysInMonth = new Date(year, d.monthIndex + 1, 0).getDate();
           if (!daysInMonth) return null;
@@ -7734,10 +7718,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             '" y2="' +
             yZero +
             '" stroke="rgba(18,26,43,0.25)" stroke-width="1.5" pointer-events="none"></line>';
-          // quadrant labels -- also clickable, underlined when active, so it's obvious they're buttons
+          // quadrant labels -- also clickable, underlined when active, so it's obvious they're buttons.
+          // The SVG scales with its box, so on a phone a 12-unit label shrank to ~6px; size the
+          // label in SVG units so it lands at 12px on screen whatever the width.
+          var labelPx = 12 * Math.max(1, W / ($("quadrantChart").clientWidth || W));
           var labelPositions = {
-            star: { x: W - 16, y: PAD * 0.3 + 16, anchor: "end" },
-            improving: { x: 16, y: PAD * 0.3 + 16, anchor: "start" },
+            star: { x: W - 16, y: PAD * 0.3 + labelPx + 4, anchor: "end" },
+            improving: { x: 16, y: PAD * 0.3 + labelPx + 4, anchor: "start" },
             risk: { x: W - 16, y: H - PAD * 0.6 - 8, anchor: "end" },
             critical: { x: 16, y: H - PAD * 0.6 - 8, anchor: "start" },
           };
@@ -7755,7 +7742,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               p.y +
               '" text-anchor="' +
               p.anchor +
-              '" font-size="12" font-weight="700" fill="' +
+              '" font-size="' +
+              labelPx +
+              '" font-weight="700" fill="' +
               zone.textColor +
               '"' +
               underline +
@@ -7913,10 +7902,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 
         function rtrDayLabel(day, scope) {
           var m = rtrCurrentMonth();
-          var d = parseSheetDate(m.sheetName) || {
-            monthIndex: 0,
-            year: new Date().getFullYear(),
-          };
+          var d = rtrMonthDate(m) || { monthIndex: 0, year: null };
+          d = { monthIndex: d.monthIndex, year: d.year || new Date().getFullYear() };
           var dayNum = parseInt(String(day).slice(6, 8), 10);
           var dow = new Date(d.year, d.monthIndex, dayNum).getDay();
           var dowTh = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."][dow];
@@ -10039,7 +10026,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 
 
         function sevShow(which) {
-          ["sevEmpty", "sevLoading", "sevCloud"].forEach(function (id) {
+          ["sevLoading", "sevCloud"].forEach(function (id) {
             $(id).style.display = "none";
           });
           $("sevDashboard").style.display = "none";
@@ -10127,7 +10114,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 ") ไม่มี CM กำกับ ถูกคัดออกจากแดชบอร์ดนี้ทั้งหมด (ถือว่าเป็นของพื้นที่อื่น)" +
                 (state.sev.rosterLoaded
                   ? ""
-                  : " - ยังไม่ได้โหลดไฟล์ roster (7-Eleven Store Database)"),
+                  : " - ยังไม่มีข้อมูล CM ของ 7-11 ในชีต"),
             });
 
           renderHealth("sev", items);
@@ -10200,7 +10187,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               " ร้าน";
           } else {
             note +=
-              " · ยังไม่ได้เชื่อมไฟล์ roster (7-Eleven_Store_Database.xlsx) - มุมมองแยกตาม CM จะยังใช้ไม่ได้";
+              " · ยังไม่มีข้อมูล CM ของ 7-11 ในชีต - มุมมองแยกตาม CM จะยังใช้ไม่ได้";
           }
           if (state.sev.sheetErrors && state.sev.sheetErrors.length) {
             note +=
@@ -10287,7 +10274,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             });
           if (!hasCmData) {
             wrap.innerHTML =
-              '<div class="pending-box">ยังไม่ได้เชื่อมไฟล์ roster (7-Eleven_Store_Database.xlsx) - เพิ่มไฟล์นั้นเข้าไปพร้อมกับไฟล์ยอดขาย (ปุ่ม "เลือกไฟล์" ด้านบน) เพื่อดูมุมมองแยกตาม CM</div>';
+              '<div class="pending-box">ยังไม่มีข้อมูล CM ของ 7-11 ในชีต - มุมมองแยกตาม CM จะใช้ได้หลังการอัปเดตข้อมูลครั้งถัดไป</div>';
             return;
           }
           var counts = {};
@@ -12934,7 +12921,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var panel = $("sevSalesPanel");
           if (!state.sev.loaded || state.sev.stores.length === 0) {
             panel.innerHTML =
-              '<div class="pending-box">ยังไม่มีตัวเลขยอดขาย<br>เลือกไฟล์ยอดขาย 7-11 (ปุ่มด้านบน) เพื่อดึงยอดขายจริงมาแสดงตรงนี้</div>';
+              '<div class="pending-box">ยังไม่มีตัวเลขยอดขาย 7-11 ของช่วงนี้ในชีต</div>';
             return;
           }
           var stores = sevCurrentStores();
@@ -15094,6 +15081,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             });
 
             return {
+              tabKey: key,
               sheetName: meta.sheetName,
               label: meta.label,
               rowCount: Number(meta.rowCount) || 0,
@@ -15322,6 +15310,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var months = rawGroups.map(function (g) {
             var agg = buildRtrAggregatesFromStores(g.stores);
             return {
+              tabKey: g.tabKey,
               sheetName: g.sheetName,
               label: g.label,
               rowCount: g.rowCount,
@@ -15537,26 +15526,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             cloudMsg("sev", "ยังไม่มีข้อมูล 7-11 ในไฟล์นี้");
           }
           state.cloudUpdatedAt = meta.updated_at || null;
-          var when = meta.updated_at
-            ? new Date(meta.updated_at).toLocaleString("th-TH")
-            : "-";
-          // Two different facts, kept visibly separate: when this device last synced
-          // from the sheet (when) vs. what day the latest month's own data actually
-          // reaches (rtrDataAsOfText/sevDataAsOfText) -- syncing today doesn't mean the
-          // source data itself is current through today.
-          [
-            { id: "rtrCacheBanner", dataAsOf: rtrDataAsOfText() },
-            { id: "sevCacheBanner", dataAsOf: sevDataAsOfText() },
-          ].forEach(function (b) {
-            var el = $(b.id);
+          // The sheet note above each tab already says what was loaded, how far the data goes
+          // and when it was synced; this banner only says that older months are still coming.
+          ["rtrCacheBanner", "sevCacheBanner"].forEach(function (id) {
+            var el = $(id);
             if (el)
-              el.innerHTML =
-                '<div class="cache-banner"><span>โหลดจาก Google Sheets' +
-                (b.dataAsOf ? " · <b>" + esc(b.dataAsOf) + "</b>" : "") +
-                " · ซิงค์ล่าสุด " +
-                esc(when) +
-                (partial ? " · <b>กำลังโหลดเดือนก่อนหน้าเพิ่มเติม…</b>" : "") +
-                "</span></div>";
+              el.innerHTML = partial
+                ? '<div class="cache-banner"><span><b>กำลังโหลดเดือนก่อนหน้าเพิ่มเติม…</b></span></div>'
+                : "";
           });
         }
 
@@ -15843,6 +15820,31 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           });
         })();
 
+        // Wide tables: mark a table that can still scroll right (see .table-scroll-box.has-more).
+        function updateScrollCues() {
+          document.querySelectorAll(".table-scroll-box").forEach(function (el) {
+            el.classList.toggle("has-more", el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+          });
+        }
+        var scrollCueQueued = false;
+        function queueScrollCues() {
+          if (scrollCueQueued) return;
+          scrollCueQueued = true;
+          requestAnimationFrame(function () {
+            scrollCueQueued = false;
+            updateScrollCues();
+          });
+        }
+        new MutationObserver(queueScrollCues).observe($("main"), { childList: true, subtree: true });
+        document.addEventListener(
+          "scroll",
+          function (e) {
+            if (e.target.classList && e.target.classList.contains("table-scroll-box")) queueScrollCues();
+          },
+          true,
+        );
+        window.addEventListener("resize", queueScrollCues);
+
         switchTab("rtr");
 
         // Viewers go straight to the cloud panel and sign in.
@@ -15867,6 +15869,9 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             google.accounts.id.initialize({
               client_id: SYNC_DEFAULTS.clientId,
               callback: onViewerSignIn,
+              // returning viewers get a fresh token without a click (see flushActive); the
+              // sign-out button turns this off again with disableAutoSelect
+              auto_select: true,
             });
             var el = $("gsiButton");
             if (el)
