@@ -1094,6 +1094,12 @@ def resolve_rtr_targets(months, target_by_month, kpi_setup_targets):
             # own m1 column -- so the override has to travel as its own signal the client can
             # apply the identical way, not as an already-resolved number Python keeps locally.
             cr["achM1"] = 0
+            # The same M1 target / actual, split Mass+Migrant vs Tourist (the sheet never splits Mass
+            # from Migrant), so the dashboard's segment toggles can scope M1 like they scope GA.
+            cr["targetM1MassMigrant"] = 0
+            cr["targetM1Tourist"] = 0
+            cr["achM1MassMigrant"] = 0
+            cr["achM1Tourist"] = 0
         for s in m["stores"]:
             cr = m["cmRollup"].get(s["cm"])
             if cr is None:
@@ -1114,6 +1120,10 @@ def resolve_rtr_targets(months, target_by_month, kpi_setup_targets):
                     cr["targetM1"] = ov.get("m1Total", 0)
                     cr["targetOverridden"] = True
                     cr["achM1"] = ov.get("achM1Total", 0)
+                    cr["targetM1MassMigrant"] = ov.get("m1MassMigrant", 0)
+                    cr["targetM1Tourist"] = ov.get("m1Tourist", 0)
+                    cr["achM1MassMigrant"] = ov.get("achM1MassMigrant", 0)
+                    cr["achM1Tourist"] = ov.get("achM1Tourist", 0)
 
         # Sum from cmRollup (post-override), NOT independently from m["stores"] -- the KPI Set
         # Up override above replaces a CM's target/targetedGA with its committed, whole-
@@ -1162,7 +1172,8 @@ def build_rtr_month_tables(m):
     cm_rows = sorted(
         [
             [cm, cr["target"], cr["targetMassMigrant"], cr["targetTourist"], cr["targetM1"],
-             cr["achM1"]]
+             cr["achM1"], cr["targetM1MassMigrant"], cr["targetM1Tourist"],
+             cr["achM1MassMigrant"], cr["achM1Tourist"]]
             for cm, cr in m["cmRollup"].items() if cr["targetOverridden"]
         ],
         key=lambda r: r[0],
@@ -1192,16 +1203,19 @@ def build_rtr_month_tables(m):
         },
         "simtypes": {"headers": ["code", "simType", "ga"], "rows": sim_rows},
         "cmtargets": {
-            "headers": ["cm", "target", "targetMassMigrant", "targetTourist", "targetM1", "achM1"],
+            "headers": ["cm", "target", "targetMassMigrant", "targetTourist", "targetM1", "achM1",
+                        "targetM1MassMigrant", "targetM1Tourist", "achM1MassMigrant", "achM1Tourist"],
             "rows": cm_rows,
         },
         # Per-COM committed target/M1 from the routing workbook's "Performance COM" sheet --
         # empty for any month that sheet doesn't cover (the dashboard then falls back to
         # summing per-store targets, as before).
         "comtargets": {
-            "headers": ["com", "target", "targetMassMigrant", "targetTourist", "targetM1", "achM1"],
+            "headers": ["com", "target", "targetMassMigrant", "targetTourist", "targetM1", "achM1",
+                        "targetM1MassMigrant", "targetM1Tourist", "achM1MassMigrant", "achM1Tourist"],
             "rows": sorted(
-                [com, v["total"], v["massMigrant"], v["tourist"], v["m1Total"], v["achM1Total"]]
+                [com, v["total"], v["massMigrant"], v["tourist"], v["m1Total"], v["achM1Total"],
+                 v["m1MassMigrant"], v["m1Tourist"], v["achM1MassMigrant"], v["achM1Tourist"]]
                 for com, v in (m.get("comTargets") or {}).items()
             ),
         },

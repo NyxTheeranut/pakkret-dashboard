@@ -6598,6 +6598,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               // above). Only ever comes from the KPI Set Up override (no per-store M1 target
               // exists anywhere), same "0 = no data" convention.
               cr.targetM1 = 0;
+              cr.targetM1MassMigrant = 0;
+              cr.targetM1Tourist = 0;
+              cr.achM1MassMigrant = 0;
+              cr.achM1Tourist = 0;
             });
             m.stores.forEach(function (s) {
               var cr = m.cmRollup[s.cm];
@@ -6628,6 +6632,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 cr.targetMassMigrant = ov.massMigrant;
                 cr.targetTourist = ov.tourist;
                 cr.targetM1 = ov.m1Total || 0;
+                cr.targetM1MassMigrant = ov.m1MassMigrant || 0;
+                cr.targetM1Tourist = ov.m1Tourist || 0;
+                cr.achM1MassMigrant = ov.achM1MassMigrant || 0;
+                cr.achM1Tourist = ov.achM1Tourist || 0;
                 cr.targetedGA = cr.ga;
                 cr.targetOverridden = true;
                 // "Ach M1 (<Month>)" -- the CM's own actual M1 as this sheet itself records it,
@@ -6663,6 +6671,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             ) {
               return a + (m.cmRollup[cmName].targetTourist || 0);
             }, 0);
+            ["targetM1MassMigrant", "targetM1Tourist", "achM1MassMigrant", "achM1Tourist"].forEach(function (k) {
+              m.totals[k] = Object.keys(m.cmRollup).reduce(function (a, cmName) {
+                return a + (m.cmRollup[cmName][k] || 0);
+              }, 0);
+            });
             m.totals.targetM1 = Object.keys(m.cmRollup).reduce(function (
               a,
               cmName,
@@ -7777,6 +7790,43 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             segLabel: segLabel,
           };
         }
+        // The M1 twin of rtrSegTargetInfo: Target M1 / Actual M1 for the current Mass / Migrant /
+        // Tourist toggles. The routing sheet splits M1 target and actual only two ways (Mass +
+        // Migrant together, Tourist), so the same three toggle states resolve and the rest
+        // are unsupported -- exactly like the GA target.
+        function rtrSegM1Info(totals, segToggle) {
+          var mass = !!segToggle.mass,
+            migrant = !!segToggle.migrant,
+            tourist = !!segToggle.tourist;
+          var target = totals.targetM1 || 0,
+            actual = totals.m1 || 0,
+            supported = true,
+            segLabel = "";
+          if (!((mass && migrant && tourist) || (!mass && !migrant && !tourist))) {
+            if (tourist && !mass && !migrant) {
+              target = totals.targetM1Tourist || 0;
+              actual = totals.achM1Tourist || 0;
+              segLabel = "Tourist";
+            } else if ((mass || migrant) && !tourist) {
+              target = totals.targetM1MassMigrant || 0;
+              actual = totals.achM1MassMigrant || 0;
+              segLabel = "Mass + Migrant";
+            } else {
+              supported = false;
+              target = 0;
+              actual = 0;
+            }
+          }
+          return {
+            supported: supported,
+            target: target,
+            targetedGA: actual,
+            ga: actual,
+            achievePct: supported && target > 0 ? actual / target : null,
+            targetOverridden: true,
+            segLabel: segLabel,
+          };
+        }
         function rtrForecast(totals, pacing) {
           if (!pacing || !(totals.target > 0) || !(pacing.expectedPct > 0))
             return null;
@@ -7833,17 +7883,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // instead of GA. There is no per-segment M1 split at CM / total level, so the segment rows are dropped.
           var isM1 = state.rtr.perfTargetMode === "m1";
           if (isM1) {
-            var m1Target = t.targetM1 || 0;
-            var m1Actual = t.m1 || 0;
-            segInfo = {
-              supported: true,
-              target: m1Target,
-              targetedGA: m1Actual,
-              ga: m1Actual,
-              achievePct: m1Target > 0 ? m1Actual / m1Target : null,
-              targetOverridden: true,
-              segLabel: "",
-            };
+            segInfo = rtrSegM1Info(t, state.rtr.segToggle);
           }
           var fU = isM1 ? fmtBaht : fmt; // number formatter for the card values
           var uGA = isM1 ? "" : " GA";
@@ -7999,24 +8039,28 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // bundled, Tourist separate (never three ways -- see rtrSegTargetInfo). Shown only on the
           // unrestricted view with a committed target, and Actual only when Actual GA is the full GA
           // (committed CM targets), so the Mass + Migrant / Tourist split adds up to the headline.
+          // Same split for M1: target and actual M1 as Mass + Migrant vs Tourist (the sheet's own split).
+          var tgtMM = isM1 ? t.targetM1MassMigrant || 0 : t.targetMassMigrant || 0,
+            tgtTR = isM1 ? t.targetM1Tourist || 0 : t.targetTourist || 0,
+            actMM = isM1 ? t.achM1MassMigrant || 0 : (t.mass || 0) + (t.migrant || 0),
+            actTR = isM1 ? t.achM1Tourist || 0 : t.tourist || 0;
           var splitOk =
-            !isM1 &&
             segInfo.supported &&
             !segInfo.segLabel &&
             segInfo.target > 0 &&
-            (t.targetMassMigrant || 0) + (t.targetTourist || 0) > 0;
+            tgtMM + tgtTR > 0;
           var targetSplit = splitOk
             ? [
-                ["Mass + Migrant", fmt(t.targetMassMigrant || 0)],
-                ["Tourist", fmt(t.targetTourist || 0)],
+                ["Mass + Migrant", fU(tgtMM)],
+                ["Tourist", fU(tgtTR)],
               ]
             : null;
           var actualSplit =
             splitOk &&
-            Math.round(segInfo.targetedGA || 0) === Math.round(t.ga || 0)
+            (isM1 ? actMM + actTR > 0 : Math.round(segInfo.targetedGA || 0) === Math.round(t.ga || 0))
               ? [
-                  ["Mass + Migrant", fmt((t.mass || 0) + (t.migrant || 0))],
-                  ["Tourist", fmt(t.tourist || 0)],
+                  ["Mass + Migrant", fU(actMM)],
+                  ["Tourist", fU(actTR)],
                 ]
               : null;
           // Mass + Migrant and Tourist each against their own committed target: real % so far, and run-rate %.
@@ -8029,8 +8073,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           function achSplitFor(runRate) {
             return actualSplit
               ? [
-                  ["Mass + Migrant", segAch((t.mass || 0) + (t.migrant || 0), t.targetMassMigrant || 0, runRate)],
-                  ["Tourist", segAch(t.tourist || 0, t.targetTourist || 0, runRate)],
+                  ["Mass + Migrant", segAch(actMM, tgtMM, runRate)],
+                  ["Tourist", segAch(actTR, tgtTR, runRate)],
                 ]
               : null;
           }
@@ -8449,17 +8493,25 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               targetMassMigrant: hasCommitted ? c.massMigrant || 0 : 0,
               targetTourist: hasCommitted ? c.tourist || 0 : 0,
               targetM1: hasCommitted ? c.m1Total || 0 : 0,
+              targetM1MassMigrant: hasCommitted ? c.m1MassMigrant || 0 : 0,
+              targetM1Tourist: hasCommitted ? c.m1Tourist || 0 : 0,
+              achM1MassMigrant: hasCommitted ? c.achM1MassMigrant || 0 : 0,
+              achM1Tourist: hasCommitted ? c.achM1Tourist || 0 : 0,
               targetedGA: hasCommitted ? r.ga : r.targetedGA,
               targetOverridden: hasCommitted,
             };
             cr.achievePct = cr.target > 0 ? cr.targetedGA / cr.target : null;
-            var segInfo = rtrSegTargetInfo(cr, state.rtr.segToggle);
+            // M1 mode follows the Mass / Migrant / Tourist toggles the same way GA does
+            var segInfo =
+              targetMode === "m1"
+                ? rtrSegM1Info(cr, state.rtr.segToggle)
+                : rtrSegTargetInfo(cr, state.rtr.segToggle);
             var arpu = arpuOf(cr.m1, cr.ga, cr.ga, cr.revGa);
             var target, achievePct, segSupported;
             if (targetMode === "m1") {
-              target = cr.targetM1 > 0 ? cr.targetM1 : null;
-              achievePct = cr.targetM1 > 0 ? cr.m1 / cr.targetM1 : null;
-              segSupported = true;
+              target = segInfo.target > 0 ? segInfo.target : null;
+              achievePct = segInfo.achievePct;
+              segSupported = segInfo.supported;
             } else {
               target = segInfo.target > 0 ? segInfo.target : null;
               achievePct = segInfo.achievePct;
@@ -8490,7 +8542,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             return {
               com: com,
               storeCount: r.storeCount,
-              ga: segInfo.ga,
+              ga: targetMode === "m1" ? rtrSegTargetInfo(cr, state.rtr.segToggle).ga : segInfo.ga,
               target: target,
               achievePct: achievePct,
               rrPct: rrPct,
@@ -8503,7 +8555,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   : r.hasLmtd && r.lmtdSum > 0
                     ? (r.ga - r.lmtdSum) / r.lmtdSum
                     : null,
-              m1: cr.m1,
+              m1: targetMode === "m1" && segInfo.segLabel ? segInfo.ga : cr.m1,
               arpu: arpu,
               paceDelta: paceDelta,
               surplus: fc ? fc.surplus : null,
@@ -18572,6 +18624,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 tourist: Number(r[3]) || 0,
                 m1Total: Number(r[4]) || 0,
                 achM1Total: Number(r[5]) || 0,
+                m1MassMigrant: Number(r[6]) || 0,
+                m1Tourist: Number(r[7]) || 0,
+                achM1MassMigrant: Number(r[8]) || 0,
+                achM1Tourist: Number(r[9]) || 0,
               });
             });
 
@@ -18583,6 +18639,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 tourist: Number(r[3]) || 0,
                 m1Total: Number(r[4]) || 0,
                 achM1Total: Number(r[5]) || 0,
+                m1MassMigrant: Number(r[6]) || 0,
+                m1Tourist: Number(r[7]) || 0,
+                achM1MassMigrant: Number(r[8]) || 0,
+                achM1Tourist: Number(r[9]) || 0,
               };
             });
 
