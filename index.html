@@ -5000,22 +5000,27 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         // has no actual or no target for the month is recorded as null, not zero.
         // Every month keeps its own 7-11 CM target, so a past month still shows its target
         // once a newer month carries one.
-        // Total GA target for the stores in view: the sum of per-store targets, or -- for a month
-        // with no per-store target file yet -- the committed targets of the CMs those stores
-        // belong to.
+        // Total GA target for the stores in view. A CM whose whole book is in view counts its
+        // committed CM target (the same figure the CM comparison table uses); a CM only partly
+        // in view (an AE/khet filter) or with no CM target counts its visible stores' own
+        // per-store targets instead, since a CM-wide figure can't be split across a subset.
         function sevTotalTarget(stores, mk) {
-          var tot = 0;
-          stores.forEach(function (s) {
-            if (s.hasTarget && s.targetMonthKey === mk) tot += s.target;
-          });
-          if (tot > 0) return tot;
           var cmT = sevCmTargetsFor(mk),
-            seen = {};
+            inView = {},
+            book = {};
           stores.forEach(function (s) {
-            if (!seen[s.cm] && cmT[s.cm]) {
-              seen[s.cm] = true;
-              tot += cmT[s.cm].ga || 0;
-            }
+            inView[s.cm] = (inView[s.cm] || 0) + 1;
+          });
+          state.sev.stores.forEach(function (s) {
+            if (inView[s.cm]) book[s.cm] = (book[s.cm] || 0) + 1;
+          });
+          var tot = 0;
+          Object.keys(inView).forEach(function (cm) {
+            if (inView[cm] === book[cm] && cmT[cm] && cmT[cm].ga > 0) tot += cmT[cm].ga;
+          });
+          stores.forEach(function (s) {
+            var whole = inView[s.cm] === book[s.cm] && cmT[s.cm] && cmT[s.cm].ga > 0;
+            if (!whole && s.hasTarget && s.targetMonthKey === mk) tot += s.target;
           });
           return tot;
         }
@@ -7828,13 +7833,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           };
         }
         function rtrForecast(totals, pacing) {
-          if (!pacing || !(totals.target > 0) || !(pacing.expectedPct > 0))
+          if (!pacing || !(totals.target > 0) || !(pacing.daysElapsed > 0))
             return null;
           // coalesced: an IndexedDB cache written before targetedGA existed on the rollup would make
           // every number below NaN otherwise (same failure mode as the sev-side NaN bug)
           var actual =
             (totals.targetOverridden ? totals.ga : totals.targetedGA) || 0;
-          var landing = actual / pacing.expectedPct;
+          // Run rate, the same basis as %Ach (RR): actual / days elapsed * days in month.
+          var landing = (actual / pacing.daysElapsed) * pacing.daysInMonth;
           var remaining = Math.max(0, totals.target - actual);
           return {
             landing: landing,
@@ -13068,9 +13074,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           };
         }
         function sevForecast(totGa, totTarget, pacing) {
-          if (!pacing || !(totTarget > 0) || !(pacing.expectedPct > 0))
+          if (!pacing || !(totTarget > 0) || !(pacing.daysElapsed > 0))
             return null;
-          var landing = totGa / pacing.expectedPct;
+          // Run rate, the same basis as %Ach (RR): actual / days elapsed * days in month.
+          var landing = (totGa / pacing.daysElapsed) * pacing.daysInMonth;
           var remaining = Math.max(0, totTarget - totGa);
           return {
             landing: landing,

@@ -696,7 +696,7 @@ def _pick_routing_cm_column(header, body_rows, cluster_col, com_col):
     return cands[-1]
 
 
-def extract_routing_overrides(path, code_to_canonical):
+def extract_routing_overrides(path, code_to_canonical, new_stores=None):
     """Reads the 'routing' workbook's own 'RTR_Route' sheet for two things the primary
     workbook doesn't have: a genuinely live per-store target for whichever month this file is
     currently tracking, and each store's COM (field rep one level below CM -- confirmed by
@@ -721,6 +721,8 @@ def extract_routing_overrides(path, code_to_canonical):
       target_overrides: {monthAbbr: {canonicalCode: target}}
       canonical_to_com: {canonicalCode: comName}
       canonical_to_cm: {canonicalCode: cmName}
+    new_stores (optional, filled in place): {canonicalCode: {name, district}} for stores this
+    sheet lists but the primary roster doesn't; code_to_canonical is extended for them too.
     All {} if the sheet isn't shaped as expected -- this is optional extra data, a publish
     must still succeed without it (e.g. the file briefly missing between quarters)."""
     target_overrides = {}
@@ -746,6 +748,9 @@ def extract_routing_overrides(path, code_to_canonical):
     cluster_col = idx.get("cluster")
     com_col = idx.get("com")
     cm_col = _pick_routing_cm_column(header, rows2d[h_idx + 1:], cluster_col, com_col)
+    name_col = next((i for i, h in enumerate(header)
+                     if h and "retailer" in str(h).lower() and "name" in str(h).lower()), None)
+    district_col = idx.get("อำเภอ")
     blocks = parse_target_blocks(header)
 
     for r in range(h_idx + 1, len(rows2d)):
@@ -759,7 +764,19 @@ def extract_routing_overrides(path, code_to_canonical):
         code_t = str(get(row, 1)).strip() if get(row, 1) not in (None, "") else None
         canonical = (code_to_canonical.get(code_d) or code_to_canonical.get(code_t)) if (code_d or code_t) else None
         if not canonical:
-            continue  # not a code the primary workbook's own mapping already knows -- skip
+            if not (code_d or code_t) or new_stores is None:
+                continue
+            # A store opened after the primary workbook's roster was made (Nov'26: 7 new
+            # Dtac/True code pairs only this sheet lists). Registered in code_to_canonical
+            # so both its codes merge, and its CM goes only into the returned CM override,
+            # so it counts only in the months this routing workbook is the org chart for.
+            canonical = code_d or code_t
+            for c in (code_d, code_t):
+                if c:
+                    code_to_canonical[c] = canonical
+            name = str(get(row, name_col) or "").strip() if name_col is not None else ""
+            district = str(get(row, district_col) or "").strip() if district_col is not None else ""
+            new_stores[canonical] = {"name": name, "district": DISTRICT_TH_TO_EN.get(district, district)}
 
         if com_col is not None:
             com = str(get(row, com_col) or "").strip()
@@ -1280,8 +1297,17 @@ def process_rtr_workbook(path, sheet_overrides=None, routing_path=None):
     routing_cm_months = set()
     if routing_path:
         print(f"  routing workbook: {routing_path.name}")
+        new_stores = {}
         routing_target_overrides, canonical_to_com, canonical_to_cm_override = extract_routing_overrides(
-            routing_path, code_to_canonical)
+            routing_path, code_to_canonical, new_stores)
+        for code, info in new_stores.items():
+            if info["name"]:
+                canonical_to_name.setdefault(code, info["name"])
+            if info["district"]:
+                canonical_to_district.setdefault(code, info["district"])
+        if new_stores:
+            print(f"    {len(new_stores)} stores only the routing workbook lists (opened after the "
+                  f"primary roster): {', '.join(i['name'] or c for c, i in new_stores.items())}")
         if canonical_to_com:
             print(f"    {len(canonical_to_com)} stores have a COM assignment")
         if routing_target_overrides:
