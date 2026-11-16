@@ -13132,6 +13132,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           { key: "name", label: "ร้านค้า", align: "left" },
           { key: "target", label: "Target" },
           { key: "ga", label: "GA" },
+          {
+            key: "lmtdGa",
+            label: "LMTD",
+            title: "GA เดือนก่อน ช่วงวันเดียวกัน (วันที่ 1 ถึงวันล่าสุดที่มีข้อมูลเดือนนี้)",
+          },
           { key: "ap49", label: "AP 49" },
           { key: "ap99", label: "AP 99" },
           { key: "ap199", label: "AP 199" },
@@ -13160,6 +13165,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (key === "khet") return s.khet || "";
           if (key === "fyai") return s.fyai || "";
           if (key === "ga") return sv.ga;
+          if (key === "lmtdGa") return sv.lmtdGa == null ? -1 : sv.lmtdGa;
           if (key === "target") return sv.target == null ? -1 : sv.target;
           if (key === "achieve")
             return sv.achievePct == null ? -1 : sv.achievePct;
@@ -13339,6 +13345,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               return (
                 '<td class="num-cell">' + pctBadge(d.momPct, "mom") + "</td>"
               );
+            if (col.key === "lmtdGa")
+              return '<td class="num-cell">' + (d.lmtdGa != null ? fmt(d.lmtdGa) : "—") + "</td>";
             if (col.key === "m1ga")
               return (
                 '<td class="num-cell">' +
@@ -13666,6 +13674,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (col.key === "khet") return s.khet;
           if (col.key === "fyai") return s.fyai;
           if (col.key === "ga") return fmt(d.ga);
+          if (col.key === "lmtdGa") return d.lmtdGa == null ? "—" : fmt(d.lmtdGa);
           if (col.key === "rev") return fmt(d.revAmt);
           if (col.key === "ap49") return fmt(d.ap49);
           if (col.key === "ap99") return fmt(d.ap99);
