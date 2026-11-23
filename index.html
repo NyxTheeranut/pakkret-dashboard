@@ -7788,7 +7788,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           zoneStores = zoneStores.slice().sort(function (a, b) {
             var av = rtrSortValue(a, rzKey, true),
               bv = rtrSortValue(b, rzKey, true);
-            if (rzKey === "name")
+            if (typeof av === "string")
               return rzMult * String(av).localeCompare(String(bv));
             return rzMult * (av - bv);
           });
@@ -8727,6 +8727,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           { key: "arpu", label: "ARPU" },
           { key: "achieve", label: "%Achieve" },
           { key: "mom", label: "%MOM" },
+          { key: "com", label: "COM", align: "left" },
         ];
         // The quadrant's table and its export read %Achieve from the run rate, so say so in the header.
         function rtrColLabel(col, runRate) {
@@ -8766,6 +8767,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               esc(s.code) +
               "</div></td>"
             );
+          if (k === "com")
+            return '<td title="' + esc(s.com || "") + '">' + esc(sevInsightsFirstName(s.com) || "—") + "</td>";
           if (k === "ga")
             return '<td class="num-cell">' + fmt(rtrStoreSegGA(s)) + "</td>";
           if (k === "target")
@@ -8820,6 +8823,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         }
         function rtrSortValue(s, key, runRate) {
           if (key === "name") return s.name || "";
+          if (key === "com") return s.com || "";
           if (key === "ga") return rtrStoreSegGA(s);
           if (key === "target") return s.target;
           if (key === "achieve") {
@@ -8857,7 +8861,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           stores = stores.slice().sort(function (a, b) {
             var av = rtrSortValue(a, sortKey),
               bv = rtrSortValue(b, sortKey);
-            if (sortKey === "name")
+            if (typeof av === "string")
               return mult * String(av).localeCompare(String(bv));
             return mult * (av - bv);
           });
@@ -8987,7 +8991,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             { key: "code", label: "รหัสร้าน" },
             { key: "com", label: "COM", align: "left" },
           ])
-          .concat(RTR_TABLE_COLS.slice(1));
+          .concat(RTR_TABLE_COLS.slice(1).filter(function (c) { return c.key !== "com"; }));
 
         function rtrExportScopeLabel() {
           if (state.rtr.exportScope === "quadrant") {
@@ -9050,7 +9054,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           stores = stores.slice().sort(function (a, b) {
             var av = rtrSortValue(a, sortKey, isQuadrant),
               bv = rtrSortValue(b, sortKey, isQuadrant);
-            if (sortKey === "name")
+            if (typeof av === "string")
               return mult * String(av).localeCompare(String(bv));
             return mult * (av - bv);
           });
