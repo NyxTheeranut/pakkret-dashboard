@@ -13326,7 +13326,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // here) -- reordering or renaming a column now only requires editing SEV_TABLE_COLS itself.
           function sevTableCellHtml(col, s, d) {
             if (col.key === "khet") return "<td>" + esc(s.khet) + "</td>";
-            if (col.key === "ae") return "<td>" + esc(s.ae || "—") + "</td>";
+            if (col.key === "ae") return '<td title="' + esc(s.ae || "") + '">' + esc(sevInsightsFirstName(s.ae) || "—") + "</td>";
             if (col.key === "target")
               return (
                 '<td class="num-cell">' +
