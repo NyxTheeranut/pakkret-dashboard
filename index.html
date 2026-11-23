@@ -13153,6 +13153,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           { key: "fyai", label: "ฝ่าย", align: "left" },
           { key: "khet", label: "เขต", align: "left" },
           { key: "achieve", label: "%Achieve" },
+          { key: "ae", label: "AE", align: "left" },
         ];
         // On-screen table hides ฝ่าย/เขต (by request -- they stay available for sorting via
         // "เรียงตาม" and for the export, both of which read SEV_TABLE_COLS directly),
@@ -13164,6 +13165,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (key === "name") return s.name || "";
           if (key === "khet") return s.khet || "";
           if (key === "fyai") return s.fyai || "";
+          if (key === "ae") return s.ae || "";
           if (key === "ga") return sv.ga;
           if (key === "lmtdGa") return sv.lmtdGa == null ? -1 : sv.lmtdGa;
           if (key === "target") return sv.target == null ? -1 : sv.target;
@@ -13248,7 +13250,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               if (
                 sortKey === "name" ||
                 sortKey === "khet" ||
-                sortKey === "fyai"
+                sortKey === "fyai" ||
+                sortKey === "ae"
               )
                 return mult * String(av).localeCompare(String(bv));
               return mult * (av - bv);
@@ -13323,6 +13326,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // here) -- reordering or renaming a column now only requires editing SEV_TABLE_COLS itself.
           function sevTableCellHtml(col, s, d) {
             if (col.key === "khet") return "<td>" + esc(s.khet) + "</td>";
+            if (col.key === "ae") return "<td>" + esc(s.ae || "—") + "</td>";
             if (col.key === "target")
               return (
                 '<td class="num-cell">' +
@@ -13471,7 +13475,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             { key: "code", label: "รหัสร้าน" },
             { key: "ae", label: "COM", align: "left" },
           ])
-          .concat(SEV_TABLE_COLS.slice(1));
+          .concat(SEV_TABLE_COLS.slice(1).filter(function (c) { return c.key !== "ae"; }));
 
         function sevExportScopeLabel() {
           // sevExportKhet, when set, describes what's ACTUALLY in this export better than the
@@ -13650,7 +13654,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           rowsData.sort(function (a, b) {
             var av = sevSortValue(a.s, sortKey, a.d),
               bv = sevSortValue(b.s, sortKey, b.d);
-            if (sortKey === "name" || sortKey === "khet" || sortKey === "fyai")
+            if (sortKey === "name" || sortKey === "khet" || sortKey === "fyai" || sortKey === "ae")
               return mult * String(av).localeCompare(String(bv));
             return mult * (av - bv);
           });
