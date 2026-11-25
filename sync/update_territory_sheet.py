@@ -975,7 +975,8 @@ def aggregate_rtr_sheet(rows2d, code_to_canonical, canonical_to_cm, canonical_to
                 "ga": 0, "ap1d": 0, "ap1dAmt": 0, "ap30d": 0, "revAmt": 0,
                 "mass": 0, "migrant": 0, "tourist": 0,
                 "ap1dMM": 0, "ap30dMM": 0,  # AP1D / AP30D of Mass+Migrant rows only (Activation cards)
-                "tiers": [0] * 8, "simTypes": {}, "daily": {},
+                "tiers": [0] * 8, "tiersMM": [0] * 8,  # tiersMM: Mass+Migrant rows only (AP Mix without Tourist)
+                "simTypes": {}, "daily": {},
                 "target": 0, "m1": 0,
                 "hasStock": stock_rec is not None,
                 "tStock": stock_rec["tStock"] if stock_rec else 0,
@@ -1015,7 +1016,10 @@ def aggregate_rtr_sheet(rows2d, code_to_canonical, canonical_to_cm, canonical_to
             s["tourist"] += ga
         for t, tc in enumerate(TIER_COLS):
             if has_tier[t]:
-                s["tiers"][t] += num(get(row, idx[tc]))
+                v = num(get(row, idx[tc]))
+                s["tiers"][t] += v
+                if seg in ("MASS", "MIGRANT"):
+                    s["tiersMM"][t] += v
         sim_type = get(row, idx.get("SIM_TYPE", -1))
         if sim_type:
             s["simTypes"][sim_type] = s["simTypes"].get(sim_type, 0) + ga
@@ -1072,7 +1076,7 @@ def fill_dormant_roster_stores(result, canonical_to_cm, canonical_to_name, canon
             "mallType": canonical_to_mall_type.get(canonical_code, ""),
             "ga": 0, "ap1d": 0, "ap1dAmt": 0, "ap30d": 0, "revAmt": 0,
             "mass": 0, "migrant": 0, "tourist": 0,
-            "tiers": [0] * 8, "simTypes": {}, "daily": {},
+            "tiers": [0] * 8, "tiersMM": [0] * 8, "simTypes": {}, "daily": {},
             "target": 0, "m1": 0,
             "hasStock": stock_rec is not None,
             "tStock": stock_rec["tStock"] if stock_rec else 0,
@@ -1189,7 +1193,7 @@ def build_rtr_month_tables(m):
             s.get("com", ""),
             s.get("revGa", s["ga"]),  # GA whose revenue has been reported -- see revenue_maturity
             s.get("ap1dMM", 0), s.get("ap30dMM", 0),
-        ])
+        ] + (s.get("tiersMM") or [""] * 8))  # blank, not 0: a store without the split must not read as "no AP1D"
         for day in sorted(s["daily"].keys(), key=str):
             d = s["daily"][day]
             daily_rows.append([s["code"], day, d["ga"], d["revAmt"], d["mass"], d["migrant"], d["tourist"],
@@ -1216,7 +1220,8 @@ def build_rtr_month_tables(m):
             "headers": ["code", "name", "cm", "district", "mallType", "ga", "ap1d", "ap1dAmt",
                         "ap30d", "revAmt", "mass", "migrant", "tourist", "target", "m1"]
                        + ["tier_" + l for l in TIER_LABELS]
-                       + ["hasStock", "tStock", "dStock", "stock", "coverMth", "com", "revGa", "ap1dMM", "ap30dMM"],
+                       + ["hasStock", "tStock", "dStock", "stock", "coverMth", "com", "revGa", "ap1dMM", "ap30dMM"]
+                       + ["tierMM_" + l for l in TIER_LABELS],
             "rows": stores_rows,
         },
         "daily": {

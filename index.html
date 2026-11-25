@@ -2687,6 +2687,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 .apx-table th.apx-grp { text-align: center; padding-bottom: 4px; }
 .apx-table thead tr + tr th:first-child { text-align: right; }
 .apx-table .apx-was { color: var(--muted); }
+.apx-table .apx-dp { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
 .apx-table tfoot th, .apx-table tfoot td { font-weight: 600; color: var(--ink, #16201c); border-top: 1.5px solid var(--line, rgba(22,32,28,.24)); border-bottom: none; padding-top: 9px; }
 .apx-table tfoot th { text-align: left; font-size: 13px; padding: 9px 10px 8px; }
 .apx-table tfoot .apx-was { color: var(--muted); font-weight: 500; }
@@ -7386,11 +7387,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             (pp > 0 ? "&#9650; +" : "&#9660; ") + pp.toFixed(1) + " pp</span>"
           );
         }
-        function apxPctDelta(now, prev) {
-          if (!(prev > 0)) return "";
-          var c = (now - prev) / prev;
-          return ' <span class="apx-d ' + (c > 0.0005 ? "up" : c < -0.0005 ? "down" : "flat") + '">' +
-            (c > 0.0005 ? "&#9650; +" : c < -0.0005 ? "&#9660; " : "") + (c * 100).toFixed(0) + "%</span>";
+        // Count difference this month vs last month; withPct also shows it as a % of last month.
+        function apxDiff(now, prev, withPct) {
+          var d = now - prev;
+          var cls = d > 0 ? "up" : d < 0 ? "down" : "flat";
+          var pctTxt = withPct && prev > 0 ? ' <span class="apx-dp">(' + (d > 0 ? "+" : "") + ((d / prev) * 100).toFixed(0) + "%)</span>" : "";
+          return '<span class="apx-d ' + cls + '">' + (d > 0 ? "&#9650; +" : d < 0 ? "&#9660; " : "") + fmt(d) + "</span>" + pctTxt;
         }
         function apxStack(vals, colors, cls) {
           var t = vals.reduce(function (a, b) { return a + b; }, 0);
@@ -7419,6 +7421,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             '<div class="apx-tablewrap"><table class="apx-table"><thead>' +
             (hasPrev
               ? '<tr><th scope="col" rowspan="2">ช่วงราคา</th><th scope="colgroup" colspan="2" class="apx-grp">จำนวน</th>' +
+                '<th scope="col" rowspan="2">ผลต่าง</th>' +
                 '<th scope="colgroup" colspan="2" class="apx-grp">สัดส่วน</th><th scope="col" rowspan="2">เปลี่ยน</th></tr>' +
                 '<tr><th scope="col">Actual</th><th scope="col">เดือนก่อน</th><th scope="col">เดือนนี้</th><th scope="col">เดือนก่อน</th></tr>'
               : '<tr><th scope="col">ช่วงราคา</th><th scope="col">Actual</th><th scope="col">สัดส่วน</th></tr>') +
@@ -7426,16 +7429,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             bs.map(function (b) {
               var shN = tN > 0 ? b.now / tN : 0, shP = tP > 0 ? (b.prev || 0) / tP : 0;
               return (
-                '<tr><td><i style="background:' + b.color + '"></i>' + esc(b.label) + "</td><td>" + fmt(b.now) +
-                (hasPrev && o.countDelta ? apxPctDelta(b.now, b.prev || 0) : "") + "</td>" +
-                (hasPrev ? '<td class="apx-was">' + fmt(b.prev || 0) + "</td>" : "") +
+                '<tr><td><i style="background:' + b.color + '"></i>' + esc(b.label) + "</td><td>" + fmt(b.now) + "</td>" +
+                (hasPrev ? '<td class="apx-was">' + fmt(b.prev || 0) + "</td><td>" + apxDiff(b.now, b.prev || 0, o.countDelta) + "</td>" : "") +
                 "<td>" + pct1(shN) + "</td>" +
                 (hasPrev ? '<td class="apx-was">' + pct1(shP) + "</td><td>" + apxDelta(shN - shP) + "</td>" : "") + "</tr>"
               );
             }).join("") +
-            "</tbody><tfoot><tr><th scope=\"row\">รวม</th><td>" + fmt(tN) +
-            (hasPrev && o.countDelta ? apxPctDelta(tN, tP) : "") + "</td>" +
-            (hasPrev ? '<td class="apx-was">' + fmt(tP) + "</td>" : "") +
+            "</tbody><tfoot><tr><th scope=\"row\">รวม</th><td>" + fmt(tN) + "</td>" +
+            (hasPrev ? '<td class="apx-was">' + fmt(tP) + "</td><td>" + apxDiff(tN, tP, o.countDelta) + "</td>" : "") +
             "<td>100%</td>" +
             (hasPrev ? '<td class="apx-was">100%</td><td></td>' : "") +
             "</tr></tfoot></table></div>";
@@ -7517,7 +7518,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           renderApxPanel({
             host: host,
             scope: state.rtr.currentCOM ? "COM " + state.rtr.currentCOM : state.rtr.currentCM ? "CM " + state.rtr.currentCM : "ภาพรวม",
-            note: prevM ? "สัดส่วนเทียบกับทั้งเดือนก่อน (pp = จุดเปอร์เซ็นต์)" : "ยังไม่มีเดือนก่อนให้เทียบ",
+            note:
+              (prevM ? "สัดส่วนเทียบกับทั้งเดือนก่อน (pp = จุดเปอร์เซ็นต์)" : "ยังไม่มีเดือนก่อนให้เทียบ") +
+              (state.rtr.excludeTourist &&
+              rtrCurrentStores().concat(prevM ? rtrCurrentStores(prevM) : []).some(function (s) {
+                return !s.tiersMM;
+              })
+                ? " (AP Mix ยังรวมซิม Tourist จนกว่าจะรัน Update)"
+                : ""),
             back: state.rtr.currentCM ? "กลับไปดูทุก CM" : null,
             onBack: function () { state.rtr.currentCM = null; state.rtr.currentCOM = null; reset(); },
             buckets: labels.map(function (l, i) { return { label: l, color: colors[i], now: nowB[i], prev: prevB ? prevB[i] : 0 }; }),
@@ -15087,6 +15095,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 // r[30..31] newest -- AP1D / AP30D of Mass+Migrant rows only. Absent (older Sheet) = null.
                 ap1dMM: r.length > 30 && r[30] !== "" ? Number(r[30]) || 0 : null,
                 ap30dMM: r.length > 31 && r[31] !== "" ? Number(r[31]) || 0 : null,
+                // r[32..39] newest -- AP1D price tiers of Mass+Migrant rows only. Absent (older Sheet) = null.
+                tiersMM:
+                  r.length > 39 && r[32] !== ""
+                    ? r.slice(32, 40).map(function (v) {
+                        return Number(v) || 0;
+                      })
+                    : null,
                 simTypes: {},
                 daily: {},
               };
@@ -15346,6 +15361,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   c.tourist = 0;
                   if (s.ap1dMM != null) c.ap1d = s.ap1dMM;
                   if (s.ap30dMM != null) c.ap30d = s.ap30dMM;
+                  if (s.tiersMM) c.tiers = s.tiersMM.slice();
                   c.daily = {};
                   Object.keys(s.daily || {}).forEach(function (d) {
                     var dd = Object.assign({}, s.daily[d]);

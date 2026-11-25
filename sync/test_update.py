@@ -67,6 +67,23 @@ class KpiSetupTargets(unittest.TestCase):
         self.assertEqual(got["nov"]["Com B"]["tourist"], 1)
 
 
+class TiersWithoutTourist(unittest.TestCase):
+    def test_tourist_rows_count_in_tiers_but_not_in_tiers_mm(self):
+        header = ["PARTNER_CODE", "PARTNER_NAME", "GA", "GROUP_SIM", "D_CLUSTER", "TM_KEY_DAY", "AP1D_300UP"]
+        rows = [header,
+                ["S1", "Shop", 5, "MASS", "Pak Kret", "20261101", 2],
+                ["S1", "Shop", 9, "TOURIST", "Pak Kret", "20261101", 7]]
+        got = u.aggregate_rtr_sheet(rows, {}, {"S1": "Cm A"}, {})
+        s = got["stores"][0]
+        self.assertEqual(s["tiers"][7], 9)
+        self.assertEqual(s["tiersMM"][7], 2)
+        table = u.build_rtr_month_tables({"sheetName": "Nov", "label": "Nov 2026", "rowCount": 2,
+                                          "stores": got["stores"], "cmRollup": {}})
+        hdr = table["stores"]["headers"]
+        self.assertEqual(table["stores"]["rows"][0][hdr.index("tierMM_300+")], 2)
+        self.assertEqual(len(hdr), len(table["stores"]["rows"][0]))
+
+
 class RoutingNewStores(unittest.TestCase):
     def test_a_store_only_the_routing_sheet_lists_is_added_with_both_codes(self):
         with tempfile.TemporaryDirectory() as tmp:
