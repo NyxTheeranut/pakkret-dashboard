@@ -2793,6 +2793,31 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
   color: var(--muted, #5a6560); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 </style>
+
+<style id="ins-cols-css">
+/* Action cards: labels once in a header row, numbers right-aligned in fixed columns underneath. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.insight-list li { align-items: baseline; }
+.insight-list .n { flex: 1 1 auto; max-width: none; }
+.insight-list .v { flex: 0 0 auto; max-width: none; display: flex; }
+.insight-list .v .c { display: inline-block; flex: none; padding-left: 12px; text-align: right; white-space: nowrap; }
+.insight-list .v .c-num { width: calc(3.2em + 12px); }
+.insight-list .v .c-pct { width: calc(4.3em + 12px); }
+.insight-list .v .c-baht { width: calc(5.6em + 12px); }
+.insight-list .v .c-ae { width: calc(5.4em + 12px); text-align: left; overflow: hidden; text-overflow: ellipsis; color: var(--ink, inherit); font-family: inherit; }
+.insight-list li.ins-head { border-top: none; padding-top: 0; padding-bottom: 6px; border-bottom: 1px solid var(--line); cursor: default; }
+.insight-list li.ins-head:hover { background: none; }
+.insight-list li.ins-head .n, .insight-list li.ins-head .v { font-family: inherit; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.insight-list li.ins-head + li { border-top: none; }
+@media (max-width: 560px) {
+  /* name on its own line, the numbers on the line under it, lined up under the header */
+  .insight-list li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .insight-list .v { justify-content: flex-end; width: 100%; }
+  .insight-list .v .c { display: inline-block; text-align: right; }
+  .insight-list .v .c-ae { text-align: left; }
+  .insight-list li.ins-head .n { display: none; }
+}
+</style>
 </head>
   <body>
     <div class="login-gate" id="loginGate" style="display: none">
@@ -8169,6 +8194,19 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           );
         }
 
+        // Column labels sit once in a header row; each value keeps its label for screen readers.
+        function insHead(cols) {
+          return (
+            '<li class="ins-head" aria-hidden="true"><span class="n">ร้าน</span><span class="v">' +
+            cols.map(function (c) {
+              return '<span class="c c-' + c[1] + '">' + esc(c[0]) + "</span>";
+            }).join("") +
+            "</span></li>"
+          );
+        }
+        function insCell(label, kind, html) {
+          return '<span class="c c-' + kind + '"><span class="sr-only">' + esc(label) + " </span>" + html + "</span>";
+        }
         function renderRtrInsights() {
           var stores = rtrCurrentStores();
           var grid = $("rtrInsightsGrid");
@@ -8297,9 +8335,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             exportRows,
             exportKey,
             exportOwners,
+            head,
           ) {
             var body = items.length
               ? '<ul class="insight-list">' +
+                (head ? insHead(head) : "") +
                 items
                   .map(function (x) {
                     return (
@@ -8351,9 +8391,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             );
           }
           function comCol(name) {
-            return name
-              ? '<span class="col-ae">' + esc(firstName(name)) + "</span>"
-              : "";
+            return insCell("COM", "ae", esc(firstName(name) || "—"));
           }
           // Shared row shape for every card below -- GA/AP1D/AP30D/conversion% -- same
           // fixed-width .col-num/.col-pct columns as the 7-11 insight cards (see
@@ -8364,16 +8402,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             return (
               '<span class="n">' +
               esc(s.name) +
-              '</span><span class="v"><span class="col-num">GA ' +
-              fmt(v.ga) +
-              '</span> · <span class="col-num">AP1D ' +
-              fmt(v.ap1d) +
-              '</span> · <span class="col-num">AP30D ' +
-              fmt(v.ap30d) +
-              '</span> · <span class="col-pct">' +
-              (v.ga > 0 ? pct(conv) : "—") +
-              "</span>" +
-              (extraHtml ? " · " + extraHtml : "") +
+              '</span><span class="v">' +
+              insCell("GA", "num", fmt(v.ga)) +
+              insCell("AP1D", "num", fmt(v.ap1d)) +
+              insCell("AP30D", "num", fmt(v.ap30d)) +
+              insCell("Conversion", "pct", v.ga > 0 ? pct(conv) : "—") +
+              (extraHtml || "") +
               "</span>"
             );
           }
@@ -8431,14 +8465,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             return (
               '<span class="n">' +
               esc(s.name) +
-              '</span><span class="v"><span class="col-num">GA ' +
-              fmt(rtrStoreSegGA(s)) +
-              '</span> · <span class="col-num">LMTD ' +
-              (s.lmtdGa != null ? fmt(s.lmtdGa) : "—") +
-              '</span> · <span class="col-num">AP1D ' +
-              fmt(s.ap1d) +
-              "</span>" +
-              (s.com ? " · " + comCol(s.com) : "") +
+              '</span><span class="v">' +
+              insCell("GA", "num", fmt(rtrStoreSegGA(s))) +
+              insCell("LMTD", "num", s.lmtdGa != null ? fmt(s.lmtdGa) : "—") +
+              insCell("AP1D", "num", fmt(s.ap1d)) +
+              comCol(s.com) +
               "</span>"
             );
           }
@@ -8470,6 +8501,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             riskStoresAll.map(riskExportRow),
             "risk-ap30d",
             riskStoresAll.map(ownerOfRow),
+            [["GA", "num"], ["AP1D", "num"], ["AP30D", "num"], ["%AP30D", "pct"], ["COM", "ae"]],
           );
           html += cardHtml(
             "tag-risk",
@@ -8487,6 +8519,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             riskStoresAp1dAll.map(riskExportRow),
             "risk-ap1d",
             riskStoresAp1dAll.map(ownerOfRow),
+            [["GA", "num"], ["AP1D", "num"], ["AP30D", "num"], ["%AP1D", "pct"], ["COM", "ae"]],
           );
           html += cardHtml(
             "tag-risk",
@@ -8502,6 +8535,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             }),
             "no-ga",
             noGAAll.map(ownerOfRow),
+            [["GA", "num"], ["LMTD", "num"], ["AP1D", "num"], ["COM", "ae"]],
           );
           html += cardHtml(
             "tag-risk",
@@ -8514,14 +8548,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               return (
                 '<span class="n">' +
                 esc(x.s.name) +
-                '</span><span class="v"><span class="col-num">GA ' +
-                fmt(x.s.ga) +
-                '</span> · <span class="col-num">LMTD ' +
-                (x.s.lmtdGa != null ? fmt(x.s.lmtdGa) : "—") +
-                '</span> · <span class="col-pct">' +
-                pctColored(x.s.momPct) +
-                "</span>" +
-                (x.s.com ? " · " + comCol(x.s.com) : "") +
+                '</span><span class="v">' +
+                insCell("GA", "num", fmt(x.s.ga)) +
+                insCell("LMTD", "num", x.s.lmtdGa != null ? fmt(x.s.lmtdGa) : "—") +
+                insCell("%MOM", "pct", pctColored(x.s.momPct)) +
+                comCol(x.s.com) +
                 "</span>"
               );
             },
@@ -8529,6 +8560,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             badMomAll.map(badMomExportRow),
             "bad-mom",
             badMomAll.map(ownerOfRow),
+            [["GA", "num"], ["LMTD", "num"], ["%MOM", "pct"], ["COM", "ae"]],
           );
           // ---- Week on week (WoW), same boxes as the 7-11 tab: fixed 7-day blocks of the selected month
           // (W1 = days 1-7 ... W4 = 22-28). A pair is offered only when BOTH weeks are complete. Uses `stores`
@@ -8621,13 +8653,13 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 .join("");
               var body = shown.length
                 ? '<ul class="insight-list">' +
+                  insHead([["W" + b, "num"], ["W" + a, "num"], ["%WoW", "pct"], ["COM", "ae"]]) +
                   shown
                     .map(function (x) {
                       return (
                         '<li class="clickable" tabindex="0" role="button" data-code="' + esc(x.s.code) + '"><span class="n">' + esc(x.s.name) +
-                        '</span><span class="v"><span class="col-num">GA W' + b + " " + fmt(x.ga1) + '</span> · <span class="col-num">W' + a + " " +
-                        fmt(x.ga0) + '</span> · <span class="col-pct">' + pctColored(x.mom) + "</span>" +
-                        (x.s.com ? " · " + comCol(x.s.com) : "") + "</span></li>"
+                        '</span><span class="v">' + insCell("GA W" + b, "num", fmt(x.ga1)) + insCell("GA W" + a, "num", fmt(x.ga0)) +
+                        insCell("%WoW", "pct", pctColored(x.mom)) + comCol(x.s.com) + "</span></li>"
                       );
                     })
                     .join("") +
@@ -11634,9 +11666,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             exportItems,
             exportKey,
             kind,
+            head,
           ) {
             var body = items.length
               ? '<ul class="insight-list">' +
+                (head ? insHead(head) : "") +
                 items.map(renderRow).join("") +
                 "</ul>"
               : '<div class="insight-empty">ไม่พบร้านที่เข้าเงื่อนไขนี้</div>';
@@ -11698,33 +11732,25 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           // LMTD/% numbers lines up without needing an actual <table>, which would cramp badly
           // at half-width in this 2-col card grid on a phone.
           function gaCol(x) {
-            return '<span class="col-num">GA ' + fmt(x.sv.ga) + "</span>";
+            return insCell("GA", "num", fmt(x.sv.ga));
           }
           function lmtdAndMom(x) {
             return (
-              ' · <span class="col-num">LMTD ' +
-              (x.lmtdGa != null ? fmt(x.lmtdGa) : "—") +
-              '</span> · <span class="col-pct">' +
-              pctColored(x.momPct) +
-              "</span>"
+              insCell("LMTD", "num", x.lmtdGa != null ? fmt(x.lmtdGa) : "—") +
+              insCell("%MOM", "pct", pctColored(x.momPct))
             );
           }
           function aeCol(name) {
-            return '<span class="col-ae">' + esc(firstName(name) || "–") + "</span>";
+            return insCell("AE", "ae", esc(firstName(name) || "—"));
           }
           // Revenue equivalent of gaCol/lmtdAndMom, for the M1 ลดลง card below.
           function revCol(x) {
-            return (
-              '<span class="col-num">M1 ' + fmtBaht(x.sv.revAmt) + "</span>"
-            );
+            return insCell("M1", "baht", fmtBaht(x.sv.revAmt));
           }
           function revLmtdAndMom(x) {
             return (
-              ' · <span class="col-num">LMTD ' +
-              (x.prevRevAmt != null ? fmtBaht(x.prevRevAmt) : "—") +
-              '</span> · <span class="col-pct">' +
-              pctColored(x.revMomPct) +
-              "</span>"
+              insCell("LMTD", "baht", x.prevRevAmt != null ? fmtBaht(x.prevRevAmt) : "—") +
+              insCell("%MOM", "pct", pctColored(x.revMomPct))
             );
           }
 
@@ -11758,7 +11784,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 '<span class="v">' +
                   gaCol(x) +
                   lmtdAndMom(x) +
-                  " · " +
                   aeCol(x.s.ae) +
                   "</span>",
               );
@@ -11766,6 +11791,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             top10Badge,
             topGA,
             "top-ga",
+            null,
+            [["GA", "num"], ["LMTD", "num"], ["%MOM", "pct"], ["AE", "ae"]],
           );
           html += cardHtml(
             "tag-risk",
@@ -11778,7 +11805,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 '<span class="n">' + esc(x.s.name) + "</span>",
                 '<span class="v">' +
                   lmtdAndMom(x) +
-                  " · " +
                   aeCol(x.s.ae) +
                   "</span>",
               );
@@ -11786,6 +11812,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             null,
             zeroGA,
             "ga-0",
+            null,
+            [["LMTD", "num"], ["%MOM", "pct"], ["AE", "ae"]],
           );
           if (mk && !day) {
             html += cardHtml(
@@ -11802,7 +11830,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   '<span class="v">' +
                     revCol(x) +
                     revLmtdAndMom(x) +
-                    " · " +
                     aeCol(x.s.ae) +
                     "</span>",
                 );
@@ -11811,6 +11838,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               revDeclining,
               "rev-declining",
               "rev",
+              [["M1", "baht"], ["LMTD", "baht"], ["%MOM", "pct"], ["AE", "ae"]],
             );
           }
           if (mk && !day) {
@@ -11826,7 +11854,6 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   '<span class="v">' +
                     gaCol(x) +
                     lmtdAndMom(x) +
-                    " · " +
                     aeCol(x.s.ae) +
                     "</span>",
                 );
@@ -11834,6 +11861,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               null,
               declining,
               "declining",
+              null,
+              [["GA", "num"], ["LMTD", "num"], ["%MOM", "pct"], ["AE", "ae"]],
             );
           }
           // ---- Week on week (WoW): fixed 7-day blocks of the selected month (W1 = days 1-7 ... W4 = 22-28;
@@ -11996,22 +12025,16 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 : "";
               var body = shown.length
                 ? '<ul class="insight-list">' +
+                  insHead([["W" + b, "num"], ["W" + a, "num"], ["%WoW", "pct"], ["AE", "ae"]]) +
                   shown
                     .map(function (x) {
                       return clickableRow(
                         x.s.code,
                         '<span class="n">' + esc(x.s.name) + "</span>",
-                        '<span class="v"><span class="col-num">GA W' +
-                          b +
-                          " " +
-                          fmt(x.ga1) +
-                          '</span> · <span class="col-num">W' +
-                          a +
-                          " " +
-                          fmt(x.ga0) +
-                          '</span> · <span class="col-pct">' +
-                          pctColored(x.mom) +
-                          "</span> · " +
+                        '<span class="v">' +
+                          insCell("GA W" + b, "num", fmt(x.ga1)) +
+                          insCell("GA W" + a, "num", fmt(x.ga0)) +
+                          insCell("%WoW", "pct", pctColored(x.mom)) +
                           aeCol(x.s.ae) +
                           "</span>",
                       );
