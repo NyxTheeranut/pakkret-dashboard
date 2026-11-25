@@ -2097,6 +2097,27 @@ def aggregate_sev_ae_summary_rows(rows2d, cm_to_target, stats):
                 stats["rows"] += 1
 
 
+def merge_cm_ga_summaries(cm_target_by_month, summary_by_month, newest_month):
+    """Lowest precedence, gap-fill only, each file into ITS OWN month: adds a CM the authoritative
+    CM-target sources don't have for that month, or the M1 target they lack. Never overwrites a
+    target they already gave. A file with no month in its name (key None) counts as the newest
+    month. Returns (filled, m1_filled) as "YYYYMM CM" strings for the log."""
+    filled, m1_filled = [], []
+    for mk, targets in summary_by_month.items():
+        mk = mk or newest_month
+        if not mk:
+            continue
+        month_targets = cm_target_by_month.setdefault(mk, {})
+        for cm, v in targets.items():
+            if cm not in month_targets:
+                month_targets[cm] = dict(v)
+                filled.append(f"{mk} {cm}")
+            elif not month_targets[cm].get("m1") and v.get("m1"):
+                month_targets[cm]["m1"] = v["m1"]
+                m1_filled.append(f"{mk} {cm}")
+    return filled, m1_filled
+
+
 def looks_like_sev_cm_ga_summary_sheet(rows2d):
     """An ad hoc BI export's own per-CM GA summary (seen as the 'CM' sheet in a file named
     e.g. 'Data Synergy Oct26_New.xlsx' -- naming varies month to month, so detected by
@@ -2269,7 +2290,9 @@ def process_sev_files(paths):
     # sheet (see looks_like_sev_cm_ga_summary_sheet), only ever used to fill in a CM the
     # authoritative cm_to_target/le_cm_to_target sheets don't have yet (e.g. a brand new CM
     # a recent reorg introduced that those files haven't caught up to).
-    cm_ga_summary_to_target, cm_ga_summary_stats = {}, {"rows": 0}
+    # Kept per month (each file's own month, from its filename), never pooled: with Oct AND Nov
+    # files both present, one flat dict let the Oct file's targets overwrite Nov's under Nov's month.
+    cm_ga_summary_by_month, cm_ga_summary_stats = {}, {"rows": 0}
     # Backup for a month with no CM target from any source above: AE Monitoring's own Summary sheet,
     # kept per month (its filename's month) so one file never overwrites another month's CMs.
     ae_summary_by_month, ae_summary_stats = {}, {"rows": 0}
@@ -2412,7 +2435,6 @@ def process_sev_files(paths):
     monitor_store_file_name = None
     le_by_store_file_name = None
     le_cm_target_file_name = None
-    cm_ga_summary_file_name = None
     for sh in other_sheets:
         try:
             if looks_like_sev_ae_summary_sheet(sh["rows2D"]):
@@ -2420,10 +2442,11 @@ def process_sev_files(paths):
                 if ae_mk:
                     aggregate_sev_ae_summary_rows(sh["rows2D"], ae_summary_by_month.setdefault(ae_mk, {}), ae_summary_stats)
             elif looks_like_sev_cm_ga_summary_sheet(sh["rows2D"]):
-                before = len(cm_ga_summary_to_target)
-                aggregate_sev_cm_ga_summary_rows(sh["rows2D"], cm_ga_summary_to_target, cm_ga_summary_stats)
-                if cm_ga_summary_file_name is None and len(cm_ga_summary_to_target) > before:
-                    cm_ga_summary_file_name = sh["fileName"]
+                file_targets = {}
+                aggregate_sev_cm_ga_summary_rows(sh["rows2D"], file_targets, cm_ga_summary_stats)
+                if file_targets:
+                    # None = no month in the filename; merge_cm_ga_summaries uses the newest month then
+                    cm_ga_summary_by_month.setdefault(parse_month_from_filename(sh["fileName"]), {}).update(file_targets)
             elif looks_like_sev_cm_target_sheet(sh["name"]):
                 before = len(cm_to_target)
                 aggregate_sev_cm_target_rows(sh["rows2D"], cm_to_target, cm_target_stats)
@@ -2610,12 +2633,6 @@ def process_sev_files(paths):
         or target_month_key
     )
     le_cm_target_month_key = max(le_cm_to_target) if le_cm_to_target else None  # newest, for the log line
-    # No month of its own in the sheet (unlike cm_to_target/le_cm_to_target's source files,
-    # which carry an explicit "TG <month>" column) -- same fallback as target_month_key.
-    cm_ga_summary_month_key = (
-        (cm_ga_summary_file_name and parse_month_from_filename(cm_ga_summary_file_name))
-        or (months_available[-1] if months_available else None)
-    )
 
     # Merged by month, not into one flat dict -- see le_cm_to_target's own comment above.
     # Each source only ever writes into its OWN month's slot, so an overlapping CM name
@@ -2626,21 +2643,8 @@ def process_sev_files(paths):
         cm_target_by_month.setdefault(cm_target_month_key, {}).update(cm_to_target)
     for le_mk, le_targets in le_cm_to_target.items():
         cm_target_by_month.setdefault(le_mk, {}).update(le_targets)
-    # Lowest precedence, gap-fill only -- never overwrites a CM cm_to_target/le_cm_to_target
-    # already gave a target for that same month, only adds one for a CM neither of those
-    # authoritative sources has yet (see cm_ga_summary_to_target's own comment above).
-    filled_cms = []
-    m1_filled_cms = []
-    if cm_ga_summary_to_target and cm_ga_summary_month_key:
-        month_targets = cm_target_by_month.setdefault(cm_ga_summary_month_key, {})
-        for cm, v in cm_ga_summary_to_target.items():
-            if cm not in month_targets:
-                month_targets[cm] = v
-                filled_cms.append(cm)
-            elif not month_targets[cm].get("m1") and v.get("m1"):
-                # the authoritative GA target sources above carry no M1 target -- this sheet's M1 block does
-                month_targets[cm]["m1"] = v["m1"]
-                m1_filled_cms.append(cm)
+    filled_cms, m1_filled_cms = merge_cm_ga_summaries(
+        cm_target_by_month, cm_ga_summary_by_month, months_available[-1] if months_available else None)
 
     # Lowest precedence of all: only a month that NO other source gave any CM target for (typically the
     # current month before its "LE by store" file exists). A month that already has targets is left alone.
@@ -2661,9 +2665,9 @@ def process_sev_files(paths):
           f"(month: {le_by_store_month_key}), CM targets: {cm_target_stats['rows']} "
           f"(month: {cm_target_month_key}), LE CM targets: {le_cm_target_stats['rows']} "
           f"(month: {le_cm_target_month_key})")
-    if cm_ga_summary_to_target:
+    if cm_ga_summary_by_month:
         print(f"  CM GA summary sheet: {cm_ga_summary_stats['rows']} CM(s) read "
-              f"(month: {cm_ga_summary_month_key}); filled in a missing target for: "
+              f"(months: {sorted(k or 'newest' for k in cm_ga_summary_by_month)}); filled in a missing target for: "
               f"{sorted(filled_cms) if filled_cms else '(none -- already covered)'}; "
               f"M1 target added for: {sorted(m1_filled_cms) if m1_filled_cms else '(none)'}")
     print(f"  months available: {months_available}")

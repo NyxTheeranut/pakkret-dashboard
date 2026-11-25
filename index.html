@@ -1759,6 +1759,12 @@
         #panelOverview .ov-barline { grid-template-columns: 110px 56px 1fr 72px; }
       }
       #panelOverview .ov-barpct { text-align: left; }
+      #panelOverview .ov-achcell { white-space: nowrap; }
+      #panelOverview .ov-dpp { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      #panelOverview .kpi-card .ov-dpp { display: inline; margin: 0 0 0 4px; }
+      #panelOverview .ov-dpp.up { color: var(--accent); }
+      #panelOverview .ov-dpp.down { color: var(--alert); }
+      #panelOverview .ov-dpp.flat { color: var(--muted); font-weight: 500; }
       #panelOverview .ov-month { background: none; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
       #panelOverview .ov-month[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
       #panelOverview .ov-month.partial .ov-bar-stack { outline: 1px dashed var(--muted); outline-offset: 2px; }
@@ -4456,6 +4462,44 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (a == null && b == null) return null;
           return (a || 0) + (b || 0);
         }
+        // Run-rate factor per channel for one month: days in month / last day with data (1 once the
+        // month is complete). Each channel uses its own last day, like the RTR and 7-11 tabs do.
+        var ovRRCache = {};
+        function ovRR(key) {
+          if (ovRRCache[key]) return ovRRCache[key];
+          var dim = new Date(parseInt(key.slice(0, 4), 10), parseInt(key.slice(4, 6), 10), 0).getDate();
+          var rm = ovRtrMonth(key), fR = 1, fS = 1, dS = 0;
+          if (rm && Object.keys(rm.daily || {}).length) {
+            var dR = monthMaxDay(rm);
+            if (dR < dim) fR = dim / dR;
+          }
+          state.sev.stores.forEach(function (s) {
+            Object.keys(s.daily || {}).forEach(function (d) {
+              if (String(d).slice(0, 6) === key) dS = Math.max(dS, dayOfMonth(d));
+            });
+          });
+          if (dS > 0 && dS < dim) fS = dim / dS;
+          return (ovRRCache[key] = { fR: fR, fS: fS, partial: fR > 1 || fS > 1 });
+        }
+        // Combined %Ach, at run rate for a month still in progress. Needs a target on both sides.
+        function ovAch(rA, sA, rT, sT, key) {
+          if (rT == null || sT == null || !(rT + sT > 0) || (rA == null && sA == null)) return null;
+          var rr = ovRR(key);
+          return ((rA || 0) * rr.fR + (sA || 0) * rr.fS) / (rT + sT);
+        }
+        function ovAchLabel(key) {
+          return ovRR(key).partial ? "%Ach (RR)" : "%Ach";
+        }
+        // Change in %Ach against the earlier month shown, in percentage points.
+        function ovDeltaPp(cur, prev, prevKey) {
+          if (cur == null || prev == null) return "";
+          var pp = (cur - prev) * 100;
+          var cls = pp >= 0.05 ? "up" : pp <= -0.05 ? "down" : "flat";
+          return (
+            '<span class="ov-dpp ' + cls + '" title="เทียบ %Ach ' + esc(ovLabel(prevKey)) + '">' +
+            (cls === "up" ? "&#9650; +" : cls === "down" ? "&#9660; " : "") + pp.toFixed(1) + " pp</span>"
+          );
+        }
         function ovPctCell(v) {
           return v == null ? "—" : pctBadge(v, "achieve");
         }
@@ -4506,8 +4550,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           sel.forEach(function (k) { byKey[k] = ovCmData(k); });
           var isM1 = metric === "m1";
           var cols = isM1
-            ? ["RTR M1", "7-11 M1", "รวม M1", "เป้ารวม", "%Ach"]
-            : ["RTR GA", "7-11 GA", "รวม GA", "เป้ารวม", "%Ach"];
+            ? ["RTR M1", "7-11 M1", "รวม M1", "เป้ารวม"]
+            : ["RTR GA", "7-11 GA", "รวม GA", "เป้ารวม"];
 
           var head =
             '<tr><th style="text-align:left">CM</th>' +
@@ -4517,14 +4561,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               );
             }).join("") +
             "</tr><tr><th></th>" +
-            sel.map(function () {
-              return cols.map(function (c) {
+            sel.map(function (k) {
+              return cols.concat([ovAchLabel(k)]).map(function (c) {
                 return '<th style="text-align:right">' + c + "</th>";
               }).join("");
             }).join("") +
             "</tr>";
 
-          function cellsFor(k, row) {
+          function cellsFor(k, row, prev) {
             var rA = isM1 ? row.rtrM1 : row.rtrGA;
             var sA = isM1 ? row.sevM1 : row.sevGA;
             var rT = isM1 ? row.rtrM1T : row.rtrT;
@@ -4532,20 +4576,33 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             var comb = ovCombine(rA, sA);
             var combT = rT != null && sT != null ? rT + sT : null;
             var noTarget = combT == null && (rA != null || sA != null);
-            var pctVal = combT ? comb / combT : null;
-            return (
-              '<td class="num-cell" data-go="rtr" data-cm="' + esc(row.cm) + '">' + ovNum(rA, isM1) + "</td>" +
-              '<td class="num-cell" data-go="sev" data-cm="' + esc(row.cm) + '">' + ovNum(sA, isM1) + "</td>" +
-              '<td class="num-cell">' + ovNum(comb, isM1) + "</td>" +
-              '<td class="num-cell">' + (combT != null ? ovNum(combT, isM1) : noTarget ? "ไม่มีเป้า" : "—") + "</td>" +
-              '<td class="num-cell">' + ovPctCell(pctVal) + "</td>"
-            );
+            var pctVal = ovAch(rA, sA, rT, sT, k);
+            return {
+              pct: pctVal,
+              html:
+                '<td class="num-cell" data-go="rtr" data-cm="' + esc(row.cm) + '">' + ovNum(rA, isM1) + "</td>" +
+                '<td class="num-cell" data-go="sev" data-cm="' + esc(row.cm) + '">' + ovNum(sA, isM1) + "</td>" +
+                '<td class="num-cell">' + ovNum(comb, isM1) + "</td>" +
+                '<td class="num-cell">' + (combT != null ? ovNum(combT, isM1) : noTarget ? "ไม่มีเป้า" : "—") + "</td>" +
+                '<td class="num-cell ov-achcell">' + ovPctCell(pctVal) + (prev ? ovDeltaPp(pctVal, prev.pct, prev.k) : "") + "</td>",
+            };
+          }
+          // every later month's %Ach carries its change against the month before it in the table
+          function groupCells(list) {
+            var prev = null;
+            return list.map(function (x) {
+              var c = x.fn(prev);
+              prev = { pct: c.pct, k: x.k };
+              return c.html;
+            }).join("");
           }
 
           var rowsHtml = cms.map(function (cm) {
             return (
               '<tr class="clickable" data-go="both" data-cm="' + esc(cm) + '"><td>' + esc(cm) + "</td>" +
-              sel.map(function (k) { return cellsFor(k, byKey[k][cm]); }).join("") +
+              groupCells(sel.map(function (k) {
+                return { k: k, fn: function (prev) { return cellsFor(k, byKey[k][cm], prev); } };
+              })) +
               "</tr>"
             );
           }).join("");
@@ -4572,23 +4629,27 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             });
             return { k: k, agg: agg, complete: complete };
           });
-          var totalCells = totals.map(function (t) {
-            var a = t.agg;
-            var rA = isM1 ? a.rtrM1 : a.rtrGA;
-            var sA = isM1 ? a.sevM1 : a.sevGA;
-            var rT = isM1 ? a.rtrM1T : a.rtrT;
-            var sT = isM1 ? a.sevM1T : a.sevT;
-            var comb = ovCombine(rA, sA);
-            var combT = t.complete && rT != null && sT != null ? rT + sT : null;
-            var pctVal = combT ? comb / combT : null;
-            return (
-              "<td class=\"num-cell\">" + ovNum(rA, isM1) + "</td>" +
-              "<td class=\"num-cell\">" + ovNum(sA, isM1) + "</td>" +
-              "<td class=\"num-cell\">" + ovNum(comb, isM1) + "</td>" +
-              "<td class=\"num-cell\">" + (combT != null ? ovNum(combT, isM1) : "ไม่ครบ") + "</td>" +
-              "<td class=\"num-cell\">" + ovPctCell(pctVal) + "</td>"
-            );
-          }).join("");
+          var totalCells = groupCells(totals.map(function (t) {
+            return { k: t.k, fn: function (prev) {
+              var a = t.agg;
+              var rA = isM1 ? a.rtrM1 : a.rtrGA;
+              var sA = isM1 ? a.sevM1 : a.sevGA;
+              var rT = isM1 ? a.rtrM1T : a.rtrT;
+              var sT = isM1 ? a.sevM1T : a.sevT;
+              var comb = ovCombine(rA, sA);
+              var combT = t.complete && rT != null && sT != null ? rT + sT : null;
+              var pctVal = combT != null ? ovAch(rA, sA, rT, sT, t.k) : null;
+              return {
+                pct: pctVal,
+                html:
+                  "<td class=\"num-cell\">" + ovNum(rA, isM1) + "</td>" +
+                  "<td class=\"num-cell\">" + ovNum(sA, isM1) + "</td>" +
+                  "<td class=\"num-cell\">" + ovNum(comb, isM1) + "</td>" +
+                  "<td class=\"num-cell\">" + (combT != null ? ovNum(combT, isM1) : "ไม่ครบ") + "</td>" +
+                  "<td class=\"num-cell ov-achcell\">" + ovPctCell(pctVal) + (prev ? ovDeltaPp(pctVal, prev.pct, prev.k) : "") + "</td>",
+              };
+            } };
+          }));
 
           return (
             '<div class="table-scroll-box"><table><thead>' + head + "</thead><tbody>" +
@@ -4712,7 +4773,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var sT = ovSum(cms.map(function (c) { return d[c].sevT; }));
           var complete = cms.every(function (c) { return d[c].rtrT != null && d[c].sevT != null; });
           var combT = complete && rT != null && sT != null ? rT + sT : null;
-          return { rtr: rtr, sev: sev, comb: ovCombine(rtr, sev), combT: combT };
+          var ach = combT != null ? ovAch(rtr, sev, rT, sT, key) : null;
+          return { rtr: rtr, sev: sev, comb: ovCombine(rtr, sev), combT: combT, ach: ach };
         }
         // One row per CM (or per person) with the figures for each selected month.
         function ovAllItems(show, person) {
@@ -4736,12 +4798,12 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             });
         }
         // Sort key for one row's figures in one month. Rows without data sink to the bottom.
-        function ovSortValue(v, by) {
+        function ovSortValue(v, by, key) {
           var comb = ovCombine(v.rtr, v.sev);
           if (by === "sales") return comb == null ? -Infinity : comb;
           if (by === "pct") {
-            var t = v.rtrT != null && v.sevT != null ? v.rtrT + v.sevT : null;
-            return t && comb != null ? comb / t : -Infinity;
+            var a = ovAch(v.rtr, v.sev, v.rtrT, v.sevT, key);
+            return a == null ? -Infinity : a;
           }
           return 0;
         }
@@ -4751,8 +4813,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           return items.slice().sort(function (a, b) {
             if (person && a.cm !== b.cm) return a.cm.localeCompare(b.cm, "th");
             if (by !== "name") {
-              var va = ovSortValue(a.vals[latest], by);
-              var vb = ovSortValue(b.vals[latest], by);
+              var va = ovSortValue(a.vals[latest], by, latest);
+              var vb = ovSortValue(b.vals[latest], by, latest);
               if (va !== vb) return va < vb ? 1 : -1;
             }
             return a.name.localeCompare(b.name, "th");
@@ -4802,15 +4864,16 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var f = ovCmFilter();
           $("ovKpis").innerHTML =
             '<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">' +
-            show.map(function (k) {
+            show.map(function (k, i) {
               var t = ovTotal(k);
-              var pctVal = t.combT && t.comb != null ? t.comb / t.combT : null;
+              var prevK = i > 0 ? show[i - 1] : null;
+              var delta = prevK ? ovDeltaPp(t.ach, ovTotal(prevK).ach, prevK) : "";
               return (
                 '<div class="kpi-card"><div class="label">GA รวม' + (f ? " · " + esc(f) : "") + " · " + esc(ovLabel(k)) +
                 (ovPartial(k) ? " · ยังไม่ครบเดือน" : "") + "</div>" +
                 '<div class="value">' + ovNum(t.comb) + "</div>" +
-                '<div class="sub">RTR ' + ovNum(t.rtr) + " · 7-11 " + ovNum(t.sev) + " · %Ach " +
-                (pctVal == null ? "ไม่มีเป้า" : pct(pctVal)) + "</div></div>"
+                '<div class="sub">RTR ' + ovNum(t.rtr) + " · 7-11 " + ovNum(t.sev) + " · " + ovAchLabel(k) + " " +
+                (t.ach == null ? "ไม่มีเป้า" : pct(t.ach)) + (delta ? " " + delta : "") + "</div></div>"
               );
             }).join("") + "</div>";
         }
@@ -4840,13 +4903,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 var val = ch === "rtr" ? v.rtr : v.sev;
                 var t = ch === "rtr" ? v.rtrT : v.sevT;
                 var name = ch === "rtr" ? "RTR" : "7-11";
+                var rrF = ch === "rtr" ? ovRR(k).fR : ovRR(k).fS;
+                var chAch = val != null && t ? (val * rrF) / t : null;
                 var tip = it.name + " · " + ovLabel(k) + " · " + name + " GA " + (val == null ? "—" : fmt(val)) +
-                  " · เป้า " + (t ? fmt(t) : "ไม่มีเป้า") + " · %Ach " + (val != null && t ? pct(val / t) : "—");
+                  " · เป้า " + (t ? fmt(t) : "ไม่มีเป้า") + " · " + ovAchLabel(k) + " " + (chAch != null ? pct(chAch) : "—");
                 var w = val != null ? Math.max(0.5, (val / max) * 100) : 0;
                 return (
                   '<span class="ov-barline' + (ki ? " later" : "") + '" title="' + esc(tip) + '">' +
                   '<span class="ov-bartag">' + esc(ovLabel(k)) + " · " + name + "</span>" +
-                  '<span class="ov-barpct">' + ovPctCell(val != null && t ? val / t : null) + "</span>" +
+                  '<span class="ov-barpct">' + ovPctCell(chAch) + "</span>" +
                   '<span class="ov-bartrack"><span class="ov-bar ' + ch + '" style="width:' + w.toFixed(2) + '%"></span></span>' +
                   '<span class="ov-barval">' + (val == null ? "—" : fmt(val)) + "</span></span>"
                 );
@@ -4880,25 +4945,28 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               return '<th colspan="5" style="text-align:center">' + esc(ovLabel(k)) + "</th>";
             }).join("") +
             "</tr><tr><th></th>" +
-            show.map(function () {
-              return ["RTR GA", "7-11 GA", "รวม GA", "เป้ารวม", "%Ach"].map(function (c) {
+            show.map(function (k) {
+              return ["RTR GA", "7-11 GA", "รวม GA", "เป้ารวม", ovAchLabel(k)].map(function (c) {
                 return '<th style="text-align:right">' + c + "</th>";
               }).join("");
             }).join("") +
             "</tr>";
           var rows = items.map(function (it) {
-            var cells = show.map(function (k) {
+            var prevPct = null;
+            var cells = show.map(function (k, i) {
               var d = it.vals[k];
               var comb = ovCombine(d.rtr, d.sev);
               var combT = d.rtrT != null && d.sevT != null ? d.rtrT + d.sevT : null;
-              var pctVal = combT && comb != null ? comb / combT : null;
+              var pctVal = ovAch(d.rtr, d.sev, d.rtrT, d.sevT, k);
+              var delta = i > 0 ? ovDeltaPp(pctVal, prevPct, show[i - 1]) : "";
+              prevPct = pctVal;
               var attrs = ' data-cm="' + esc(it.cm) + '" data-com="' + esc(it.name) + '"';
               return (
                 '<td class="num-cell" data-go="rtr"' + attrs + ">" + ovNum(d.rtr) + "</td>" +
                 '<td class="num-cell" data-go="sev"' + attrs + ">" + ovNum(d.sev) + "</td>" +
                 '<td class="num-cell">' + ovNum(comb) + "</td>" +
                 '<td class="num-cell">' + (combT != null ? ovNum(combT) : comb != null ? "ไม่มีเป้า" : "—") + "</td>" +
-                '<td class="num-cell">' + ovPctCell(pctVal) + "</td>"
+                '<td class="num-cell ov-achcell">' + ovPctCell(pctVal) + delta + "</td>"
               );
             }).join("");
             return (
@@ -4909,15 +4977,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (!items.length) {
             rows = '<tr><td colspan="' + (1 + show.length * 5) + '" class="table-empty">ไม่พบรายการตามตัวกรองนี้</td></tr>';
           }
-          var totalCells = show.map(function (k) {
+          var totalCells = show.map(function (k, i) {
             var t = ovTotal(k);
-            var pctVal = t.combT && t.comb != null ? t.comb / t.combT : null;
+            var delta = i > 0 ? ovDeltaPp(t.ach, ovTotal(show[i - 1]).ach, show[i - 1]) : "";
             return (
               '<td class="num-cell">' + ovNum(t.rtr) + "</td>" +
               '<td class="num-cell">' + ovNum(t.sev) + "</td>" +
               '<td class="num-cell">' + ovNum(t.comb) + "</td>" +
               '<td class="num-cell">' + (t.combT != null ? ovNum(t.combT) : "ไม่ครบ") + "</td>" +
-              '<td class="num-cell">' + ovPctCell(pctVal) + "</td>"
+              '<td class="num-cell ov-achcell">' + ovPctCell(t.ach) + delta + "</td>"
             );
           }).join("");
           return (
@@ -4927,6 +4995,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
         }
 
         function renderOverview() {
+          ovRRCache = {};
           var keys = ovAllKeys();
           if (!keys.length) {
             $("ovViewSwitch").innerHTML = "";
@@ -4949,7 +5018,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           state.rtr.overviewMonths = sel;
           var show = sel.slice().sort();
           var ae = ovView() === "ae";
-          $("ovHint").textContent = "รวม GA จากทั้งสองช่องทาง · เป้ารวมแสดงเฉพาะเมื่อทั้งสองช่องทางมีเป้า · เลือกได้ 2 เดือน";
+          $("ovHint").textContent =
+            "รวม GA จากทั้งสองช่องทาง · เป้ารวมแสดงเฉพาะเมื่อทั้งสองช่องทางมีเป้า · เดือนที่ยังไม่จบคิด %Ach แบบ RR · เลือกได้ 2 เดือน";
           renderOvViewSwitch();
           renderOvFilters(show[show.length - 1]);
           renderOvPicker(keys, show);

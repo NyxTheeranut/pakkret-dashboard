@@ -84,6 +84,21 @@ class TiersWithoutTourist(unittest.TestCase):
         self.assertEqual(len(hdr), len(table["stores"]["rows"][0]))
 
 
+class SevCmSummaryByMonth(unittest.TestCase):
+    def test_each_file_fills_its_own_month_only(self):
+        by_month = {"202610": {"Cm A": {"ga": 1003, "m1": 162657}},
+                    "202611": {"Cm A": {"ga": 1092, "m1": 166100}}}
+        targets = {"202610": {"Cm A": {"ga": 1003, "m1": 0}}}  # Oct GA from LE, no M1
+        u.merge_cm_ga_summaries(targets, by_month, "202611")
+        self.assertEqual(targets["202610"]["Cm A"], {"ga": 1003, "m1": 162657})
+        self.assertEqual(targets["202611"]["Cm A"], {"ga": 1092, "m1": 166100})
+
+    def test_file_without_month_counts_as_newest(self):
+        targets = {}
+        u.merge_cm_ga_summaries(targets, {None: {"Cm A": {"ga": 5, "m1": 9}}}, "202611")
+        self.assertEqual(targets, {"202611": {"Cm A": {"ga": 5, "m1": 9}}})
+
+
 class RoutingNewStores(unittest.TestCase):
     def test_a_store_only_the_routing_sheet_lists_is_added_with_both_codes(self):
         with tempfile.TemporaryDirectory() as tmp:
