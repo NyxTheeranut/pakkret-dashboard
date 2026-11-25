@@ -2681,6 +2681,15 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 .apx-table td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--line, rgba(22,32,28,.08)); font-variant-numeric: tabular-nums; }
 .apx-table td:first-child { display: flex; align-items: center; gap: 8px; }
 .apx-table i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+.apx-tablewrap { overflow-x: auto; margin-bottom: 18px; }
+.apx-tablewrap .apx-table { margin-bottom: 0; }
+.apx-table thead th { vertical-align: bottom; }
+.apx-table th.apx-grp { text-align: center; padding-bottom: 4px; }
+.apx-table thead tr + tr th:first-child { text-align: right; }
+.apx-table .apx-was { color: var(--muted); }
+.apx-table tfoot th, .apx-table tfoot td { font-weight: 600; color: var(--ink, #16201c); border-top: 1.5px solid var(--line, rgba(22,32,28,.24)); border-bottom: none; padding-top: 9px; }
+.apx-table tfoot th { text-align: left; font-size: 13px; padding: 9px 10px 8px; }
+.apx-table tfoot .apx-was { color: var(--muted); font-weight: 500; }
 .apx-d { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .apx-d.up { color: var(--accent); }
 .apx-d.down { color: var(--alert); }
@@ -2701,7 +2710,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 @media (max-width: 640px) {
   .apx-group { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
   .apx-gbar { grid-column: 1 / -1; order: 3; }
-  .apx-table th, .apx-table td { padding: 6px 6px; }
+  .apx-table th, .apx-table td { padding: 6px 6px; white-space: nowrap; }
+  /* the table scrolls sideways on a phone; the price-band column stays put so every row keeps its name */
+  .apx-table td:first-child, .apx-table tbody td:first-child, .apx-table tfoot th, .apx-table thead tr:first-child th:first-child {
+    position: sticky; left: 0; z-index: 1; background: var(--panel, #fcfcfa); }
+  .apx-table .apx-d { font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .apx-group { transition: none; } }
 </style>
@@ -7403,17 +7416,29 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             '<div class="apx-bars"><div class="apx-bar-row"><span>เดือนนี้</span>' + apxStack(nowV, colors, "seg-stack") + "</div>" +
             (hasPrev ? '<div class="apx-bar-row"><span>เดือนก่อน</span><div class="apx-prev">' + apxStack(prevV, colors, "seg-stack") + "</div></div>" : "") +
             "</div>" +
-            '<table class="apx-table"><thead><tr><th scope="col">ช่วงราคา</th><th scope="col">Actual</th><th scope="col">สัดส่วน</th>' +
-            (hasPrev ? '<th scope="col">เดือนก่อน</th><th scope="col">เปลี่ยน</th>' : "") +
-            "</tr></thead><tbody>" +
+            '<div class="apx-tablewrap"><table class="apx-table"><thead>' +
+            (hasPrev
+              ? '<tr><th scope="col" rowspan="2">ช่วงราคา</th><th scope="colgroup" colspan="2" class="apx-grp">จำนวน</th>' +
+                '<th scope="colgroup" colspan="2" class="apx-grp">สัดส่วน</th><th scope="col" rowspan="2">เปลี่ยน</th></tr>' +
+                '<tr><th scope="col">Actual</th><th scope="col">เดือนก่อน</th><th scope="col">เดือนนี้</th><th scope="col">เดือนก่อน</th></tr>'
+              : '<tr><th scope="col">ช่วงราคา</th><th scope="col">Actual</th><th scope="col">สัดส่วน</th></tr>') +
+            "</thead><tbody>" +
             bs.map(function (b) {
               var shN = tN > 0 ? b.now / tN : 0, shP = tP > 0 ? (b.prev || 0) / tP : 0;
               return (
                 '<tr><td><i style="background:' + b.color + '"></i>' + esc(b.label) + "</td><td>" + fmt(b.now) +
-                (hasPrev && o.countDelta ? apxPctDelta(b.now, b.prev || 0) : "") + "</td><td>" + pct1(shN) + "</td>" +
-                (hasPrev ? "<td>" + pct1(shP) + "</td><td>" + apxDelta(shN - shP) + "</td>" : "") + "</tr>"
+                (hasPrev && o.countDelta ? apxPctDelta(b.now, b.prev || 0) : "") + "</td>" +
+                (hasPrev ? '<td class="apx-was">' + fmt(b.prev || 0) + "</td>" : "") +
+                "<td>" + pct1(shN) + "</td>" +
+                (hasPrev ? '<td class="apx-was">' + pct1(shP) + "</td><td>" + apxDelta(shN - shP) + "</td>" : "") + "</tr>"
               );
-            }).join("") + "</tbody></table>";
+            }).join("") +
+            "</tbody><tfoot><tr><th scope=\"row\">รวม</th><td>" + fmt(tN) +
+            (hasPrev && o.countDelta ? apxPctDelta(tN, tP) : "") + "</td>" +
+            (hasPrev ? '<td class="apx-was">' + fmt(tP) + "</td>" : "") +
+            "<td>100%</td>" +
+            (hasPrev ? '<td class="apx-was">100%</td><td></td>' : "") +
+            "</tr></tfoot></table></div>";
           if (o.groups && o.groups.length > 1) {
             var top = bs.length - 1;
             html += '<div class="apx-gtitle">' + esc(o.groupTitle) + '</div><div class="apx-ghint">' + esc(o.groupHint) + '</div><div class="apx-groups">' +
