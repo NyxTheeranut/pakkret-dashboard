@@ -1791,8 +1791,6 @@
   --warn-soft: #f8efd9;
   --alert: #c4423c;
   --alert-soft: #f8e5e2;
-  --on-dark-ok: #7fd8cc;
-  --on-dark-alert: #ffaaa3;
   --line: rgba(21, 32, 29, 0.09);
   --muted: #5d6864;
 
@@ -2811,49 +2809,46 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 .kpi-dual .sub { padding: 0 20px; }
 @media (max-width: 720px) { .kpi-card.kpi-dual { grid-column: 1 / -1; } .kpi-grid:has(.kpi-dual) > .kpi-card:last-child { grid-column: 1 / -1; } .kpi-dual .kpi-half { padding-left: 20px; } .kpi-dual .kpi-half + .kpi-half { padding-left: 20px; } }
 /* ---- activation quality band (AP1D vs its KPI bar, AP30D) ---------------------------------- */
-.aq-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.aq-card { background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); padding: 20px 24px 18px; min-width: 0; }
-.aq-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 24px; }
+.aq-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+.aq-card { padding: 14px 20px 13px; min-width: 0; }
+.aq-card + .aq-card { border-left: 1px solid var(--line); }
+.aq-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 22px; }
 .aq-name { font-size: 13px; font-weight: 600; color: var(--ink); }
-.aq-chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.aq-chip { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
 .aq-card.is-ok .aq-chip { background: var(--accent-soft); color: var(--accent); }
 .aq-card.is-below .aq-chip { background: var(--alert-soft); color: var(--alert); }
-.aq-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; }
-.aq-value { font-family: var(--font-display); font-size: 44px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; color: var(--ink); }
+.aq-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; margin-top: 2px; }
+.aq-value { font-family: var(--font-display); font-size: 28px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.15; color: var(--ink); }
 .aq-card.is-ok .aq-value { color: var(--accent); }
 .aq-card.is-below .aq-value { color: var(--alert); }
-.aq-row .apx-d { font-size: 14px; }
+.aq-row .apx-d { font-size: 13px; }
 .aq-vs { font-size: 12px; color: var(--muted); }
-.aq-gauge { position: relative; height: 10px; margin: 16px 0 10px; border-radius: 999px; background: rgba(21, 32, 29, 0.07); }
+.aq-gauge { position: relative; height: 6px; margin: 10px 0 8px; border-radius: 999px; background: rgba(21, 32, 29, 0.07); }
 .aq-fill { position: absolute; inset: 0; border-radius: inherit; background: var(--muted); transform-origin: left center; }
 .aq-card.is-ok .aq-fill { background: var(--accent); }
 .aq-card.is-below .aq-fill { background: var(--alert); }
-.aq-mark { position: absolute; top: -4px; bottom: -4px; width: 0; }
+.aq-mark { position: absolute; top: -3px; bottom: -3px; width: 0; }
 .aq-mark::before { content: ""; position: absolute; top: 0; bottom: 0; left: -1.5px; width: 3px; border-radius: 2px; background: var(--ink); box-shadow: 0 0 0 2px var(--panel); }
-.aq-mark.prev::before { top: 50%; bottom: auto; left: -6px; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--panel); border: 2.5px solid var(--ink); box-sizing: border-box; box-shadow: none; }
+.aq-mark.prev::before { top: 50%; bottom: auto; left: -5px; width: 10px; height: 10px; margin-top: -5px; border-radius: 50%; background: var(--panel); border: 2.5px solid var(--ink); box-sizing: border-box; box-shadow: none; }
 .aq-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .aq-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .aq-legend i { display: inline-block; flex: none; }
 .aq-legend i.t { width: 3px; height: 12px; border-radius: 2px; background: var(--ink); }
 .aq-legend i.p { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink); box-sizing: border-box; }
-.aq-sub { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.6; color: var(--muted); font-variant-numeric: tabular-nums; }
+.aq-sub { margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--muted); font-variant-numeric: tabular-nums; }
 .aq-sub b { color: var(--ink); font-weight: 600; }
 .aq-grid:has(> :nth-child(3)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .aq-link { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; border-radius: 4px; }
 .aq-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.cm-tab .cm-aq { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--accent); }
-.cm-tab .cm-aq.is-below { color: var(--alert); }
-.cm-tab.active .cm-aq { color: var(--on-dark-ok); }
-.cm-tab.active .cm-aq.is-below { color: var(--on-dark-alert); }
 .aq-cell { font-weight: 500; font-variant-numeric: tabular-nums; }
 .aq-cell.is-below { color: var(--alert); font-weight: 700; }
 @media (max-width: 980px) {
   .aq-grid:has(> :nth-child(3)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .aq-grid > :nth-child(3) { grid-column: 1 / -1; }
+  .aq-grid > :nth-child(3) { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
 }
 @media (max-width: 720px) {
   .aq-grid, .aq-grid:has(> :nth-child(3)) { grid-template-columns: minmax(0, 1fr); }
-  .aq-value { font-size: 38px; }
+  .aq-card + .aq-card { border-left: 0; border-top: 1px solid var(--line); }
 }
 .kpi-card .kpi-grey {
   margin-left: 8px; font-family: inherit; font-size: 13px; font-weight: 500; letter-spacing: 0; line-height: 1;
@@ -6067,17 +6062,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var ovBtn = document.createElement("button");
           ovBtn.className =
             "cm-tab" + (state.rtr.currentCM === null ? " active" : "");
-          // %AP1D next to each name, so a CM under the KPI bar shows before anyone clicks in
-          function aqTag(stores) {
-            var a = activationOf(stores);
-            if (!a.ok || !(a.ga > 0)) return "";
-            var r = activationRate(a, "ap1d").rate;
-            return '<span class="cm-aq' + (r < AQ_KPI ? " is-below" : "") + '">AP1D ' + pct1(r) + "</span>";
-          }
           ovBtn.innerHTML =
             '<span>ภาพรวม</span><span class="count">' +
             m.stores.length +
-            " ร้าน</span>" + aqTag(m.stores);
+            " ร้าน</span>";
           ovBtn.addEventListener("click", function () {
             state.rtr.currentCM = null;
             state.rtr.currentCOM = null;
@@ -6098,8 +6086,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               esc(cm) +
               '</span><span class="count">' +
               d.storeCount +
-              " ร้าน</span>" +
-              aqTag(m.stores.filter(function (s) { return s.cm === cm; }));
+              " ร้าน</span>";
             btn.addEventListener("click", function () {
               state.rtr.currentCM = cm;
               state.rtr.currentCOM = null;
@@ -6309,7 +6296,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           });
         }
         // AP1D Quality bar from the monthly KPI block (Mass + Migrant, ซิมอันลิมิต excluded).
-        var AQ_KPI = 0.58;
+        var AQ_KPI = 0.72;
         // Activation = AP / GA of Mass + Migrant SIMs only (Tourist is left out). The excluded shops
         // (ซิมอันลิมิต) come out of the main figure; the same figure with them is shown as "รวม".
         function activationOf(stores) {
@@ -8509,7 +8496,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           }
           // Fixed pass marks (set by the team) instead of the median: a store below the line is at risk
           var RISK_AP30D_MARK = 0.8;
-          var RISK_AP1D_MARK = 0.72;
+          var RISK_AP1D_MARK = AQ_KPI;
           var medianConv = RISK_AP30D_MARK;
           var riskStoresAll = riskList("conv30", medianConv);
           var riskStores = riskStoresAll.slice(0, 10);
