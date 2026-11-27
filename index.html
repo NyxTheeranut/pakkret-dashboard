@@ -1791,6 +1791,8 @@
   --warn-soft: #f8efd9;
   --alert: #c4423c;
   --alert-soft: #f8e5e2;
+  --on-dark-ok: #7fd8cc;
+  --on-dark-alert: #ffaaa3;
   --line: rgba(21, 32, 29, 0.09);
   --muted: #5d6864;
 
@@ -2808,6 +2810,51 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
 .kpi-dual .kpi-half .kpi-split > div { gap: 6px; }
 .kpi-dual .sub { padding: 0 20px; }
 @media (max-width: 720px) { .kpi-card.kpi-dual { grid-column: 1 / -1; } .kpi-grid:has(.kpi-dual) > .kpi-card:last-child { grid-column: 1 / -1; } .kpi-dual .kpi-half { padding-left: 20px; } .kpi-dual .kpi-half + .kpi-half { padding-left: 20px; } }
+/* ---- activation quality band (AP1D vs its KPI bar, AP30D) ---------------------------------- */
+.aq-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.aq-card { background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); padding: 20px 24px 18px; min-width: 0; }
+.aq-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 24px; }
+.aq-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.aq-chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.aq-card.is-ok .aq-chip { background: var(--accent-soft); color: var(--accent); }
+.aq-card.is-below .aq-chip { background: var(--alert-soft); color: var(--alert); }
+.aq-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; }
+.aq-value { font-family: var(--font-display); font-size: 44px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; color: var(--ink); }
+.aq-card.is-ok .aq-value { color: var(--accent); }
+.aq-card.is-below .aq-value { color: var(--alert); }
+.aq-row .apx-d { font-size: 14px; }
+.aq-vs { font-size: 12px; color: var(--muted); }
+.aq-gauge { position: relative; height: 10px; margin: 16px 0 10px; border-radius: 999px; background: rgba(21, 32, 29, 0.07); }
+.aq-fill { position: absolute; inset: 0; border-radius: inherit; background: var(--muted); transform-origin: left center; }
+.aq-card.is-ok .aq-fill { background: var(--accent); }
+.aq-card.is-below .aq-fill { background: var(--alert); }
+.aq-mark { position: absolute; top: -4px; bottom: -4px; width: 0; }
+.aq-mark::before { content: ""; position: absolute; top: 0; bottom: 0; left: -1.5px; width: 3px; border-radius: 2px; background: var(--ink); box-shadow: 0 0 0 2px var(--panel); }
+.aq-mark.prev::before { top: 50%; bottom: auto; left: -6px; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--panel); border: 2.5px solid var(--ink); box-sizing: border-box; box-shadow: none; }
+.aq-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.aq-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.aq-legend i { display: inline-block; flex: none; }
+.aq-legend i.t { width: 3px; height: 12px; border-radius: 2px; background: var(--ink); }
+.aq-legend i.p { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink); box-sizing: border-box; }
+.aq-sub { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.6; color: var(--muted); font-variant-numeric: tabular-nums; }
+.aq-sub b { color: var(--ink); font-weight: 600; }
+.aq-grid:has(> :nth-child(3)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.aq-link { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; border-radius: 4px; }
+.aq-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cm-tab .cm-aq { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--accent); }
+.cm-tab .cm-aq.is-below { color: var(--alert); }
+.cm-tab.active .cm-aq { color: var(--on-dark-ok); }
+.cm-tab.active .cm-aq.is-below { color: var(--on-dark-alert); }
+.aq-cell { font-weight: 500; font-variant-numeric: tabular-nums; }
+.aq-cell.is-below { color: var(--alert); font-weight: 700; }
+@media (max-width: 980px) {
+  .aq-grid:has(> :nth-child(3)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .aq-grid > :nth-child(3) { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
+  .aq-grid, .aq-grid:has(> :nth-child(3)) { grid-template-columns: minmax(0, 1fr); }
+  .aq-value { font-size: 38px; }
+}
 .kpi-card .kpi-grey {
   margin-left: 8px; font-family: inherit; font-size: 13px; font-weight: 500; letter-spacing: 0; line-height: 1;
   color: var(--muted, #5a6560); font-variant-numeric: tabular-nums; white-space: nowrap;
@@ -3013,6 +3060,16 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               </button>
             </div>
             <div id="perfKpiGrid"></div>
+          </section>
+
+          <!-- Activation quality right under the target cards: AP1D is a KPI with its own bar (AQ_KPI),
+               so it gets the second-loudest spot on the page, not a tile next to the store count. -->
+          <section id="rtrQualitySection">
+            <div class="section-head">
+              <h2>คุณภาพการเปิดใช้</h2>
+              <span class="hint" id="rtrQualityHint"></span>
+            </div>
+            <div class="aq-grid" id="rtrQualityGrid"></div>
           </section>
 
           <section><div class="kpi-grid" id="rtrKpiGrid"></div></section>
@@ -5972,6 +6029,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           renderRtrHealth();
           renderRtrCoverageNote();
           renderRtrKpis();
+          renderRtrQuality();
           renderPerformance();
           renderApMix();
           renderComLeaderboard();
@@ -6009,10 +6067,17 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           var ovBtn = document.createElement("button");
           ovBtn.className =
             "cm-tab" + (state.rtr.currentCM === null ? " active" : "");
+          // %AP1D next to each name, so a CM under the KPI bar shows before anyone clicks in
+          function aqTag(stores) {
+            var a = activationOf(stores);
+            if (!a.ok || !(a.ga > 0)) return "";
+            var r = activationRate(a, "ap1d").rate;
+            return '<span class="cm-aq' + (r < AQ_KPI ? " is-below" : "") + '">AP1D ' + pct1(r) + "</span>";
+          }
           ovBtn.innerHTML =
             '<span>ภาพรวม</span><span class="count">' +
             m.stores.length +
-            " ร้าน</span>";
+            " ร้าน</span>" + aqTag(m.stores);
           ovBtn.addEventListener("click", function () {
             state.rtr.currentCM = null;
             state.rtr.currentCOM = null;
@@ -6033,7 +6098,8 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               esc(cm) +
               '</span><span class="count">' +
               d.storeCount +
-              " ร้าน</span>";
+              " ร้าน</span>" +
+              aqTag(m.stores.filter(function (s) { return s.cm === cm; }));
             btn.addEventListener("click", function () {
               state.rtr.currentCM = cm;
               state.rtr.currentCOM = null;
@@ -6242,52 +6308,126 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
             return nm.indexOf(n) !== -1;
           });
         }
+        // AP1D Quality bar from the monthly KPI block (Mass + Migrant, ซิมอันลิมิต excluded).
+        var AQ_KPI = 0.58;
+        // Activation = AP / GA of Mass + Migrant SIMs only (Tourist is left out). The excluded shops
+        // (ซิมอันลิมิต) come out of the main figure; the same figure with them is shown as "รวม".
+        function activationOf(stores) {
+          var a = { ga: 0, ap1d: 0, ap30d: 0, exGa: 0, exAp1d: 0, exAp30d: 0, ok: false };
+          stores.forEach(function (s) {
+            if (s.ap1dMM != null) a.ok = true; // any store carrying the split = published after the update
+            var g = (s.mass || 0) + (s.migrant || 0);
+            a.ga += g;
+            a.ap1d += s.ap1dMM || 0;
+            a.ap30d += s.ap30dMM || 0;
+            if (isActivationExcluded(s)) {
+              a.exGa += g;
+              a.exAp1d += s.ap1dMM || 0;
+              a.exAp30d += s.ap30dMM || 0;
+            }
+          });
+          return a;
+        }
+        // {rate, ap, ga, full, excluded} for one key; rate leaves the excluded shops out when that is possible.
+        function activationRate(a, key) {
+          var ap = a[key], ex = key === "ap1d" ? a.exAp1d : a.exAp30d;
+          var full = a.ga > 0 ? ap / a.ga : null;
+          var gaX = a.ga - a.exGa;
+          if (!(a.exGa > 0) || !(gaX > 0)) return { rate: full, ap: ap, ga: a.ga, full: full, excluded: false };
+          return { rate: (ap - ex) / gaX, ap: ap - ex, ga: gaX, full: full, excluded: true };
+        }
+        // Sums over the stores inside the CURRENT filters (CM / COM / district / mall type), and the same
+        // filters on last month for the marker and the pp change.
+        function renderRtrQuality() {
+          var grid = $("rtrQualityGrid");
+          var m = rtrCurrentMonth();
+          var act = activationOf(rtrCurrentStores());
+          var prevM = state.rtr.currentMonthIdx > 0 ? state.rtr.months[state.rtr.currentMonthIdx - 1] : null;
+          var prevAct = prevM ? activationOf(rtrCurrentStores(prevM)) : null;
+          if (prevAct && !(prevAct.ok && prevAct.ga > 0)) prevAct = null;
+          if (!act.ok || !(act.ga > 0)) {
+            $("rtrQualityHint").textContent = "";
+            grid.innerHTML = '<div class="insight-empty">' +
+              (act.ok ? "ไม่มี GA ซิม Mass + Migrant ในมุมมองนี้" : "ชีตนี้ยังไม่แยก AP ของ Mass + Migrant · รันอัปเดตอีกครั้ง") + "</div>";
+            return;
+          }
+          var cur1 = activationRate(act, "ap1d");
+          $("rtrQualityHint").textContent =
+            "AP ÷ GA ของซิม Mass + Migrant" +
+            (cur1.excluded ? " · ไม่รวมซิมอันลิมิต" : "") +
+            (prevAct ? " · จุดกลวงบนแถบ = " + prevM.label : "");
+          // Share of AP1D subs in the 300+ baht band, same Mass + Migrant / no-ซิมอันลิมิต basis as the two cards above
+          function ap300Of(stores) {
+            var n = 0, total = 0, any = false;
+            stores.forEach(function (s) {
+              if (!s.tiersMM || isActivationExcluded(s)) return;
+              any = true;
+              n += s.tiersMM[7];
+              total += s.tiersMM.reduce(function (a, b) { return a + b; }, 0);
+            });
+            return any && total > 0 ? { rate: n / total, ap: n, ga: total } : null;
+          }
+          function apSub(c) {
+            return '<b>' + fmt(c.ap) + "</b> จาก " + fmt(c.ga) + " ซิม" +
+              (c.excluded ? " · รวมซิมอันลิมิตด้วย = " + pct1(c.full) : "");
+          }
+          function card(name, c, p, kpi, sub) {
+            var status = kpi == null ? "" : c.rate >= kpi ? "is-ok" : "is-below";
+            var clamp = function (v) { return Math.max(0, Math.min(1, v)); };
+            var marks =
+              (kpi != null ? '<span class="aq-mark" style="left:' + kpi * 100 + '%"></span>' : "") +
+              (p && p.rate != null ? '<span class="aq-mark prev" style="left:' + clamp(p.rate) * 100 + '%"></span>' : "");
+            var legend = [];
+            if (kpi != null) legend.push('<span><i class="t"></i>เกณฑ์ KPI ' + pct(kpi) + "</span>");
+            if (p && p.rate != null) legend.push('<span><i class="p"></i>' + esc(prevM.label) + " " + pct1(p.rate) + "</span>");
+            var aria = name + " " + pct1(c.rate) +
+              (kpi != null ? ", เกณฑ์ " + pct(kpi) : "") +
+              (p && p.rate != null ? ", " + prevM.label + " " + pct1(p.rate) : "");
+            return (
+              '<div class="aq-card ' + status + '">' +
+              '<div class="aq-top"><span class="aq-name">' + esc(name) + "</span>" +
+              (kpi != null
+                ? '<span class="aq-chip">' + (c.rate >= kpi ? "ผ่านเกณฑ์ " : "ต่ำกว่าเกณฑ์ ") + pct(kpi) + "</span>"
+                : "") +
+              "</div>" +
+              '<div class="aq-row"><span class="aq-value">' + pct1(c.rate) + "</span>" +
+              (p && p.rate != null
+                ? apxDelta(c.rate - p.rate) + '<span class="aq-vs">เทียบ ' + esc(prevM.label) + "</span>"
+                : "") +
+              "</div>" +
+              '<div class="aq-gauge" role="img" aria-label="' + esc(aria) + '">' +
+              '<div class="aq-fill" style="transform:scaleX(' + clamp(c.rate) + ')"></div>' + marks + "</div>" +
+              (legend.length ? '<div class="aq-legend">' + legend.join("") + "</div>" : "") +
+              '<div class="aq-sub">' + sub + "</div></div>"
+            );
+          }
+          var a1 = activationRate(act, "ap1d"), a30 = activationRate(act, "ap30d");
+          var p1 = prevAct ? activationRate(prevAct, "ap1d") : null, p30 = prevAct ? activationRate(prevAct, "ap30d") : null;
+          var h = ap300Of(rtrCurrentStores()), ph = prevM ? ap300Of(rtrCurrentStores(prevM)) : null;
+          grid.innerHTML =
+            card("AP1D", a1, p1, AQ_KPI, apSub(a1) +
+              ' · <a href="#rtrInsightsGrid" class="aq-link">ดูร้านที่ AP1D ต่ำ</a>') +
+            card("AP30D", a30, p30, null, apSub(a30)) +
+            (h ? card("แพ็ก 300+ ของ AP1D", h, ph, null, "<b>" + fmt(h.ap) + "</b> จาก " + fmt(h.ga) + " ซิมที่ AP1D") : "");
+        }
+
         function renderRtrKpis() {
           var scope = rtrCurrentScope();
           var t = scope.totals;
-          // Activation = AP / GA of Mass + Migrant SIMs only (Tourist is left out). The excluded shops
-          // (ซิมอันลิมิต) come out of the main figure; the same figure with them is the small grey one.
-          // Sums over the stores inside the CURRENT filters (CM / COM / district / mall type).
-          var act = { ga: 0, ap1d: 0, ap30d: 0, exGa: 0, exAp1d: 0, exAp30d: 0, ok: false };
-          rtrCurrentStores().forEach(function (s) {
-            if (s.ap1dMM != null) act.ok = true; // any store carrying the split = published after the update
-            var g = (s.mass || 0) + (s.migrant || 0);
-            act.ga += g;
-            act.ap1d += s.ap1dMM || 0;
-            act.ap30d += s.ap30dMM || 0;
-            if (isActivationExcluded(s)) {
-              act.exGa += g;
-              act.exAp1d += s.ap1dMM || 0;
-              act.exAp30d += s.ap30dMM || 0;
+          // RTR Expansion: a store selling this month that sold nothing in any earlier loaded month.
+          // shortcut: looks back only as far as the months loaded on the page, so the first month has no count.
+          function storeCountCard() {
+            var idx = state.rtr.currentMonthIdx, stores = rtrCurrentStores();
+            var notes = ["ยังไม่มียอดเดือนนี้ " + fmt(stores.filter(function (s) { return !(s.ga > 0); }).length) + " ร้าน"];
+            if (idx > 0) {
+              var seen = {};
+              state.rtr.months.slice(0, idx).forEach(function (mo) {
+                mo.stores.forEach(function (s) { if (s.ga > 0) seen[s.code] = true; });
+              });
+              var fresh = stores.filter(function (s) { return s.ga > 0 && !seen[s.code]; }).length;
+              notes.unshift("ร้านใหม่ " + fmt(fresh) + " ร้าน (ไม่เคยมียอดตั้งแต่ " + state.rtr.months[0].label + ")");
             }
-          });
-          function activationCard(label, key) {
-            var ex = key === "ap1d" ? act.exAp1d : act.exAp30d;
-            var ap = act[key];
-            if (!act.ok)
-              // Sheet published before the Mass+Migrant split existed: show all SIMs until the next update
-              return {
-                label: label,
-                value: pct(t.ga > 0 ? t[key] / t.ga : 0),
-                sub: fmt(t[key]) + " จาก " + fmt(t.ga) + " ซิม",
-                subNote: "รันอัปเดตเพื่อแสดงเฉพาะ Mass+Migrant",
-              };
-            var note = "Mass + Migrant";
-            var full = act.ga > 0 ? ap / act.ga : 0;
-            var gaX = act.ga - act.exGa;
-            if (!(act.exGa > 0) || !(gaX > 0))
-              return { label: label, value: pct(full), sub: fmt(ap) + " จาก " + fmt(act.ga) + " ซิม", subNote: note };
-            var apX = ap - ex;
-            return {
-              label: label,
-              value:
-                pct(apX / gaX) +
-                ' <span class="kpi-grey" title="รวมทุกร้าน (รวมซิมอันลิมิต)">รวม ' +
-                pct(full) +
-                "</span>",
-              sub: fmt(apX) + " จาก " + fmt(gaX) + " ซิม",
-              subNote: [note, "ไม่รวมซิมอันลิมิต (GA " + fmt(act.exGa) + ")"],
-            };
+            return { label: "จำนวนร้าน", value: fmt(scope.storeCount), sub: rtrCurrentMonth().label, subNote: notes };
           }
           var cards = [
             {
@@ -6308,13 +6448,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
               value: fmtBaht(t.revAmt),
               sub: "มูลค่าแพ็ค " + fmtBaht(t.ap1dAmt),
             },
-            activationCard("AP1D", "ap1d"),
-            activationCard("AP30D", "ap30d"),
-            {
-              label: "จำนวนร้าน",
-              value: fmt(scope.storeCount),
-              sub: rtrCurrentMonth().label,
-            },
+            storeCountCard(),
           ];
           $("rtrKpiGrid").innerHTML = cards
             .map(function (c) {
@@ -6972,6 +7106,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           { key: "need", label: "ต้องได้อีก/วัน" },
           { key: "m1", label: "M1" },
           { key: "arpu", label: "ARPU" },
+          { key: "ap1d", label: "%AP1D" },
           { key: "achieve", label: "%Ach (RR)" },
           { key: "mom", label: "%MOM" },
         ];
@@ -6989,6 +7124,7 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
           if (key === "mom") return row.momPct == null ? -2 : row.momPct;
           if (key === "m1") return row.m1;
           if (key === "arpu") return row.arpu == null ? -1 : row.arpu;
+          if (key === "ap1d") return row.ap1dPct == null ? -1 : row.ap1dPct;
           return 0;
         }
         $("comTargetModeBtn").addEventListener("click", function () {
@@ -7082,8 +7218,10 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 hasLmtd: false,
                 revCur: 0,
                 revPrev: 0,
+                stores: [],
               });
             row.storeCount++;
+            row.stores.push(s);
             row.ga += s.ga;
             row.mass += s.mass || 0;
             row.migrant += s.migrant || 0;
@@ -7181,9 +7319,11 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                   pacing,
                 )
               : null;
+            var act = activationOf(r.stores);
             return {
               com: com,
               storeCount: r.storeCount,
+              ap1dPct: act.ok ? activationRate(act, "ap1d").rate : null,
               ga: targetMode === "m1" ? rtrSegTargetInfo(cr, state.rtr.segToggle).ga : segInfo.ga,
               target: target,
               achievePct: achievePct,
@@ -7304,6 +7444,14 @@ main section, main .cache-banner, main .cm-tabs, main .pill-row { animation: non
                 arpu:
                   '<td class="num-cell">' +
                   (r.arpu != null ? fmtBaht(r.arpu) : "—") +
+                  "</td>",
+                ap1d:
+                  '<td class="num-cell">' +
+                  (r.ap1dPct != null
+                    ? '<span class="aq-cell' + (r.ap1dPct < AQ_KPI ? " is-below" : "") + '"' +
+                      (r.ap1dPct < AQ_KPI ? ' title="ต่ำกว่าเกณฑ์ ' + pct(AQ_KPI) + '"' : "") + ">" +
+                      pct1(r.ap1dPct) + "</span>"
+                    : "—") +
                   "</td>",
               };
               return (
